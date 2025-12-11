@@ -1,9 +1,5 @@
-import os
-import torch
-from typing import Tuple, Optional, List
-from torchvision import transforms
-from torch.utils.data import DataLoader, Dataset, Subset
-from torchvision.datasets import VisionDataset
+from typing import List
+from torch.utils.data import Dataset
 import pandas as pd
 
 
