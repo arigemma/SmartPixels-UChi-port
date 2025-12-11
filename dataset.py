@@ -89,9 +89,6 @@ if __name__ == "__main__":
     image_paths = sorted(glob("data/10783560/recon3D/recon3D_d1730*.parquet"))
     label_paths = sorted(glob("data/10783560/labels/labels_d1730*.parquet"))
 
-    print(image_paths)
-    print(label_paths)
-
     dataset = SmartPixelsDataset(image_paths, label_paths)
     print(f"Total samples in dataset: {len(dataset)}")
 
