@@ -11,33 +11,66 @@ from tqdm import tqdm
 
 from utils import CreateFolder, IsValidFile, IsReadableDir
 from dataloader import create_dataloaders
+import joblib
+from torchvision.transforms import Compose, Lambda
+from utils import SymLogTransform
+import pandas as pd
 
 
-def symlog_transform(x: np.ndarray, linthresh: float = 10.0) -> np.ndarray:
-    """Symmetric log transform that handles negative values and zeros."""
-    return np.sign(x) * np.log1p(np.abs(x) / linthresh)
 
+def plot_data_distributions(data_loader):
+    import matplotlib.pyplot as plt
+    import seaborn as sns
 
-def inverse_symlog_transform(x: np.ndarray, linthresh: float = 10.0) -> np.ndarray:
-    """Inverse symmetric log transform."""
-    return np.sign(x) * linthresh * (np.exp(np.abs(x)) - 1)
+    n_max = 100
+    X, Y = [], []
+    for i, (x, y) in enumerate(tqdm(data_loader)):
+        if i >= n_max:
+            break
+        X.append(x)
+        Y.append(y)
+
+    X = np.concatenate(X, axis=0)
+    Y = np.concatenate(Y, axis=0)
+
+    plt.hist(X.flatten(), bins=100, alpha=0.5, label='X')
+    plt.yscale('log')
+    plt.show()
+
+    df = pd.DataFrame(Y)
+    # Use seaborn's default style
+    sns.set_style("whitegrid")
+
+    # Create the histograms
+    df.hist(figsize=(12, 10), bins=20, edgecolor='black')
+    plt.tight_layout()
+    plt.show()
 
 
 def main(args):
-    image_paths = sorted(glob("data/10783560/recon3D/recon3D_d*.parquet"))
-    label_paths = sorted(glob("data/10783560/labels/labels_d**.parquet"))
+
+    # 3. Load both scalers
+    scaler_X = joblib.load('scaler_X.pkl')
+    scaler_y = joblib.load('scaler_y.pkl')
+
+    transform = Compose([
+        SymLogTransform(),
+        Lambda(lambda x: scaler_X.transform(x.reshape(-1, 1))),
+        Lambda(lambda x: x.reshape(20, 13, 21)),
+    ])
+
+    target_transform = Lambda(lambda y: scaler_y.transform(y.reshape(1, -1)).flatten())
 
     train_loader, val_loader, test_loader = create_dataloaders(
         args.data_config,
         batch_size=args.batch_size,
         shuffle=True,
-        transform=None,
-        target_transform=None,
+        transform=transform,
+        target_transform=target_transform,
     )
 
-    print(train_loader)
-    print(val_loader)
-    print(test_loader)
+    if args.plot_data:
+        plot_data_distributions(train_loader)
 
 
 
@@ -76,6 +109,10 @@ if __name__ == "__main__":
     
     parser.add_argument(
         "--verbose", type=int, default=0, choices=[0, 1]
+    )
+
+    parser.add_argument(
+        "--plot-data", action='store_true', help="Plot data distributions after loading"
     )
 
     args = parser.parse_args()
