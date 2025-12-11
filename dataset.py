@@ -70,8 +70,8 @@ class SmartPixelsDataset(Dataset):
         image_path = self.image_paths[file_idx]
         label_path = self.label_paths[file_idx]
 
-        self._last_images = pd.read_parquet(image_path)
-        self._last_labels = pd.read_parquet(label_path)
+        self._last_images = pd.read_parquet(image_path).values
+        self._last_labels = pd.read_parquet(label_path).values
 
         assert len(self._last_images) == len(self._last_labels), \
             f"Image and label file length mismatch ({image_path}, {label_path})"
@@ -85,8 +85,8 @@ class SmartPixelsDataset(Dataset):
         file_idx, inside_idx = self.index[idx]
         images, labels = self._get_file(file_idx)
 
-        x = images.iloc[inside_idx]
-        y = labels.iloc[inside_idx]
+        x = images[inside_idx]
+        y = labels[inside_idx]
 
         if self.transform:
             x = self.transform(x)
@@ -106,10 +106,9 @@ if __name__ == "__main__":
     image_paths = sorted(glob("data/10783560/recon3D/recon3D_d1730*.parquet"))
     label_paths = sorted(glob("data/10783560/labels/labels_d1730*.parquet"))
 
-    reshape = lambda df: df.values.reshape((20, 13, 21))
-    df_to_numpy = lambda df: df.values
+    reshape = lambda x: x.reshape((20, 13, 21))
 
-    dataset = SmartPixelsDataset(image_paths, label_paths, transform=reshape, target_transform=df_to_numpy, shuffle=True)
+    dataset = SmartPixelsDataset(image_paths, label_paths, shuffle=True, transform=reshape)
     print(f"Total samples in dataset: {len(dataset)}")
 
     print(f"dataset label names: {dataset.label_names}")
@@ -117,8 +116,6 @@ if __name__ == "__main__":
     # Access a sample
     sample_image, sample_label = dataset[0]
     print(f"Sample image shape: {sample_image.shape}, Sample label: {sample_label}")
-
-    exit(0)
 
     # Iterate through the dataset using DataLoader
     loader = DataLoader(dataset, batch_size=128, num_workers=0, pin_memory=True)
