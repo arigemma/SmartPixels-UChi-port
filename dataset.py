@@ -1,3 +1,4 @@
+import random
 from typing import List
 from torch.utils.data import Dataset
 import pandas as pd
@@ -7,36 +8,50 @@ class SmartPixelsDataset(Dataset):
     """
     PyTorch Dataset for SmartPixels 3D charge distribution data with lazy loading and single-file caching.
     Using <image> to refer to the 3D charge distribution data and <label> to refer to the associated labels.
+    Shuffling shuffles the files and the indices within each file such that caching is still effective.
     Make sure to provide matching lists of image and label file paths, e.g.
          [image1.parquet, image2.parquet], [label1.parquet, label2.parquet]
     Args:
         image_paths: List of image file paths
         label_paths: List of label file paths
+
         transform: Optional transform to be applied on a sample.
         target_transform: Optional transform to be applied on the target.
     """
-    def __init__(self, image_paths: List[str], label_paths: List[str], transform=None, target_transform=None):
+    def __init__(self, image_paths: List[str], label_paths: List[str], shuffle: bool=False, transform=None, target_transform=None):
         assert len(image_paths) == len(label_paths), "Number of image and label files must match."
 
         self.image_paths = image_paths
         self.label_paths = label_paths
-
+        self.shuffle = shuffle
         self.transform = transform
         self.target_transform = target_transform
 
-        # Build a global index: (file_index, internal_index)
-        self.index = []
-        self.sizes = []
-        for f in self.label_paths:  # use labels to determine sizes (assuming same as images)
+        # Build a global index_dict: {file_index: [internal_indices]}
+        self.index_dict = {}
+        for i, f in enumerate(self.label_paths):  # use labels to determine sizes (assuming same as images)
             label_df = pd.read_parquet(f)
             n = len(label_df)
-            self.sizes.append(n)
-            self.index.extend([(len(self.sizes)-1, i) for i in range(n)])
+            self.index_dict[i] = range(n)
 
         # Single-file cache
         self._last_file_idx = None
         self._last_images = None
         self._last_labels = None
+
+        # make a flat index list (file_index, internal_index)
+        self.index = []
+
+        file_indices = list(self.index_dict.keys())
+        if self.shuffle:
+            random.shuffle(file_indices)
+
+        for file_idx in file_indices:
+            internal_indices = list(self.index_dict[file_idx])
+            if self.shuffle:
+                random.shuffle(internal_indices)
+
+            self.index.extend((file_idx, inside_idx) for inside_idx in internal_indices)
 
 
     def __len__(self):
@@ -75,23 +90,33 @@ class SmartPixelsDataset(Dataset):
             y = self.target_transform(y)
 
         return x, y
-        
+            
     
 if __name__ == "__main__":
     from tqdm import tqdm
     from glob import glob
+    from torch.utils.data import DataLoader
 
     # Example usage
     image_paths = sorted(glob("data/10783560/recon3D/recon3D_d1730*.parquet"))
     label_paths = sorted(glob("data/10783560/labels/labels_d1730*.parquet"))
 
-    dataset = SmartPixelsDataset(image_paths, label_paths)
+    class Reshape:
+        def __call__(self, df):
+            return df.values.reshape((20, 13, 21))
+
+    class GetPt:
+        def __call__(self, df):
+            return df["pt"]
+
+    dataset = SmartPixelsDataset(image_paths, label_paths, transform=Reshape(), target_transform=GetPt(), shuffle=True)
     print(f"Total samples in dataset: {len(dataset)}")
 
     # Access a sample
     sample_image, sample_label = dataset[0]
     print(f"Sample image shape: {sample_image.shape}, Sample label: {sample_label}")
 
-    # iterate through the dataset
-    for i in tqdm(range(len(dataset))):
-        img, lbl = dataset[i]
+    # Iterate through the dataset using DataLoader
+    loader = DataLoader(dataset, batch_size=128, num_workers=0, pin_memory=True)
+    for batch_images, batch_labels in tqdm(loader):
+        pass
