@@ -100,7 +100,6 @@ class SmartPixelsDataset(Dataset):
 if __name__ == "__main__":
     from tqdm import tqdm
     from glob import glob
-    from torch.utils.data import DataLoader
 
     # Example usage
     image_paths = sorted(glob("data/10783560/recon3D/recon3D_d1730*.parquet"))
@@ -110,14 +109,12 @@ if __name__ == "__main__":
 
     dataset = SmartPixelsDataset(image_paths, label_paths, shuffle=True, transform=reshape)
     print(f"Total samples in dataset: {len(dataset)}")
-
     print(f"dataset label names: {dataset.label_names}")
 
     # Access a sample
     sample_image, sample_label = dataset[0]
     print(f"Sample image shape: {sample_image.shape}, Sample label: {sample_label}")
 
-    # Iterate through the dataset using DataLoader
-    loader = DataLoader(dataset, batch_size=128, num_workers=0, pin_memory=True)
-    for batch_images, batch_labels in tqdm(loader):
-        pass
+    # Iterate through the dataset
+    for i in tqdm(range(len(dataset))):
+        batch_images, batch_labels = dataset[i]
