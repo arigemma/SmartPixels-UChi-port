@@ -27,12 +27,16 @@ class SmartPixelsDataset(Dataset):
         self.transform = transform
         self.target_transform = target_transform
 
+        self.label_names = None  # to be populated on first access
+
         # Build a global index_dict: {file_index: [internal_indices]}
         self.index_dict = {}
         for i, f in enumerate(self.label_paths):  # use labels to determine sizes (assuming same as images)
             label_df = pd.read_parquet(f)
             n = len(label_df)
             self.index_dict[i] = range(n)
+            if self.label_names is None:
+                self.label_names = label_df.columns.tolist()
 
         # Single-file cache
         self._last_file_idx = None
@@ -86,6 +90,7 @@ class SmartPixelsDataset(Dataset):
 
         if self.transform:
             x = self.transform(x)
+
         if self.target_transform:
             y = self.target_transform(y)
 
@@ -101,20 +106,19 @@ if __name__ == "__main__":
     image_paths = sorted(glob("data/10783560/recon3D/recon3D_d1730*.parquet"))
     label_paths = sorted(glob("data/10783560/labels/labels_d1730*.parquet"))
 
-    class Reshape:
-        def __call__(self, df):
-            return df.values.reshape((20, 13, 21))
+    reshape = lambda df: df.values.reshape((20, 13, 21))
+    df_to_numpy = lambda df: df.values
 
-    class GetPt:
-        def __call__(self, df):
-            return df["pt"]
-
-    dataset = SmartPixelsDataset(image_paths, label_paths, transform=Reshape(), target_transform=GetPt(), shuffle=True)
+    dataset = SmartPixelsDataset(image_paths, label_paths, transform=reshape, target_transform=df_to_numpy, shuffle=True)
     print(f"Total samples in dataset: {len(dataset)}")
+
+    print(f"dataset label names: {dataset.label_names}")
 
     # Access a sample
     sample_image, sample_label = dataset[0]
     print(f"Sample image shape: {sample_image.shape}, Sample label: {sample_label}")
+
+    exit(0)
 
     # Iterate through the dataset using DataLoader
     loader = DataLoader(dataset, batch_size=128, num_workers=0, pin_memory=True)
