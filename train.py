@@ -5,17 +5,18 @@ from collections import defaultdict
 import numpy as np
 import hist
 from glob import glob
+from tensorboardX import SummaryWriter
 
 import torch
 from tqdm import tqdm
 
-from utils import CreateFolder, IsValidFile, IsReadableDir
+from utils import CreateFolder, IsValidFile, IsReadableDir, EarlyStopping
 from dataloader import create_dataloaders
 import joblib
 from torchvision.transforms import Compose, Lambda
 from utils import SymLogTransform
 import pandas as pd
-
+from models.conv2d import Conv2DModel
 
 
 def plot_data_distributions(data_loader):
@@ -49,6 +50,9 @@ def plot_data_distributions(data_loader):
 
 def main(args):
 
+    if args.device == "mps":
+        device = torch.device("mps")
+
     # 3. Load both scalers
     scaler_X = joblib.load('scaler_X.pkl')
     scaler_y = joblib.load('scaler_y.pkl')
@@ -56,15 +60,17 @@ def main(args):
     transform = Compose([
         SymLogTransform(),
         Lambda(lambda x: scaler_X.transform(x.reshape(-1, 1))),
-        Lambda(lambda x: x.reshape(20, 13, 21)),
+        Lambda(lambda x: x.reshape(1, 20, 13, 21)),
+        Lambda(lambda x: torch.tensor(x, dtype=torch.float32))
     ])
 
-    target_transform = Lambda(lambda y: scaler_y.transform(y.reshape(1, -1)).flatten())
+    target_transform = Lambda(lambda y: torch.tensor(scaler_y.transform(y.reshape(1, -1)).flatten(), dtype=torch.float32))
 
     train_loader, val_loader, test_loader = create_dataloaders(
         args.data_config,
         batch_size=args.batch_size,
         shuffle=True,
+        val_size=0.01,
         transform=transform,
         target_transform=target_transform,
     )
@@ -72,7 +78,60 @@ def main(args):
     if args.plot_data:
         plot_data_distributions(train_loader)
 
+    model = Conv2DModel(
+        input_shape=(1, 20, 13, 21),
+        output_dim=13,
+        n_filters_1=16,
+        n_filters_2=32,
+        hidden_dim=64,
+        dropout=0.1,
+        aggregation="max",
+    )
+    model.to(device)
+    print(model)
 
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    criterion = torch.nn.MSELoss()
+
+    model.train()
+    running_loss = 0.0
+    early_stopping = EarlyStopping(patience=2)
+    best_val_loss = float('inf')
+    writer = SummaryWriter(logdir=args.output, filename_suffix=".log")
+    pbar = tqdm(train_loader, desc="Training", unit="batch")
+    for step, (inputs, labels) in enumerate(pbar):
+        inputs = inputs.to(device)
+        labels = labels.to(device)
+        optimizer.zero_grad()
+        outputs = model(inputs)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+        running_loss += loss.item() * inputs.size(0)
+        pbar.set_postfix({"loss": loss.item()})
+        writer.add_scalar("Loss/train_batch", loss.item(), step)
+
+        if step % args.eval_freq == 0:
+            model.eval()
+            val_loss = 0.0
+            with torch.no_grad():
+                for inputs, labels in tqdm(val_loader):
+                    inputs = inputs.to(device)
+                    labels = labels.to(device)
+                    outputs = model(inputs)
+                    loss = criterion(outputs, labels)
+                    val_loss += loss.item() * inputs.size(0)
+            val_loss = val_loss / len(val_loader.dataset)
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                torch.save(model.state_dict(), args.output / "best_model.pth")
+            print(f"Step {step+1}/{len(train_loader)}, Validation Loss: {val_loss:.4f}")
+            if early_stopping.step(val_loss):
+                print("Early stopping triggered.")
+                break
+            model.train()
+            writer.add_scalar("Loss/validation", val_loss, step)
+    
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train SmartPixels models")
@@ -98,7 +157,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--device", type=str, default="cuda", choices=["cuda", "cpu", "mps"],
+        "--device", type=str, default="cpu", choices=["cuda", "cpu", "mps"],
         help="Device to use (cuda is faster)"
     )
 
