@@ -13,7 +13,6 @@ from tqdm import tqdm
 from utils import CreateFolder, IsValidFile, IsReadableDir, EarlyStopping
 from dataloader import create_dataloaders
 import joblib
-from torchvision.transforms import Compose, Lambda
 from utils import SymLogTransform
 import pandas as pd
 from models.conv2d import Conv2DModel
@@ -53,26 +52,12 @@ def main(args):
     if args.device == "mps":
         device = torch.device("mps")
 
-    # 3. Load both scalers
-    scaler_X = joblib.load('scaler_X.pkl')
-    scaler_y = joblib.load('scaler_y.pkl')
-
-    transform = Compose([
-        SymLogTransform(),
-        Lambda(lambda x: scaler_X.transform(x.reshape(-1, 1))),
-        Lambda(lambda x: x.reshape(1, 20, 13, 21)),
-        Lambda(lambda x: torch.tensor(x, dtype=torch.float32))
-    ])
-
-    target_transform = Lambda(lambda y: torch.tensor(scaler_y.transform(y.reshape(1, -1)).flatten(), dtype=torch.float32))
-
     train_loader, val_loader, test_loader = create_dataloaders(
         args.data_config,
         batch_size=args.batch_size,
         shuffle=True,
         val_size=0.01,
-        transform=transform,
-        target_transform=target_transform,
+        scaler_paths=('scaler_X.pkl', 'scaler_y.pkl'),
     )
 
     if args.plot_data:
@@ -124,7 +109,7 @@ def main(args):
             val_loss = val_loss / len(val_loader.dataset)
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
-                torch.save(model.state_dict(), args.output / "best_model.pth")
+                torch.save(model, args.output / "best_model.pth")
             print(f"Step {step+1}/{len(train_loader)}, Validation Loss: {val_loss:.4f}")
             if early_stopping.step(val_loss):
                 print("Early stopping triggered.")

@@ -3,6 +3,10 @@ from typing import Tuple, Optional, List
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
 import yaml
+import joblib
+from torchvision.transforms import Compose, Lambda
+from utils import SymLogTransform
+import torch
 from dataset import SmartPixelsDataset
 
 
@@ -10,8 +14,7 @@ def create_dataloaders(
     config_path: str,
     batch_size: int = 128,
     shuffle: bool = True,
-    transform: callable = None,
-    target_transform: callable = None,
+    scaler_paths: str = ('scaler_X.pkl', 'scaler_y.pkl'),
     val_size: float = 0.2,
 ) -> Tuple[DataLoader, DataLoader]:
     
@@ -22,6 +25,19 @@ def create_dataloaders(
 
     test_image_paths = [config_dict['root'] + t[0] for t in config_dict['test']]
     test_label_paths = [config_dict['root'] + t[1] for t in config_dict['test']]
+
+    # build the transformations
+    scaler_X = joblib.load(scaler_paths[0])
+    scaler_y = joblib.load(scaler_paths[1])
+
+    transform = Compose([
+        SymLogTransform(),
+        Lambda(lambda x: scaler_X.transform(x.reshape(-1, 1))),
+        Lambda(lambda x: x.reshape(1, 20, 13, 21)),
+        Lambda(lambda x: torch.tensor(x, dtype=torch.float32))
+    ])
+
+    target_transform = Lambda(lambda y: torch.tensor(scaler_y.transform(y.reshape(1, -1)).flatten(), dtype=torch.float32))
 
     # Train-test split of indices
     if val_size > 0.0:
@@ -35,53 +51,32 @@ def create_dataloaders(
         val_label_paths = []
 
     # Create datasets
+    ds_kwargs = {
+        "shuffle": shuffle,
+        "transform": transform,
+        "target_transform": target_transform
+    }
+
     train_dataset = SmartPixelsDataset(
-        train_image_paths,
-        train_label_paths,
-        shuffle=shuffle,
-        transform=transform,
-        target_transform=target_transform
+        train_image_paths, train_label_paths, **ds_kwargs
     )
-
     val_dataset = SmartPixelsDataset(
-        val_image_paths,
-        val_label_paths,
-        shuffle=shuffle,
-        transform=transform,
-        target_transform=target_transform
+        val_image_paths, val_label_paths, **ds_kwargs
     )
-
     test_dataset = SmartPixelsDataset(
-        test_image_paths,
-        test_label_paths,
-        shuffle=shuffle,
-        transform=transform,
-        target_transform=target_transform
+        test_image_paths, test_label_paths, **ds_kwargs
     )
 
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=0,
-        pin_memory=True
-    )
+    loader_kwargs = {
+        "batch_size": batch_size,
+        "shuffle": False,
+        "num_workers": 0,
+        "pin_memory": True
+    }
 
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=0,
-        pin_memory=True
-    )
-
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=0,
-        pin_memory=True
-    )
+    train_loader = DataLoader(train_dataset, **loader_kwargs)
+    val_loader = DataLoader(val_dataset, **loader_kwargs)
+    test_loader = DataLoader(test_dataset, **loader_kwargs)
 
     return train_loader, val_loader, test_loader
 
@@ -101,7 +96,6 @@ if __name__ == "__main__":
     print(f"Number of training batches: {len(train_loader)}")
     print(f"Number of validation batches: {len(val_loader)}")
     print(f"Number of test batches: {len(test_loader)}")
-
 
     for batch_idx, (images, labels) in enumerate(train_loader):
         print(f"Batch {batch_idx}: images shape = {images.shape}, labels shape = {labels.shape}")
