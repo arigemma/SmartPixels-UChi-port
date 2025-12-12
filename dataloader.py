@@ -27,17 +27,21 @@ def create_dataloaders(
     test_label_paths = [config_dict['root'] + t[1] for t in config_dict['test']]
 
     # build the transformations
-    scaler_X = joblib.load(scaler_paths[0])
-    scaler_y = joblib.load(scaler_paths[1])
+    if scaler_paths is not None:
+        scaler_X = joblib.load(scaler_paths[0])
+        scaler_y = joblib.load(scaler_paths[1])
+    else:
+        scaler_X = None
+        scaler_y = None
 
     transform = Compose([
         SymLogTransform(),
-        Lambda(lambda x: scaler_X.transform(x.reshape(-1, 1))),
+        Lambda(lambda x: scaler_X.transform(x.reshape(-1, 1)) if scaler_X else x),
         Lambda(lambda x: x.reshape(1, 20, 13, 21)),
         Lambda(lambda x: torch.tensor(x, dtype=torch.float32))
     ])
 
-    target_transform = Lambda(lambda y: torch.tensor(scaler_y.transform(y.reshape(1, -1)).flatten(), dtype=torch.float32))
+    target_transform = Lambda(lambda y: torch.tensor(scaler_y.transform(y.reshape(1, -1)).flatten(), dtype=torch.float32) if scaler_y else torch.tensor(y, dtype=torch.float32))
 
     # Train-test split of indices
     if val_size > 0.0:

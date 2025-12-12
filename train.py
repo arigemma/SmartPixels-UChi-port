@@ -38,7 +38,8 @@ def plot_data_distributions(data_loader):
     plt.yscale('log')
     plt.show()
 
-    df = pd.DataFrame(Y)
+    df = pd.DataFrame(Y, columns=data_loader.dataset.label_names)
+
     # Use seaborn's default style
     sns.set_style("whitegrid")
 
@@ -59,6 +60,7 @@ def main(args):
         shuffle=True,
         val_size=0.01,
         scaler_paths=('scaler_X.pkl', 'scaler_y.pkl'),
+        # scaler_paths=None,
     )
 
     if args.plot_data:
