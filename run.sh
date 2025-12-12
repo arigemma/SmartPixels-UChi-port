@@ -1,0 +1,1 @@
+python train.py --architecture conv3d --model-size 4 --output results/training/conv3d_run1/ --batch-size 16 --learning-rate 0.001

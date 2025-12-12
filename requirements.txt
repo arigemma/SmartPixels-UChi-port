@@ -1,0 +1,9 @@
+numpy==1.26.4
+torch
+pandas
+seaborn
+matplotlib
+scikit-learn
+tqdm
+pyarrow
+fastparquet

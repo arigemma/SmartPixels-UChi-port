@@ -15,7 +15,8 @@ from dataloader import create_dataloaders
 import joblib
 from utils import SymLogTransform
 import pandas as pd
-from models.conv2d import Conv2DModel
+from models import get_model
+from datetime import datetime
 
 
 def plot_data_distributions(data_loader):
@@ -63,17 +64,12 @@ def main(args):
     if args.plot_data:
         plot_data_distributions(train_loader)
 
-    model = Conv2DModel(
-        input_shape=(1, 20, 13, 21),
-        output_dim=13,
-        n_filters_1=16,
-        n_filters_2=32,
-        hidden_dim=64,
-        dropout=0.1,
-        aggregation="max",
-    )
+    model = get_model(args.architecture, size=args.model_size)
     model.to(device)
     print(model)
+
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Number of trainable parameters: {n_params}")
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     criterion = torch.nn.MSELoss()
@@ -82,7 +78,17 @@ def main(args):
     running_loss = 0.0
     early_stopping = EarlyStopping(patience=2)
     best_val_loss = float('inf')
-    writer = SummaryWriter(logdir=args.output, filename_suffix=".log")
+
+    dir_name = f"logs/{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    writer = SummaryWriter(logdir=f"{args.output}/{dir_name}", filename_suffix=".log")
+    hparams = {
+        "lr": args.learning_rate,
+        "batch_size": args.batch_size,
+        "model": args.architecture,
+        "model_size": args.model_size,
+        "n_params": n_params,
+    }
+
     pbar = tqdm(train_loader, desc="Training", unit="batch")
     for step, (inputs, labels) in enumerate(pbar):
         inputs = inputs.to(device)
@@ -107,15 +113,18 @@ def main(args):
                     loss = criterion(outputs, labels)
                     val_loss += loss.item() * inputs.size(0)
             val_loss = val_loss / len(val_loader.dataset)
+            writer.add_scalar("Loss/validation", val_loss, step)
+            
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
+                writer.add_hparams(hparams, {"val_loss": val_loss})
                 torch.save(model, args.output / "best_model.pth")
             print(f"Step {step+1}/{len(train_loader)}, Validation Loss: {val_loss:.4f}")
             if early_stopping.step(val_loss):
                 print("Early stopping triggered.")
                 break
             model.train()
-            writer.add_scalar("Loss/validation", val_loss, step)
+
     
 
 if __name__ == "__main__":
@@ -126,8 +135,10 @@ if __name__ == "__main__":
         "--data-config", type=str, default="config/v3.yml"
     )
     parser.add_argument(
-        "--architecture", "-a", type=str, default="conv", choices=["conv"], help="Model architecture."
+        "--architecture", "-a", type=str, default="conv", choices=["conv2d", "conv3d"], help="Model architecture."
     )
+    parser.add_argument("--model-size", "-ms", type=int, default=4, 
+                        help="Model size parameter (increases number of parameters)")
 
     # Training parameters
     parser.add_argument("--seed", "-s", type=int, default=42, help="Random seed")

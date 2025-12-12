@@ -1,24 +1,17 @@
 import argparse
 import random
 from pathlib import Path
-from collections import defaultdict
 import numpy as np
-import hist
-from glob import glob
-from tensorboardX import SummaryWriter
-
 import torch
 from tqdm import tqdm
-
 from utils import CreateFolder, IsValidFile, IsReadableDir, EarlyStopping
 from dataloader import create_dataloaders
 import joblib
 from torchvision.transforms import Compose, Lambda
-from utils import SymLogTransform
 import pandas as pd
-from models.conv2d import Conv2DModel
-import matplotlib.pyplot as plt
 import seaborn as sns
+import math
+import matplotlib.pyplot as plt
 
 
 def main(args):
@@ -53,17 +46,60 @@ def main(args):
     print(f"all_preds shape: {all_preds.shape}, all_labels shape: {all_labels.shape}")
 
     label_names = test_loader.dataset.label_names
-    for i in range(all_labels.shape[1]):
-        var_name = label_names[i]
-        plt.figure(figsize=(6, 4))
-        plt.hist(all_labels[:, i], bins=50, alpha=0.5, label='True', color='blue')
-        plt.hist(all_preds[:, i], bins=50, alpha=0.5, label='Predicted', color='orange')
-        plt.title(f'Distribution of True vs Predicted for {var_name}')
-        plt.xlabel('Value')
-        plt.ylabel('Frequency')
-        plt.legend()
-        plt.yscale('log')
+
+    label_names = test_loader.dataset.label_names
+    n = len(label_names)
+
+    vars_per_fig = 8        # threshold
+    cols = 4                # hist | scatter pairs
+    plots_per_var = 2
+
+    # number of figures needed
+    num_figs = math.ceil(n / vars_per_fig)
+
+    start_idx = 0
+    for fig_idx in range(num_figs):
+        # variables for this figure
+        end_idx = min(start_idx + vars_per_fig, n)
+        num_vars = end_idx - start_idx
+
+        rows = math.ceil(num_vars * plots_per_var / cols)
+
+        fig, axs = plt.subplots(rows, cols, figsize=(16, rows * 3))
+        axs = axs.reshape(rows, cols)
+
+        fig.suptitle(f"Variable Diagnostics (Figure {fig_idx+1}/{num_figs})",
+                    fontsize=16, y=1.02)
+
+        for local_i, global_i in enumerate(range(start_idx, end_idx)):
+            r = (local_i // 2)
+            c = (local_i % 2) * 2
+
+            ax1 = axs[r, c]
+            ax2 = axs[r, c+1]
+
+            var_name = label_names[global_i]
+
+            h = ax1.hist(all_labels[:, global_i], bins=50, alpha=0.5, label='True')
+            ax1.hist(all_preds[:, global_i], bins=h[1], alpha=0.5, label='Predicted')
+            ax1.set_title(f'{var_name} – Distribution')
+            ax1.set_yscale('log')
+            ax1.legend()
+
+            ax2.scatter(all_labels[:, global_i], all_preds[:, global_i], alpha=0.5)
+            ax2.set_title(f'{var_name} – Scatter')
+            ax2.set_xscale('symlog')
+            ax2.set_yscale('symlog')
+
+        # hide any unused subplots
+        for ax in axs.flatten()[num_vars*2:]:
+            ax.set_visible(False)
+
+        plt.tight_layout()
         plt.show()
+
+        start_idx = end_idx
+
     
 
 if __name__ == "__main__":
