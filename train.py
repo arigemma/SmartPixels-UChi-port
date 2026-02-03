@@ -52,6 +52,10 @@ def main(args):
 
     if args.device == "mps":
         device = torch.device("mps")
+    elif args.device:
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
 
     train_loader, val_loader, test_loader = create_dataloaders(
         args.data_config,
@@ -64,9 +68,13 @@ def main(args):
     if args.plot_data:
         plot_data_distributions(train_loader)
 
-    model = get_model(args.architecture, size=args.model_size)
+    model = get_model(args.architecture, size=args.model_size, aggregation=args.aggregation)
     model.to(device)
     print(model)
+
+    if args.compile_model:
+        print("Compiling the model...")
+        model.compile()
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Number of trainable parameters: {n_params}")
@@ -75,7 +83,6 @@ def main(args):
     criterion = torch.nn.MSELoss()
 
     model.train()
-    running_loss = 0.0
     early_stopping = EarlyStopping(patience=2)
     best_val_loss = float('inf')
 
@@ -89,6 +96,7 @@ def main(args):
         "n_params": n_params,
     }
 
+    running_loss, running_n = 0.0, 0
     pbar = tqdm(train_loader, desc="Training", unit="batch")
     for step, (inputs, labels) in enumerate(pbar):
         inputs = inputs.to(device)
@@ -98,28 +106,34 @@ def main(args):
         loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
-        running_loss += loss.item() * inputs.size(0)
-        pbar.set_postfix({"loss": loss.item()})
-        writer.add_scalar("Loss/train_batch", loss.item(), step)
+        running_loss += loss
+        running_n += inputs.size(0)
+        # running_loss += loss.item() * inputs.size(0)
+        if step % 10 == 0:
+            pbar.set_postfix({"running loss": running_loss.item() / running_n, "loss": loss.item() / inputs.size(0)})
+            writer.add_scalar("Loss/train_batch", loss.item(), step)
 
         if step % args.eval_freq == 0:
             model.eval()
-            val_loss = 0.0
+            val_loss, val_n = 0.0, 0
+            running_loss, running_n = 0.0, 0
             with torch.no_grad():
-                for inputs, labels in tqdm(val_loader):
+                pbar2 = tqdm(val_loader, desc="Validation", leave=True)
+                for inputs, labels in pbar2:
                     inputs = inputs.to(device)
                     labels = labels.to(device)
                     outputs = model(inputs)
                     loss = criterion(outputs, labels)
-                    val_loss += loss.item() * inputs.size(0)
-            val_loss = val_loss / len(val_loader.dataset)
+                    val_loss += loss
+                    val_n += inputs.size(0)
+                    pbar2.set_postfix({"running val loss": val_loss.item() / val_n, "val loss": loss.item() / inputs.size(0)})
             writer.add_scalar("Loss/validation", val_loss, step)
-            
+
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 writer.add_hparams(hparams, {"val_loss": val_loss})
-                torch.save(model, args.output / "best_model.pth")
-            print(f"Step {step+1}/{len(train_loader)}, Validation Loss: {val_loss:.4f}")
+                torch.save(model, f"{args.output}/best_model.pth")
+            # print(f"Step {step+1}/{len(train_loader)}, Validation Loss: {val_loss:.4f}")
             if early_stopping.step(val_loss):
                 print("Early stopping triggered.")
                 break
@@ -139,6 +153,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("--model-size", "-ms", type=int, default=4, 
                         help="Model size parameter (increases number of parameters)")
+    parser.add_argument("--aggregation", "-ag", type=str, default="max", choices=["max", "mean", "flatten"],
+                        help="Aggregation method for Conv2D/Conv3D models")
 
     # Training parameters
     parser.add_argument("--seed", "-s", type=int, default=42, help="Random seed")
@@ -168,6 +184,9 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--plot-data", action='store_true', help="Plot data distributions after loading"
+    )
+    parser.add_argument(
+        "--compile-model", action='store_true', help="Compile the model with torch.compile"
     )
 
     args = parser.parse_args()
