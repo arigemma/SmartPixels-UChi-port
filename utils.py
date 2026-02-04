@@ -1,6 +1,7 @@
 import argparse
 import os
 import numpy as np
+import torch
 
 
 class IsReadableDir(argparse.Action):
@@ -85,4 +86,16 @@ class EarlyStopping:
         if self.counter >= self.patience:
             self.early_stop = True
 
-        return self.early_stop  
+        return self.early_stop
+    
+
+def get_device(device_str):
+    device = torch.device(device_str)
+    
+    # Optional: validate availability
+    if device.type == "mps":
+        assert torch.backends.mps.is_available(), "MPS device is not available."
+    elif device.type == "cuda":
+        assert torch.cuda.is_available(), "CUDA device is not available."
+    
+    return device
