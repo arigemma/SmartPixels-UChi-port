@@ -1,4 +1,4 @@
-root: '/scratch/gpfs/IOJALVO/lg0508/SmartPixels/17180303/dataset_2s/dataset_2s_100x25'
+root: /scratch/gpfs/IOJALVO/lg0508/SmartPixels/17180303/dataset_2s/dataset_2s_100x25/
 train:
 - [recon3D_d16401.parquet, labels_d16401.parquet]
 - [recon3D_d16402.parquet, labels_d16402.parquet]
@@ -25,10 +25,10 @@ train:
 - [recon3D_d16423.parquet, labels_d16423.parquet]
 - [recon3D_d16424.parquet, labels_d16424.parquet]
 - [recon3D_d16425.parquet, labels_d16425.parquet]
-test:
 - [recon3D_d16426.parquet, labels_d16426.parquet]
 - [recon3D_d16427.parquet, labels_d16427.parquet]
 - [recon3D_d16428.parquet, labels_d16428.parquet]
+test:
 - [recon3D_d16429.parquet, labels_d16429.parquet]
 - [recon3D_d16430.parquet, labels_d16430.parquet]
 - [recon3D_d16431.parquet, labels_d16431.parquet]

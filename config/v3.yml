@@ -180,6 +180,6 @@ test:
   - [recon3D/recon3D_d17458.parquet, labels/labels_d17458.parquet]
   - [recon3D/recon3D_d17459.parquet, labels/labels_d17459.parquet]
   - [recon3D/recon3D_d17460.parquet, labels/labels_d17460.parquet]
-scalers:
-  X: scalers/scaler_X_v3.pkl
-  y: scalers/scaler_y_v3.pkl
+scalers: 
+ - scalers/scaler_X_v3.pkl
+ - scalers/scaler_y_v3.pkl
