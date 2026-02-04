@@ -13,7 +13,7 @@ from tqdm import tqdm
 from utils import CreateFolder, IsValidFile, IsReadableDir, EarlyStopping
 from dataloader import create_dataloaders
 import joblib
-from utils import SymLogTransform
+from utils import SymLogTransform, get_device
 import pandas as pd
 from models import get_model
 from datetime import datetime
@@ -51,20 +51,14 @@ def plot_data_distributions(data_loader):
 
 def main(args):
 
-    if args.device == "mps":
-        device = torch.device("mps")
-    elif args.device == "cuda":
-        device = torch.device("cuda")
-    else:
-        device = torch.device("cpu")
+    device = get_device(args.device)
 
     train_loader, val_loader, test_loader = create_dataloaders(
         args.data_config,
         batch_size=args.batch_size,
         shuffle=True,
         val_size=0.01,
-        scaler_paths=('scaler_X.pkl', 'scaler_y.pkl'),
-        # scaler_paths=None,
+        target_type="regression",
     )
 
     if args.plot_data:
@@ -148,7 +142,7 @@ if __name__ == "__main__":
 
     # Dataset and architecture
     parser.add_argument(
-        "--data-config", type=str, default="config/v3.yml"
+        "--data-config", "-c", type=str, default="config/v3.yml"
     )
     parser.add_argument(
         "--architecture", "-a", type=str, default="conv", choices=["conv2d", "conv3d"], help="Model architecture."
@@ -189,6 +183,10 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--compile-model", action='store_true', help="Compile the model with torch.compile"
+    )
+    parser.add_argument(
+        "--task", type=str, default="regression", choices=["regression", "classification"],
+        help="Regress all features or classify according to co-design paper"
     )
 
     args = parser.parse_args()
