@@ -17,7 +17,7 @@
 # y-midplane            -5.795941
 # x-midplane            -7.054556
 #################################
-root: 'data/10783560/'
+root: '/scratch/gpfs/IOJALVO/lg0508/SmartPixels/10783560/'
 train:
   - [recon3D/recon3D_d17301.parquet, labels/labels_d17301.parquet]
   - [recon3D/recon3D_d17302.parquet, labels/labels_d17302.parquet]
@@ -180,4 +180,6 @@ test:
   - [recon3D/recon3D_d17458.parquet, labels/labels_d17458.parquet]
   - [recon3D/recon3D_d17459.parquet, labels/labels_d17459.parquet]
   - [recon3D/recon3D_d17460.parquet, labels/labels_d17460.parquet]
- 
+scalers:
+  X: scalers/scaler_X_v3.pkl
+  y: scalers/scaler_y_v3.pkl
