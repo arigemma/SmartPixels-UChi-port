@@ -19,7 +19,7 @@ __all__ = [
 ]
 
 
-def get_model(name, input_shape=(1, 20, 13, 21), output_dim=13, size=4):
+def get_model(name, input_shape=(1, 20, 13, 21), output_dim=13, size=4, aggregation="max"):
     if name == "conv2d":
         model = Conv2DModel(
             input_shape=input_shape,

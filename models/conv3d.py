@@ -15,6 +15,7 @@ class Conv3DModel(nn.Module):
         hidden_dim: int = 64,
         dropout: float = 0.0,
         output_dim: int = 1,
+        aggregation: str = "max"
     ):
         """
         Args:
@@ -27,14 +28,25 @@ class Conv3DModel(nn.Module):
         super().__init__()
 
         self.input_shape = input_shape
+        self.aggregation = aggregation
 
         self.conv1 = nn.Conv3d(input_shape[0], n_filters_1, kernel_size=3, padding=1)
         self.relu1 = nn.ReLU()
-        self.pool1 = nn.MaxPool3d(2)
+        if self.aggregation == "max":
+            self.pool1 = nn.MaxPool3d(2)
+        elif self.aggregation == "mean":
+            self.pool1 = nn.AvgPool3d(2)
+        else:
+            self.pool1 = nn.Identity()
 
         self.conv2 = nn.Conv3d(n_filters_1, n_filters_2, kernel_size=3, padding=1)
         self.relu2 = nn.ReLU()
-        self.pool2 = nn.MaxPool3d(2)
+        if self.aggregation == "max":
+            self.pool2 = nn.MaxPool3d(2)
+        elif self.aggregation == "mean":
+            self.pool2 = nn.AvgPool3d(2)
+        else:
+            self.pool2 = nn.Identity()
 
         # Calculate flattened size after convolutions
         # After 2 pooling layers: (T//4, H//4, W//4)
