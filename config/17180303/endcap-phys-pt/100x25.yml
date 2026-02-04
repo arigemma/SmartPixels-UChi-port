@@ -1,10 +1,10 @@
 root: /scratch/gpfs/IOJALVO/lg0508/SmartPixels/17180303/dataset_6s/dataset_6s_100x25/
 train:
-- [recon3D_d16401.parquet, labels_d16401.parquet]
-- [recon3D_d16402.parquet, labels_d16402.parquet]
-- [recon3D_d16403.parquet, labels_d16403.parquet]
-- [recon3D_d16404.parquet, labels_d16404.parquet]
-- [recon3D_d16405.parquet, labels_d16405.parquet]
+# - [recon3D_d16401.parquet, labels_d16401.parquet]
+# - [recon3D_d16402.parquet, labels_d16402.parquet]
+# - [recon3D_d16403.parquet, labels_d16403.parquet]
+# - [recon3D_d16404.parquet, labels_d16404.parquet]
+# - [recon3D_d16405.parquet, labels_d16405.parquet]
 - [recon3D_d16406.parquet, labels_d16406.parquet]
 - [recon3D_d16407.parquet, labels_d16407.parquet]
 - [recon3D_d16408.parquet, labels_d16408.parquet]
