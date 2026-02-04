@@ -53,7 +53,7 @@ def main(args):
 
     if args.device == "mps":
         device = torch.device("mps")
-    elif args.device:
+    elif args.device == "cuda":
         device = torch.device("cuda")
     else:
         device = torch.device("cpu")
