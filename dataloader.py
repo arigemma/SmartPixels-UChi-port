@@ -22,16 +22,15 @@ def create_dataloaders(
     
     config_dict = yaml.safe_load(open(config_path, "r"))
 
-    train_image_paths = [glob(config_dict['root'] + t[0]) for t in config_dict['train']]
-    train_label_paths = [glob(config_dict['root'] + t[1]) for t in config_dict['train']]
+    train_image_paths = [config_dict['root'] + t[0] for t in config_dict['train']]
+    train_label_paths = [config_dict['root'] + t[1] for t in config_dict['train']]
 
-    test_image_paths = [glob(config_dict['root'] + t[0]) for t in config_dict['test']]
-    test_label_paths = [glob(config_dict['root'] + t[1]) for t in config_dict['test']]
+    test_image_paths = [config_dict['root'] + t[0] for t in config_dict['test']]
+    test_label_paths = [config_dict['root'] + t[1] for t in config_dict['test']]
 
-    print(f"train_image_paths: {train_image_paths[:3]} ...")
-    print(f"train_label_paths: {train_label_paths[:3]} ...")
-    print(f"test_image_paths: {test_image_paths[:3]} ...")
-    print(f"test_label_paths: {test_label_paths[:3]} ...")
+    assert len(train_image_paths) > 0, "No training data found"
+    assert len(train_image_paths) == len(train_label_paths), "Mismatch in number of training images and labels"
+    assert len(test_image_paths) == len(test_label_paths), "Mismatch in number of test images and labels"
 
     scaler_paths = config_dict['scalers']
     scaler_X = joblib.load(scaler_paths[0])
