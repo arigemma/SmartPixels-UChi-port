@@ -21,7 +21,7 @@ python evaluate.py --input /path/to/model.pt -c config/v3.yml
 
 ## The data
 There are two datasets on zenodo: https://zenodo.org/records/10783560 (3 versions) and https://zenodo.org/records/17180303 (1 version).
-The latest versions of both contain charge deposits shape `(t, x, y) = (20, 13, 21)` (or permutations thereof). Meaning short videos with 20 frames of 13x21 (x,y) each. There are 13 labels (w/ example values):
+The latest versions of both contain charge deposits shape `(t, y, x) = (20, 13, 21)` (or permutations thereof). Meaning short videos with 20 frames of 13x21 (x,y) each. There are 13 labels (w/ example values):
 ```
 x-entry              129.128448
 y-entry              -13.157045
@@ -38,10 +38,10 @@ y-midplane            -5.795941
 x-midplane            -7.054556
 ```
 ### Remarks
-For the dataset `17180303`, the first few files of each dataset seem to have a different pT distribution than the rest. E.g. mean absolute values:
+For the dataset `17180303`, the first few files of each dataset seem to have a different pT distribution than the rest. In particular, the first 3 files of each barrel-phys-pt dataset and the first 5 files of each endcap-phys-pt and irradiated-phys-pt dataset are off:
 ![alt text](image.png)
 ## Existing Papers
-"Smartpixels: Towards on-sensor ..." (https://arxiv.org/pdf/2312.11676) uses mixture density network to regress 4 variables (x, y, alpha, beta). 
+"Smartpixels: Towards on-sensor ..." (https://arxiv.org/pdf/2312.11676) uses mixture density network to regress 4 variables (x, y, alpha, beta) and their covariance matrix. They use a 2D depth-seperable conv that treats the 20 time slices as independent channels. In their code, they seem to also experiment with using only a subset of time slices, e.g. first and last (`use_time_stamps = [0, 19]`).
 
-"Sensor Co-design for smartpixels" (https://arxiv.org/pdf/2510.06588v1) analyzes the y-profile of the data. reduces the data to 14-dim arrays (y0 and 13 y-pixels) 
+"Sensor Co-design for smartpixels" (https://arxiv.org/pdf/2510.06588v1) analyzes the y-profile of the data. reduces the data to 14-dim arrays (y0 and 13 y-pixels). I believe tt only considers the last frame and averages over x (`x[20, :, :].mean(axis=2)`). But I cannot yet find this in the code.
 
