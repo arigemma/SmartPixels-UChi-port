@@ -8,7 +8,7 @@ from utils import SymLogTransform
 from argparse import ArgumentParser
 
 
-def get_x_and_y(image_path, label_path):
+def get_mean_and_std_for_x_and_y(image_path, label_path):
     ds = SmartPixelsDataset(
         [image_path],
         [label_path],
@@ -21,10 +21,30 @@ def get_x_and_y(image_path, label_path):
     for i, (x, y) in enumerate(ds):
         X.append(x)
         Y.append(y)
-    return np.stack(X), np.stack(Y)
+    
+    X, Y = np.stack(X), np.stack(Y)
+
+    X = X.reshape(-1, 1)
+
+    mean_X = np.mean(X, axis=0)
+    std_X = np.std(X, axis=0)
+
+    mean_y = np.mean(Y, axis=0)
+    std_y = np.std(Y, axis=0)
+
+    return mean_X, std_X, mean_y, std_y
 
 
-def main(args):
+def get_file_dict_17180303(base_path):
+    """
+    split dataset as defined on zenodo (https://zenodo.org/records/17180303)
+    into human-readable names and list all files
+    returns dict of shape:
+    {
+        dataset_name: (base_path, [reco_files], [label_files])
+    }
+    """
+    base_path = Path(base_path) / "17180303"
     ds_to_path = {
         "barrel-phys-pt": "dataset_2s",
         "barrel-flat-pt": "dataset_3s",
@@ -33,53 +53,78 @@ def main(args):
         "irradiated-barrel-phys-pt": "dataset_8s",
         "irradiated-barrel-flat-pt": "dataset_9s",
     }
-
-    base_path = args.data_root
-
+    file_list_dict = {}
     for ds_name, ds_folder in ds_to_path.items():
-        ds_path = base_path + f"/{ds_folder}/"
-        for sub_folder in glob(ds_path + "*/"):
-            sub_name = sub_folder.split("/")[-2].split("_")[-1]
-            label_files = sorted(glob(sub_folder + "label*.parquet"))
-            reco_files = sorted(glob(sub_folder + "reco*.parquet"))
-            n_test = len(label_files) // 3
-            label_train_files = label_files[:-n_test]
-            label_test_files = label_files[-n_test:]
-            reco_train_files = reco_files[:-n_test]
-            reco_test_files = reco_files[-n_test:]
+        ds_path = base_path / ds_folder
+        for sub_folder in sorted(ds_path.iterdir()):
+            sub_name = sub_folder.name.split("_")[-1]
+            reco_files = sorted(str(f) for f in sub_folder.glob("reco*.parquet"))
+            label_files = sorted(str(f) for f in sub_folder.glob("label*.parquet"))
+            reco_files = [Path(f).relative_to(sub_folder) for f in reco_files]
+            label_files = [Path(f).relative_to(sub_folder) for f in label_files]
+            file_list_dict[f"17180303/{ds_name}/{sub_name}"] = (
+                str(sub_folder),
+                reco_files,
+                label_files,
+            )
+    return file_list_dict
 
-            # Get mean and std for each feature (X after symlog)
-            X, y = get_x_and_y(reco_train_files[0], label_train_files[0])
-            X = X.reshape(-1, 1)
-            mean_X = np.mean(X, axis=0)
-            std_X = np.std(X, axis=0)
 
-            print(f"Dataset: {ds_name}, Subset: {sub_name}")
-            print(f"  mean_X: {mean_X.tolist()}")
-            print(f"  std_X: {std_X.tolist()}")
+def get_file_dict_10783560(base_path):
+    """
+    split dataset as defined on zenodo (https://zenodo.org/records/17180303)
+    into human-readable names and list all files
+    returns dict of shape:
+    {
+        dataset_name: (base_path, [reco_files], [label_files])
+    }
+    """
+    base_path = Path(base_path) / "10783560"
+    reco_files = sorted(base_path.glob("recon3D/recon3D_*.parquet"))
+    label_files = sorted(base_path.glob("labels/labels_*.parquet"))
+    reco_files = [p.relative_to(base_path) for p in reco_files]
+    label_files = [p.relative_to(base_path) for p in label_files]
+    return {"10783560/v3": (base_path, reco_files, label_files)}
 
-            mean_y = np.mean(y, axis=0)
-            std_y = np.std(y, axis=0)
 
-            # save file_dict as yaml
-            # create dict <ds_name> if doesnt exist
-            if not os.path.exists(f"{args.output_dir}/{ds_name}"):
-                os.makedirs(f"{args.output_dir}/{ds_name}")
+def main(args):
 
-            with open(f"{args.output_dir}/{ds_name}/{sub_name}.yml", "w") as f:
-                f.write(f"root: {sub_folder}\n")
-                f.write("train:\n")
-                for r, l in zip(reco_train_files, label_train_files):
-                    f.write(f"- [{Path(r).name}, {Path(l).name}]\n")
-                f.write("test:\n")
-                for r, l in zip(reco_test_files, label_test_files):
-                    f.write(f"- [{Path(r).name}, {Path(l).name}]\n")
+    file_dict = get_file_dict_10783560(args.data_root)
+    file_dict.update(get_file_dict_17180303(args.data_root))
 
-                f.write("scaling:\n")
-                f.write(f"  mean_X: {mean_X.tolist()}\n")
-                f.write(f"  std_X: {std_X.tolist()}\n")
-                f.write(f"  mean_y: {mean_y.tolist()}\n")
-                f.write(f"  std_y: {std_y.tolist()}\n")
+    for ds_name, (root, reco_files, label_files) in file_dict.items():
+        # get number of train- and test files
+        n_test = int(len(label_files) * args.test_ratio)
+
+        # split files into groups
+        label_train_files = label_files[:-n_test]
+        label_test_files = label_files[-n_test:]
+        reco_train_files = reco_files[:-n_test]
+        reco_test_files = reco_files[-n_test:]
+
+        # Get mean and std for each feature (X after symlog)
+        mean_X, std_X, mean_y, std_y = get_mean_and_std_for_x_and_y(
+            f"{root}/{reco_train_files[0]}", f"{root}/{label_train_files[0]}"
+        )
+
+        config_dir = Path(f"{args.output_dir}/{ds_name}").parent
+        if not config_dir.exists():
+            os.makedirs(config_dir)
+
+        with open(f"{args.output_dir}/{ds_name}.yml", "w") as f:
+            f.write(f"root: {root}\n")
+            f.write("train:\n")
+            for r, l in zip(reco_train_files, label_train_files):
+                f.write(f"- [{Path(r).name}, {Path(l).name}]\n")
+            f.write("test:\n")
+            for r, l in zip(reco_test_files, label_test_files):
+                f.write(f"- [{Path(r).name}, {Path(l).name}]\n")
+
+            f.write("scaling:\n")
+            f.write(f"  mean_X: {mean_X.tolist()}\n")
+            f.write(f"  std_X: {std_X.tolist()}\n")
+            f.write(f"  mean_y: {mean_y.tolist()}\n")
+            f.write(f"  std_y: {std_y.tolist()}\n")
 
 
 if __name__ == "__main__":
@@ -92,13 +137,16 @@ if __name__ == "__main__":
         """
     )
     parser.add_argument(
-        "--data-root", "-d", type=str, default="/scratch/gpfs/IOJALVO/lg0508/SmartPixels/17180303",
+        "--data-root", "-d", type=str, default="/scratch/gpfs/IOJALVO/lg0508/SmartPixels/",
         help="Root directory containing SmartPixels datasets."
     )
     parser.add_argument(
-        "--output-dir", "-o", type=str, default="dataset_configs",
+        "--output-dir", "-o", type=str, default="config",
         help="Output directory to save dataset configuration files."
+    )
+    parser.add_argument(
+        "--test-ratio", type=float, default=0.333,
+        help="Ratio of the dataset to use for testing."
     )
     args = parser.parse_args()
     main(args)
-    
