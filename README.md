@@ -45,6 +45,11 @@ For the dataset `17180303`, the first few files of each dataset seem to have a d
 ## Existing Papers & Code
 "Smartpixels: Towards on-sensor ..." (https://arxiv.org/pdf/2312.11676) uses mixture density network to regress 4 variables (x, y, alpha, beta) and their covariance matrix. They use a 2D depth-seperable conv that treats the 20 time slices as independent channels. In their code, they seem to also experiment with using only a subset of time slices, e.g. first and last (`use_time_stamps = [0, 19]`).
 
-"Sensor Co-design for smartpixels" (https://arxiv.org/pdf/2510.06588v1) analyzes the y-profile of the data. reduces the data to 14-dim arrays (y0 and 13 y-pixels). I believe it only considers the last frame and sums over x (`x[20, :, :].mean(axis=2)`). But I cannot yet find this in the code.
+"Sensor Co-design for smartpixels" (https://arxiv.org/pdf/2510.06588v1) analyzes the y-profile of the data. reduces the data to 14-dim arrays (y0 and 13 y-pixels). I believe it only considers the last frame and sums over x (`x[19, :, :].mean(axis=2)`). But I cannot yet find this in the code.
 
 In their code, they als reference a `16x16` model. But I dont know what data that takes. In general, I believe the codebase here https://github.com/smart-pix/smart-pixels-ml/ is only used for the `towards` paper, as important keywords (such as `128` for number of neurons according to the other paper) dont appear anywhere.
+
+## Open Questions
+- Where is the source code for the `Co-design` paper?
+- Why the different `pT` spectrum for the first files?
+- Usage of `y0` in input `y`-profile: this is a *label*, right? Is it legit to use this in the input? Would it be available in real-world deployment?
