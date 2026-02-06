@@ -1,20 +1,22 @@
 # Welcome to our SmartPixels ML project
 ## Usage
-Setup environment (w/ optional GPU support)
+### Setup environment (w/ optional GPU support)
 ```
 source setup.sh
 ```
 Look at the notebook `playground.ipynb` for data exploration.
 
-Optional: Calculate feature scaling
+### Optional: Generate dataset configs
 ```
-python scaling.py --data-config config/v3.yml --prefix scalers/myscaler
+python generate_ds_configs.py --data-root /path/to/datasets --output-dir config --test-ratio 0.333
 ```
-Train a model
+This derives data splits feature scaling params (linear mapping to `mean=0` and `std=1` after symlog transform on `X`.)
+
+### Train a model
 ```
 python train.py -c config/v3.yml -a conv2d --task regression
 ```
-Evaluate a model
+### Evaluate a model
 ```
 python evaluate.py --input /path/to/model.pt -c config/v3.yml
 ```
