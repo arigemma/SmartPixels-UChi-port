@@ -6,6 +6,7 @@ from sklearn.model_selection import train_test_split
 import yaml
 import joblib
 from torchvision.transforms import Compose, Lambda
+from torch.nn import Identity
 from utils import SymLogTransform
 import torch
 from glob import glob
@@ -32,20 +33,31 @@ def create_dataloaders(
     assert len(train_image_paths) == len(train_label_paths), "Mismatch in number of training images and labels"
     assert len(test_image_paths) == len(test_label_paths), "Mismatch in number of test images and labels"
 
-    scaler_paths = config_dict['scalers']
-    scaler_X = joblib.load(scaler_paths[0])
-    scaler_y = joblib.load(scaler_paths[1])
+    if "scaling" in config_dict:
+        mean_X = np.array(config_dict['scaling']['mean_X'])
+        std_X = np.array(config_dict['scaling']['std_X'])
+        # replace zeros in std_X to avoid division by zero
+        std_X[std_X == 0] = 1.0
+        mean_y = np.array(config_dict['scaling']['mean_y'])
+        std_y = np.array(config_dict['scaling']['std_y'])
+        std_y[std_y == 0] = 1.0
+        def scale_x(x):
+            return (x - mean_X) / std_X
+        def scale_y(y):
+            return (y - mean_y) / std_y
+    else:
+        scale_x, scale_y = Identity(), Identity()
 
     transform = Compose([
         SymLogTransform(),
-        Lambda(lambda x: scaler_X.transform(x.reshape(-1, 1)) if scaler_X else x),
+        Lambda(scale_x),
         Lambda(lambda x: x.reshape(1, 20, 13, 21)),
         Lambda(lambda x: torch.tensor(x, dtype=torch.float32))
     ])
 
     if target_type == "regression":
         target_transform = Compose([
-            Lambda(lambda y: scaler_y.transform(y.reshape(1, -1)).flatten() if scaler_y else y),
+            Lambda(scale_y),
             Lambda(lambda y: torch.tensor(y, dtype=torch.float32))
         ])
     elif target_type == "classification":

@@ -90,7 +90,7 @@ def get_file_dict_10783560(base_path):
 def main(args):
 
     file_dict = get_file_dict_10783560(args.data_root)
-    file_dict.update(get_file_dict_17180303(args.data_root))
+    # file_dict.update(get_file_dict_17180303(args.data_root))
 
     for ds_name, (root, reco_files, label_files) in file_dict.items():
         # get number of train- and test files
@@ -112,13 +112,13 @@ def main(args):
             os.makedirs(config_dir)
 
         with open(f"{args.output_dir}/{ds_name}.yml", "w") as f:
-            f.write(f"root: {root}\n")
+            f.write(f"root: {root}/\n")
             f.write("train:\n")
             for r, l in zip(reco_train_files, label_train_files):
-                f.write(f"- [{Path(r).name}, {Path(l).name}]\n")
+                f.write(f"- [{r}, {l}]\n")
             f.write("test:\n")
             for r, l in zip(reco_test_files, label_test_files):
-                f.write(f"- [{Path(r).name}, {Path(l).name}]\n")
+                f.write(f"- [{r}, {l}]\n")
 
             f.write("scaling:\n")
             f.write(f"  mean_X: {mean_X.tolist()}\n")

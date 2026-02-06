@@ -36,7 +36,8 @@ def plot_data_distributions(data_loader):
 
     plt.hist(X.flatten(), bins=100, alpha=0.5, label='X')
     plt.yscale('log')
-    plt.show()
+    plt.savefig("data_distribution_X.png")
+    plt.clf()
 
     df = pd.DataFrame(Y, columns=data_loader.dataset.label_names)
 
@@ -46,7 +47,8 @@ def plot_data_distributions(data_loader):
     # Create the histograms
     df.hist(figsize=(12, 10), bins=20, edgecolor='black')
     plt.tight_layout()
-    plt.show()
+    plt.savefig("data_distribution_Y.png")
+    plt.clf()
 
 
 def main(args):
@@ -64,19 +66,26 @@ def main(args):
     if args.plot_data:
         plot_data_distributions(train_loader)
 
-    model = get_model(args.architecture, size=args.model_size, aggregation=args.aggregation)
+    if args.task == "classification":
+        out_dim = 3
+        criterion = torch.nn.CrossEntropyLoss()
+    elif args.task == "regression":
+        out_dim = 13
+        criterion = torch.nn.MSELoss()
+    else:
+        raise ValueError(f"Unknown task: {args.task}")
+
+    model = get_model(args.architecture, size=args.model_size, output_dim=out_dim, aggregation=args.aggregation)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     model.to(device)
+
     print(model)
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Number of trainable parameters: {n_params}")
 
     if args.compile_model:
         print("Compiling the model...")
         model.compile()
-
-    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Number of trainable parameters: {n_params}")
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
-    criterion = torch.nn.MSELoss()
 
     model.train()
     early_stopping = EarlyStopping(patience=2)
@@ -135,17 +144,16 @@ def main(args):
                 break
             model.train()
 
-    
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train SmartPixels models")
 
     # Dataset and architecture
     parser.add_argument(
-        "--data-config", "-c", type=str, default="config/v3.yml"
+        "--data-config", "-c", type=str, default="config/10783560/v3.yml"
     )
     parser.add_argument(
-        "--architecture", "-a", type=str, default="conv", choices=["conv2d", "conv3d"], help="Model architecture."
+        "--architecture", "-a", type=str, default="conv2d", choices=["conv2d", "conv3d"], help="Model architecture."
     )
     parser.add_argument("--model-size", "-ms", type=int, default=4, 
                         help="Model size parameter (increases number of parameters)")
