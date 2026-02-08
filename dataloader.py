@@ -1,23 +1,103 @@
 import numpy as np
-from typing import Tuple, Optional, List
-from sklearn.discriminant_analysis import StandardScaler
-from torch.utils.data import Dataset, DataLoader
+from typing import Tuple, Optional, List, Callable, Any
 from sklearn.model_selection import train_test_split
 import yaml
-import joblib
+import torch
+from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import Compose, Lambda
 from torch.nn import Identity
 from utils import SymLogTransform
-import torch
-from glob import glob
-from dataset import SmartPixelsDataset
+from dataset import SmartPixelsDataset, MySampler
+
+
+def get_scale_function(mean, std):
+    # avoid division by zero
+    std = np.where(np.isclose(std, 0.0), 1.0, std)
+    return lambda x: (x - mean) / std
+
+
+def get_transform(
+    input_type: str = "full",  # "full", "last-frame", "y-profile"
+    scale_dict: Optional[dict] = None,
+) -> Callable[[Any, Any], torch.Tensor]:
+    """
+    The transform that build the inputs. Unlike normal, this takes
+    both x and y, but modifies only x. (Beacuse of special annotation cases.)
+    """
+    
+    if scale_dict is not None:
+        scale_x = get_scale_function(scale_dict["mean_X"], scale_dict["std_X"])
+        scale_y = get_scale_function(scale_dict["mean_y"], scale_dict["std_y"])
+    else:
+        scale_x = Identity()
+        scale_y = Identity()
+
+    def transform(x, y):
+        x = SymLogTransform()(x)
+        x = scale_x(x)
+        x = x.reshape(20, 13, 21)
+
+        if input_type == "last-frame":
+            x = x[19, :, :]
+        elif input_type == "y-profile":
+            x = x[19, :, :].mean(axis=-1)
+            y = scale_y(y)
+            # add y-0 as the first element of the y-profile
+            x = np.concatenate(([y[1]], x))
+
+        x = torch.as_tensor(x, dtype=torch.float32)
+
+        return x
+    
+    print(f"Built transform with input_type={input_type}, scaling={'enabled' if scale_dict else 'disabled'}")    
+
+    return transform
+
+
+def get_target_transform(
+    target_type: str = "regression",  # "regression" or "classification"
+    scale_dict: Optional[dict] = None,
+) -> Callable[[Any], torch.Tensor]:
+    """
+    The transform that builds the targets.
+    """
+
+    if scale_dict is not None:
+        scale_y = get_scale_function(scale_dict["mean_y"], scale_dict["std_y"])
+    else:
+        scale_y = Identity()
+
+    def target_transform(y):
+        if target_type == "classification":
+            # extract pt (9th feature)
+            pt = y[..., 8]  # preserve batch dimension if present.
+
+            label = np.zeros((*pt.shape, 3))  # Shape: (3,) for single sample, (batch_size, 3) for batch
+
+            label[..., 0] = (0 <= pt) & (pt <= 0.2)
+            label[..., 1] = (-0.2 <= pt) & (pt < 0.)
+            label[..., 2] = (pt < -0.2) | (pt > 0.2)
+            
+            y = label
+        elif target_type == "regression":
+            y = scale_y(y)
+        else:
+            raise ValueError(f"Unknown target_type: {target_type}")
+        y = torch.as_tensor(y, dtype=torch.float32)            
+        return y
+
+    print(f"Built target transform with target_type={target_type}, scaling={'enabled' if scale_dict else 'disabled'}")
+
+    return target_transform
 
 
 def create_dataloaders(
     config_path: str,
     batch_size: int = 128,
     shuffle: bool = True,
+    input_type: str = "full",  # "full", "last-frame", "y-profile"
     target_type: str = "regression",  # "regression" or "classification"
+    balance_classes: bool = False,
     val_size: float = 0.2,
 ) -> Tuple[DataLoader, DataLoader, DataLoader]:
     
@@ -33,46 +113,10 @@ def create_dataloaders(
     assert len(train_image_paths) == len(train_label_paths), "Mismatch in number of training images and labels"
     assert len(test_image_paths) == len(test_label_paths), "Mismatch in number of test images and labels"
 
-    if "scaling" in config_dict:
-        mean_X = np.array(config_dict['scaling']['mean_X'])
-        std_X = np.array(config_dict['scaling']['std_X'])
-        # replace zeros in std_X to avoid division by zero
-        std_X[std_X == 0] = 1.0
-        mean_y = np.array(config_dict['scaling']['mean_y'])
-        std_y = np.array(config_dict['scaling']['std_y'])
-        std_y[std_y == 0] = 1.0
-        def scale_x(x):
-            return (x - mean_X) / std_X
-        def scale_y(y):
-            return (y - mean_y) / std_y
-    else:
-        scale_x, scale_y = Identity(), Identity()
-
-    transform = Compose([
-        SymLogTransform(),
-        Lambda(scale_x),
-        Lambda(lambda x: x.reshape(1, 20, 13, 21)),
-        Lambda(lambda x: torch.tensor(x, dtype=torch.float32))
-    ])
-
-    if target_type == "regression":
-        target_transform = Compose([
-            Lambda(scale_y),
-            Lambda(lambda y: torch.tensor(y, dtype=torch.float32))
-        ])
-    elif target_type == "classification":
-        def get_label(y):
-            label = torch.zeros(3)
-            if 0 <= y[8] <= 0.2:  # positively charged and below 200 MeV
-                label[0] = 1
-            elif -0.2 <= y[8] < 0.:  # negatively charged and below 200 MeV
-                label[1] = 1
-            else:
-                label[2] = 1  # above 200 MeV
-            return label
-        target_transform = Lambda(get_label)
-    else:
-        raise ValueError(f"Unknown target_type: {target_type}")
+    # sym log on x in every case
+    scale_dict = config_dict.get("scaling", None)
+    transform = get_transform(input_type, scale_dict)
+    target_transform = get_target_transform(target_type, scale_dict)
 
     # Train-test split of indices
     if val_size > 0.0:
@@ -87,9 +131,8 @@ def create_dataloaders(
 
     # Create datasets
     ds_kwargs = {
-        "shuffle": shuffle,
         "transform": transform,
-        "target_transform": target_transform
+        "target_transform": target_transform,
     }
 
     train_dataset = SmartPixelsDataset(
@@ -109,7 +152,12 @@ def create_dataloaders(
         "pin_memory": True
     }
 
-    train_loader = DataLoader(train_dataset, **loader_kwargs)
+    if balance_classes:
+        sampler = MySampler(train_dataset, target_class_ratios={0: 0.33, 1: 0.33, 2: 0.34})
+    else:
+        sampler = None
+
+    train_loader = DataLoader(train_dataset, sampler=sampler, **loader_kwargs)
     val_loader = DataLoader(val_dataset, **loader_kwargs)
     test_loader = DataLoader(test_dataset, **loader_kwargs)
 
@@ -123,8 +171,8 @@ if __name__ == "__main__":
         config_path="config/v3.yml",
         batch_size=64,
         shuffle=True,
-        transform=lambda x: x.reshape((20, 13, 21)),
-        target_transform=None,
+        input_type="full",
+        target_type="regression",
         val_size=0.2
     )
 
