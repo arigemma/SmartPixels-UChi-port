@@ -54,6 +54,9 @@ def plot_data_distributions(data_loader):
 
 def main(args):
 
+    # set seed for reproducibility
+    torch.manual_seed(args.seed)
+
     device = get_device(args.device)
 
     model_cfg = REGISTRY[args.model]
@@ -68,7 +71,7 @@ def main(args):
     train_loader, val_loader, test_loader = create_dataloaders(
         args.data_config,
         batch_size=args.batch_size,
-        shuffle=True,
+        shuffle=False,
         val_size=0.01,
         balance_classes=args.balance_classes,
         input_type=input_type,
@@ -99,7 +102,7 @@ def main(args):
         model.compile()
 
     model.train()
-    early_stopping = EarlyStopping(patience=5)
+    early_stopping = EarlyStopping(patience=10)
     best_val_loss = float('inf')
 
     dir_name = f"logs/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
@@ -145,6 +148,7 @@ def main(args):
                     if task_type == "classification":
                         preds = outputs.argmax(dim=1)  # Get the class with highest probability
                         truth = labels.argmax(dim=1)  # Get the true class
+
                         val_acc += (preds == truth).float().mean().item()
                     val_n += 1
                     pbar2.set_postfix({

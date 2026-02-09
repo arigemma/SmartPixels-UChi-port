@@ -170,19 +170,18 @@ def create_dataloaders(
 
     # Create datasets
     ds_kwargs = {
-        "shuffle": shuffle,
         "transform": transform,
         "target_transform": target_transform,
     }
 
     train_dataset = SmartPixelsDataset(
-        train_image_paths, train_label_paths, **ds_kwargs
+        train_image_paths, train_label_paths, shuffle=shuffle, **ds_kwargs
     )
     val_dataset = SmartPixelsDataset(
-        val_image_paths, val_label_paths, **ds_kwargs
+        val_image_paths, val_label_paths, shuffle=False, **ds_kwargs
     )
     test_dataset = SmartPixelsDataset(
-        test_image_paths, test_label_paths, **ds_kwargs
+        test_image_paths, test_label_paths, shuffle=False, **ds_kwargs
     )
 
     loader_kwargs = {

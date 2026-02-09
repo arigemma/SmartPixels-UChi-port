@@ -5,6 +5,7 @@ import torch
 from torch.utils.data import Dataset
 from torch.utils.data.sampler import Sampler
 import pandas as pd
+from datetime import datetime
 
 
 class UnderSampler(Sampler):
@@ -17,9 +18,10 @@ class UnderSampler(Sampler):
     Resulting indices are sorted to maintain caching efficiency.
     """
 
-    def __init__(self, dataset: Dataset, target_class_ratios: dict):
+    def __init__(self, dataset: Dataset, target_class_ratios: dict, max_oversampling_factor: float=1.0):
         self.dataset = dataset
         self.target_class_ratios = target_class_ratios
+        self.max_oversampling_factor = max_oversampling_factor
         self.indeces = []
 
         all_labels = self.dataset.get_all_class_labels()
@@ -44,13 +46,23 @@ class UnderSampler(Sampler):
             n_sampled = int(prob * np.sum(label_idx))
             sampled = np.random.choice(np.where(label_idx)[0], size=n_sampled, replace=False)
             self.indeces.append(sampled)
+            print(f"Class {label}: existing ratio = {existing_ratios[label]:.3f}, target ratio = {target_class_ratios[label]:.3f}, \
+                    sampling probability = {prob:.3f}, sampled {n_sampled} out of {np.sum(label_idx)}")
 
         # sort the indeces to maintain caching efficiency (recall: the dataset is already shuffled)
         self.indeces = np.concatenate(self.indeces)
         self.indeces.sort()
 
+        all_sampled_labels = all_labels[self.indeces]
+        unique_sampled_labels, sampled_counts = np.unique(all_sampled_labels, return_counts=True)
+        print(f"After undersampling, class distribution: ")
+        for label, count in zip(unique_sampled_labels, sampled_counts):
+            print(f"Class {label}: {count}")
+
+
     def __len__(self):
         return len(self.indeces)
+
 
     def __iter__(self):
         return iter(self.indeces)
@@ -159,11 +171,6 @@ class SmartPixelsDataset(Dataset):
 
    
     def get_all_class_labels(self):
-        """
-        Helper method to access all class labels in the dataset, e.g. for calculating class distributions.
-        This assumes one-hot encoding for classification (Not applicable for regression targets).
-        More efficient than iterating through __getitem__ since it doesn't need to load the large inputs.
-        """
         all_labels = []
         for f in self.label_paths:
             label_df = pd.read_parquet(f)
@@ -171,10 +178,40 @@ class SmartPixelsDataset(Dataset):
             if self.target_transform:
                 labels = self.target_transform(labels)
             assert torch.all((labels == 0) | (labels == 1)) and torch.all(labels.sum(dim=-1) == 1), \
-                "Expected one-hot encoded binary labels after target_transform for classification"
+                "Expected one-hot encoded binary labels after target_transform for classification" \
+                "Got labels[:3] = {}".format(labels[:3])
             labels = np.argmax(labels, axis=1)  # convert one-hot to class indices
             all_labels.append(labels)
         return np.concatenate(all_labels, axis=0)
+    
+
+    def get_all_class_labels(self):
+        """
+        Helper method to access all class labels in the dataset, e.g. for calculating class distributions.
+        This assumes one-hot encoding for classification (Not applicable for regression targets).
+        More efficient than iterating through __getitem__ since it doesn't need to load the large inputs.
+        """
+        file_labels = {}
+        first = True
+        for file_idx, f in enumerate(self.label_paths):
+            labels = pd.read_parquet(f).values
+            if self.target_transform:
+                labels = self.target_transform(labels)
+            if first:  # assert only once for efficiency
+                assert torch.all((labels == 0) | (labels == 1)) and torch.all(labels.sum(dim=-1) == 1), \
+                    "Expected one-hot encoded binary labels after target_transform for classification" \
+                    "Got labels[:3] = {}".format(labels[:3])
+                first = False
+            labels = np.argmax(labels, axis=1)
+            file_labels[file_idx] = labels
+
+        # project into dataset index space
+        ordered_labels = np.empty(len(self.index), dtype=int)
+        for i, (file_idx, inside_idx) in enumerate(self.index):
+            ordered_labels[i] = file_labels[file_idx][inside_idx]
+
+        return ordered_labels
+
 
 
 if __name__ == "__main__":
