@@ -1,15 +1,17 @@
-"""2D Convolutional Neural Network for signal/background classification."""
+"""2D Convolutional Neural Network"""
 
 import torch
 import torch.nn as nn
+from .registry import register
 
 
+@register("conv2d", input_type="full", task_type="regression")
 class Conv2DModel(nn.Module):
     """2D CNN that processes each time slice and aggregates."""
 
     def __init__(
         self,
-        input_shape: tuple = (1, 20, 13, 21),
+        input_shape: tuple = (20, 13, 21),
         output_dim: int = 13,
         n_filters_1: int = 16,
         n_filters_2: int = 32,

@@ -2,14 +2,16 @@
 
 import torch
 import torch.nn as nn
+from .registry import register
 
 
+@register("conv3d", input_type="full", task_type="classification")
 class Conv3DModel(nn.Module):
     """3D CNN for classifying 3D charge distributions."""
 
     def __init__(
         self,
-        input_shape: tuple = (1, 20, 13, 21),
+        input_shape: tuple = (20, 13, 21),
         n_filters_1: int = 8,
         n_filters_2: int = 16,
         hidden_dim: int = 64,

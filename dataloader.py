@@ -1,55 +1,94 @@
 import numpy as np
+import yaml
 from typing import Tuple, Optional, List, Callable, Any
 from sklearn.model_selection import train_test_split
-import yaml
 import torch
 from torch.utils.data import Dataset, DataLoader
-from torchvision.transforms import Compose, Lambda
 from torch.nn import Identity
 from utils import SymLogTransform
-from dataset import SmartPixelsDataset, MySampler
+from dataset import SmartPixelsDataset, UnderSampler
 
 
-def get_scale_function(mean, std):
+N_TIME = 20
+N_Y = 13
+N_X = 21
+LAST_FRAME = N_TIME - 1
+N_SLICES = 8
+
+
+def _y_profile_last_frame(x: torch.Tensor) -> torch.Tensor:
+    """Mean over x-dimension for last time frame."""
+    return x[LAST_FRAME].mean(axis=-1)
+
+def _y_profile_over_time(x: torch.Tensor) -> torch.Tensor:
+    """Mean over x-dimension for all time steps."""
+    return x.mean(axis=-1)
+
+def _get_scale_function(mean, std):
     # avoid division by zero
     std = np.where(np.isclose(std, 0.0), 1.0, std)
     return lambda x: (x - mean) / std
 
 
 def get_transform(
-    input_type: str = "full",  # "full", "last-frame", "y-profile"
+    input_type: str = "full",  # "full", "last-frame", "y-size", "y-profile", "y-profile-timing"
     scale_dict: Optional[dict] = None,
 ) -> Callable[[Any, Any], torch.Tensor]:
     """
-    The transform that build the inputs. Unlike normal, this takes
-    both x and y, but modifies only x. (Beacuse of special annotation cases.)
+    Build a transform that consumes (x, y) but modifies only x.
     """
-    
+
     if scale_dict is not None:
-        scale_x = get_scale_function(scale_dict["mean_X"], scale_dict["std_X"])
-        scale_y = get_scale_function(scale_dict["mean_y"], scale_dict["std_y"])
+        scale_x = _get_scale_function(scale_dict["mean_X"], scale_dict["std_X"])
+        scale_y = _get_scale_function(scale_dict["mean_y"], scale_dict["std_y"])
+        scaling_enabled = True
     else:
         scale_x = Identity()
         scale_y = Identity()
+        scaling_enabled = False
 
-    def transform(x, y):
-        x = SymLogTransform()(x)
+    def transform(raw_x, raw_y) -> torch.Tensor:
+        # --- preprocess x ---
+        x = SymLogTransform()(raw_x)
         x = scale_x(x)
-        x = x.reshape(20, 13, 21)
+        x = x.reshape(N_TIME, N_Y, N_X)
 
-        if input_type == "last-frame":
-            x = x[19, :, :]
+        # --- preprocess y ---
+        y_scaled = scale_y(raw_y)
+        y0 = y_scaled[1]  # second feature
+
+        # --- build features ---
+        if input_type == "full":
+            features = x
+
+        elif input_type == "last-frame":
+            features = x[LAST_FRAME]
+
+        elif input_type == "y-size":
+            # use unscaled raw_x to count nonzero entries
+            raw_x_reshaped = raw_x.reshape(N_TIME, N_Y, N_X)
+            y_profile = raw_x_reshaped[LAST_FRAME].mean(axis=-1)
+            cluster_size = (y_profile > 0).sum()
+            features = np.array([y0, cluster_size])
+
         elif input_type == "y-profile":
-            x = x[19, :, :].mean(axis=-1)
-            y = scale_y(y)
-            # add y-0 as the first element of the y-profile
-            x = np.concatenate(([y[1]], x))
+            y_profile = _y_profile_last_frame(x)
+            features = np.concatenate(([y0], y_profile))
 
-        x = torch.as_tensor(x, dtype=torch.float32)
+        elif input_type == "y-profile-timing":
+            y_profile = _y_profile_over_time(x)
+            slices = y_profile[:N_SLICES].T  # (13, 8)
+            features = np.concatenate(([y0], slices.flatten()))  # (1 + 13*8,)
 
-        return x
-    
-    print(f"Built transform with input_type={input_type}, scaling={'enabled' if scale_dict else 'disabled'}")    
+        else:
+            raise ValueError(f"Unknown input_type: {input_type}")
+
+        return torch.as_tensor(features, dtype=torch.float32)
+
+    print(
+        f"Built transform with input_type={input_type}, "
+        f"scaling={'enabled' if scaling_enabled else 'disabled'}"
+    )
 
     return transform
 
@@ -63,7 +102,7 @@ def get_target_transform(
     """
 
     if scale_dict is not None:
-        scale_y = get_scale_function(scale_dict["mean_y"], scale_dict["std_y"])
+        scale_y = _get_scale_function(scale_dict["mean_y"], scale_dict["std_y"])
     else:
         scale_y = Identity()
 
@@ -95,7 +134,7 @@ def create_dataloaders(
     config_path: str,
     batch_size: int = 128,
     shuffle: bool = True,
-    input_type: str = "full",  # "full", "last-frame", "y-profile"
+    input_type: str = "full",  # "full", "last-frame", "y-size", "y-profile", "y-profile-timing"
     target_type: str = "regression",  # "regression" or "classification"
     balance_classes: bool = False,
     val_size: float = 0.2,
@@ -131,6 +170,7 @@ def create_dataloaders(
 
     # Create datasets
     ds_kwargs = {
+        "shuffle": shuffle,
         "transform": transform,
         "target_transform": target_transform,
     }
@@ -149,11 +189,11 @@ def create_dataloaders(
         "batch_size": batch_size,
         "shuffle": False,
         "num_workers": 0,
-        "pin_memory": True
+        # "pin_memory": True
     }
 
     if balance_classes:
-        sampler = MySampler(train_dataset, target_class_ratios={0: 0.33, 1: 0.33, 2: 0.34})
+        sampler = UnderSampler(train_dataset, target_class_ratios={0: 0.33, 1: 0.33, 2: 0.34})
     else:
         sampler = None
 

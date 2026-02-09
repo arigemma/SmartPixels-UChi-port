@@ -1,9 +1,6 @@
 import argparse
-import random
 from pathlib import Path
-from collections import defaultdict
 import numpy as np
-import hist
 from glob import glob
 from tensorboardX import SummaryWriter
 
@@ -12,10 +9,9 @@ from tqdm import tqdm
 
 from utils import CreateFolder, IsValidFile, IsReadableDir, EarlyStopping
 from dataloader import create_dataloaders
-import joblib
-from utils import SymLogTransform, get_device
+from utils import get_device
 import pandas as pd
-from models import get_model
+from models.registry import REGISTRY
 from datetime import datetime
 
 
@@ -39,7 +35,12 @@ def plot_data_distributions(data_loader):
     plt.savefig("data_distribution_X.png")
     plt.clf()
 
-    df = pd.DataFrame(Y, columns=data_loader.dataset.label_names)
+    if y.shape[1] == len(data_loader.dataset.label_names):
+        label_names = data_loader.dataset.label_names
+    else:
+        label_names = [str(i) for i in range(y.shape[1])]
+
+    df = pd.DataFrame(Y, columns=label_names)
 
     # Use seaborn's default style
     sns.set_style("whitegrid")
@@ -55,49 +56,58 @@ def main(args):
 
     device = get_device(args.device)
 
+    model_cfg = REGISTRY[args.model]
+    print(f"Selected model: {args.model}, which expects input type <{model_cfg['input_type']}> and is designed for task <{model_cfg['task_type']}>")
+
+    input_type = model_cfg["input_type"]
+    task_type = model_cfg["task_type"]
+
+    if task_type == "regression" and args.balance_classes:
+        raise ValueError("Balancing classes is not supported for regression tasks.")
+
     train_loader, val_loader, test_loader = create_dataloaders(
         args.data_config,
         batch_size=args.batch_size,
         shuffle=True,
         val_size=0.01,
-        target_type="regression",
+        balance_classes=args.balance_classes,
+        input_type=input_type,
+        target_type=task_type,
     )
 
     if args.plot_data:
         plot_data_distributions(train_loader)
 
-    if args.task == "classification":
-        out_dim = 3
-        criterion = torch.nn.CrossEntropyLoss()
-    elif args.task == "regression":
-        out_dim = 13
-        criterion = torch.nn.MSELoss()
-    else:
-        raise ValueError(f"Unknown task: {args.task}")
-
-    model = get_model(args.architecture, size=args.model_size, output_dim=out_dim, aggregation=args.aggregation)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
-    model.to(device)
+    model = model_cfg["class"]()
 
     print(model)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Number of trainable parameters: {n_params}")
+
+    if task_type == "classification":
+        criterion = torch.nn.BCEWithLogitsLoss()
+    elif task_type == "regression":
+        criterion = torch.nn.MSELoss()
+    else:
+        raise ValueError(f"Unknown task: {task_type}")
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    model.to(device)
 
     if args.compile_model:
         print("Compiling the model...")
         model.compile()
 
     model.train()
-    early_stopping = EarlyStopping(patience=2)
+    early_stopping = EarlyStopping(patience=5)
     best_val_loss = float('inf')
 
-    dir_name = f"logs/{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    dir_name = f"logs/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
     writer = SummaryWriter(logdir=f"{args.output}/{dir_name}", filename_suffix=".log")
     hparams = {
         "lr": args.learning_rate,
         "batch_size": args.batch_size,
-        "model": args.architecture,
-        "model_size": args.model_size,
+        "model": args.model,
         "n_params": n_params,
     }
 
@@ -112,35 +122,49 @@ def main(args):
         loss.backward()
         optimizer.step()
         running_loss += loss
-        running_n += inputs.size(0)
+        running_n += 1
         # running_loss += loss.item() * inputs.size(0)
         if step % 10 == 0:
-            pbar.set_postfix({"running loss": running_loss.item() / running_n, "loss": loss.item() / inputs.size(0)})
+            pbar.set_postfix({
+                "running loss": f"{running_loss.item() / running_n:.3f}",
+                "loss": f"{loss.item():.3f}"
+            })
             writer.add_scalar("Loss/train_batch", loss.item(), step)
 
         if step % args.eval_freq == 0:
             model.eval()
-            val_loss, val_n = 0.0, 0
-            running_loss, running_n = 0.0, 0
+            val_loss, val_acc, val_n = 0.0, 0.0, 0
             with torch.no_grad():
-                pbar2 = tqdm(val_loader, desc="Validation", leave=True)
+                pbar2 = tqdm(val_loader, desc="Validation", leave=True, unit="batch")
                 for inputs, labels in pbar2:
                     inputs = inputs.to(device)
                     labels = labels.to(device)
                     outputs = model(inputs)
                     loss = criterion(outputs, labels)
                     val_loss += loss
-                    val_n += inputs.size(0)
-                    pbar2.set_postfix({"running val loss": val_loss.item() / val_n, "val loss": loss.item() / inputs.size(0)})
-            writer.add_scalar("Loss/validation", val_loss, step)
+                    if task_type == "classification":
+                        preds = outputs.argmax(dim=1)  # Get the class with highest probability
+                        truth = labels.argmax(dim=1)  # Get the true class
+                        val_acc += (preds == truth).float().mean().item()
+                    val_n += 1
+                    pbar2.set_postfix({
+                        "running val loss": f"{val_loss.item() / val_n:.3f}",
+                        "running val acc": f"{val_acc / val_n:.3f}",
+                        "val loss": f"{loss.item():.3f}",
+                    })
+            writer.add_scalar("Loss/validation", val_loss.item() / val_n, step)
+            writer.add_scalar("Accuracy/validation", val_acc / val_n, step)
 
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
-                writer.add_hparams(hparams, {"val_loss": val_loss})
+                # writer.add_hparams(hparams, {"val_loss": val_loss})
                 torch.save(model, f"{args.output}/best_model.pth")
             # print(f"Step {step+1}/{len(train_loader)}, Validation Loss: {val_loss:.4f}")
             if early_stopping.step(val_loss):
                 print("Early stopping triggered.")
+                break
+            if args.steps is not None and step >= args.steps:
+                print(f"Reached the maximum number of steps: {args.steps}. Stopping training.")
                 break
             model.train()
 
@@ -153,12 +177,8 @@ if __name__ == "__main__":
         "--data-config", "-c", type=str, default="config/10783560/v3.yml"
     )
     parser.add_argument(
-        "--architecture", "-a", type=str, default="conv2d", choices=["conv2d", "conv3d"], help="Model architecture."
+        "--model", "-m", type=str, default="towards-model-2", choices=list(REGISTRY.keys()), help="Model architecture."
     )
-    parser.add_argument("--model-size", "-ms", type=int, default=4, 
-                        help="Model size parameter (increases number of parameters)")
-    parser.add_argument("--aggregation", "-ag", type=str, default="max", choices=["max", "mean", "flatten"],
-                        help="Aggregation method for Conv2D/Conv3D models")
 
     # Training parameters
     parser.add_argument("--seed", "-s", type=int, default=42, help="Random seed")
@@ -168,7 +188,7 @@ if __name__ == "__main__":
         "--num-iterations", "-ni", type=int, default=100_000, help="Number of training iterations"
     )
     parser.add_argument(
-        "--eval-freq", "-ef", type=int, default=2_000, 
+        "--eval-freq", "-ef", type=int, default=200, 
         help="Evaluation frequency. Evaluation is deactivated if set to 0."
     )
 
@@ -193,10 +213,12 @@ if __name__ == "__main__":
         "--compile-model", action='store_true', help="Compile the model with torch.compile"
     )
     parser.add_argument(
-        "--task", type=str, default="regression", choices=["regression", "classification"],
-        help="Regress all features or classify according to co-design paper"
+        "--steps", type=int, default=None, help="Number of training steps. If not set, uses full dataset."
     )
-
+    parser.add_argument(
+        "--balance-classes",  action='store_true', help="Balance the dataset classes during training (only for classification tasks)."
+    )
+    
     args = parser.parse_args()
 
     main(args)
