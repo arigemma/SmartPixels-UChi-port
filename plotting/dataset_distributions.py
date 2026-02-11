@@ -96,9 +96,10 @@ def load_pt_alpha_beta_from_config(cfg_path: Path) -> Tuple[np.ndarray, np.ndarr
 
 
 
-def step_hist(ax, data, bins, rng, label, linestyle, linewidth=2.0):
-    counts, edges = np.histogram(data, bins=bins, range=rng)
-    ax.step(edges[:-1], counts, where="post", label=label, linestyle=linestyle, linewidth=linewidth)
+def step_hist(ax, x, bins=120, rng=None, density=False, **kwargs):
+    hist, edges = np.histogram(x, bins=bins, range=rng, density=density)
+    ax.step(edges[:-1], hist, where="post", **kwargs)
+    return hist, edges
 
 
 def make_figure(
@@ -112,10 +113,11 @@ def make_figure(
     # Styles (mirror paper legend semantics)
     # (We rely on matplotlib's default color cycle; linestyle encodes dataset type.)
     style = {
-        "barrel_phys": dict(label="Physical p$_T$, barrel region", linestyle="-"),
-        "barrel_flat": dict(label="Flat p$_T$, barrel region", linestyle="--"),
-        "endcap_phys": dict(label="Physical p$_T$, endcap region", linestyle="-."),
-        "endcap_flat": dict(label="Flat p$_T$, endcap region", linestyle="-"),
+        "barrel_phys": dict(label="Physical p$_T$, barrel region", linestyle="-", color = "green"),
+        "barrel_flat": dict(label="Flat p$_T$, barrel region", linestyle="--", color = "orange"),
+        "endcap_flat": dict(label="Flat p$_T$, endcap region", linestyle="-", color = "red"),
+        "endcap_phys": dict(label="Physical p$_T$, endcap region", linestyle="-.", color = "blue"),
+
     }
     legend_kw = dict(
         fontsize=6,          
@@ -128,7 +130,7 @@ def make_figure(
     )
     # Panel 1: pT (linear y)
     ax = axes[0]
-    for key in ["barrel_phys", "barrel_flat", "endcap_phys", "endcap_flat"]:
+    for key in ["barrel_phys", "barrel_flat", "endcap_phys","endcap_flat",]:
         if key not in datasets:
             continue
         pt, _, _ = datasets[key]
@@ -141,7 +143,8 @@ def make_figure(
 
     # Panel 2: alpha (log y)
     ax = axes[1]
-    for key in ["barrel_phys", "barrel_flat", "endcap_phys", "endcap_flat"]:
+    for key in ["barrel_phys", "barrel_flat", "endcap_flat", "endcap_phys"]:
+
         if key not in datasets:
             continue
         _, a, _ = datasets[key]
