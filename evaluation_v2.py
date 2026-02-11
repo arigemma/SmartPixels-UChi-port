@@ -12,8 +12,12 @@ import joblib
 import yaml
 import matplotlib.pyplot as plt
 
+from tqdm import tqdm
+
 from dataloader import create_dataloaders
-from utils import get_device
+from utils import get_device, CreateFolder
+from models import registry
+import hist
 
 
 LABEL_ORDER = [
@@ -76,7 +80,7 @@ def roc_curve_binary(y_true: np.ndarray, score: np.ndarray) -> Tuple[np.ndarray,
 
 
 def auc_trapz(x: np.ndarray, y: np.ndarray) -> float:
-    return float(np.trapz(y, x))
+    return float(np.trapezoid(y, x))
 
 
 def savefig(fig, path: Path, dpi: int = 160):
@@ -201,7 +205,7 @@ def infer(model: torch.nn.Module, x_np: np.ndarray, device: torch.device, batch_
     model.eval()
     outs: List[np.ndarray] = []
     n = x_np.shape[0]
-    for i in range(0, n, batch_size):
+    for i in tqdm(range(0, n, batch_size)):
         xb = torch.from_numpy(x_np[i:i + batch_size]).to(device)
         out = model(xb).detach().cpu().numpy()
         outs.append(out)
@@ -215,7 +219,7 @@ def main():
     ap.add_argument("--model2", required=True)
     ap.add_argument("--model3", required=True)
     ap.add_argument("--device", choices=["cpu", "cuda", "mps"], default="cpu")
-    ap.add_argument("--outdir", default="results/eval_towards")
+    ap.add_argument("--outdir", action=CreateFolder, default="results/eval_towards")
     ap.add_argument("--pt-boundary", type=float, default=0.2)
     ap.add_argument("--thr-frac", type=float, default=0.01)
     ap.add_argument("--slice-index", type=int, default=19)
@@ -224,85 +228,8 @@ def main():
     ap.add_argument("--trigger-only-highpt", action="store_true")
     args = ap.parse_args()
 
-    outdir = Path(args.outdir)
-    outdir.mkdir(parents=True, exist_ok=True)
-
     device = get_device(args.device)
-
-    cfg = load_config(args.data_config)
-
-    scaler_y = None
-    if ("scalers" in cfg) and (cfg["scalers"] is not None) and (len(cfg["scalers"]) >= 2):
-        try:
-            scaler_y = joblib.load(cfg["scalers"][1])
-        except Exception:
-            scaler_y = None
-
-    _, _, test_loader = create_dataloaders(
-        config_path=args.data_config,
-        batch_size=1,
-        shuffle=False,
-        target_type="regression",
-        val_size=0.0,
-    )
-
-    label_names = getattr(test_loader.dataset, "label_names", None)
-
-    pt_idx = resolve_label_index("pt", label_names)
-    y0_idx = resolve_label_index("y-local", label_names)
-
-    test_image_paths = [cfg["root"] + t[0] for t in cfg["test"]]
-    test_label_paths = [cfg["root"] + t[1] for t in cfg["test"]]
-
-    X1_all: List[np.ndarray] = []
-    X2_all: List[np.ndarray] = []
-    X3_all: List[np.ndarray] = []
-    pt_all: List[np.ndarray] = []
-
-    for ip, lp in zip(test_image_paths, test_label_paths):
-        recon_flat = load_recon_flat(ip, nrows=args.max_events_per_file)
-        y_raw, _ = load_labels(lp, nrows=args.max_events_per_file)
-
-        y = y_raw
-        if scaler_y is not None:
-            try:
-                y = scaler_y.inverse_transform(y_raw)
-            except Exception:
-                y = y_raw
-
-        f1, f2, f3 = make_features(
-            recon_flat=recon_flat,
-            labels=y,
-            label_names=label_names,
-            pt_idx=pt_idx,
-            y0_idx=y0_idx,
-            thr_frac=args.thr_frac,
-            slice_index_4000ps=args.slice_index,
-        )
-
-        pt_signed = y[:, pt_idx].astype(np.float32, copy=False)
-
-        X1_all.append(f1)
-        X2_all.append(f2)
-        X3_all.append(f3)
-        pt_all.append(pt_signed)
-
-    X1 = np.concatenate(X1_all, axis=0)
-    X2 = np.concatenate(X2_all, axis=0)
-    X3 = np.concatenate(X3_all, axis=0)
-    pt_true_signed = np.concatenate(pt_all, axis=0)
-
-    true_class = true_class_from_signed_pt(pt_true_signed, pt_boundary=args.pt_boundary)
-    high_true = (true_class == 2).astype(np.int32)
-
-    if args.trigger_only_highpt:
-        keep = np.abs(pt_true_signed) > 2.0
-        X1 = X1[keep]
-        X2 = X2[keep]
-        X3 = X3[keep]
-        pt_true_signed = pt_true_signed[keep]
-        true_class = true_class[keep]
-        high_true = high_true[keep]
+    outdir = Path(args.outdir)
 
     def load_model(path: str) -> torch.nn.Module:
         return torch.load(path, map_location=device, weights_only=False)
@@ -311,29 +238,69 @@ def main():
     m2 = load_model(args.model2).to(device)
     m3 = load_model(args.model3).to(device)
 
-    logits1 = infer(m1, X1, device=device, batch_size=args.batch_size)
-    logits2 = infer(m2, X2, device=device, batch_size=args.batch_size)
-    logits3 = infer(m3, X3, device=device, batch_size=args.batch_size)
+    data = {}
+    for model in [m1, m2, m3]:
 
-    probs1 = logits1 if (logits1.ndim == 2 and logits1.shape[1] == 3) else softmax_np(logits1)
-    probs2 = logits2 if (logits2.ndim == 2 and logits2.shape[1] == 3) else softmax_np(logits2)
-    probs3 = logits3 if (logits3.ndim == 2 and logits3.shape[1] == 3) else softmax_np(logits3)
+        model_name, model_cfg = registry.class_to_config(type(model))
 
-    pred1 = np.argmax(probs1, axis=1).astype(np.int64)
-    pred2 = np.argmax(probs2, axis=1).astype(np.int64)
-    pred3 = np.argmax(probs3, axis=1).astype(np.int64)
+        input_type = model_cfg["input_type"]
+
+        print(f"\n[INFO] Evaluating {model_name} with input_type={input_type}...")
+
+        _, _, test_loader = create_dataloaders(
+            config_path=args.data_config,
+            batch_size=128,
+            shuffle=False,
+            input_type=input_type,
+            target_type="raw",  # return raw labels for most flexibility in evaluation
+            balance_classes=False,  # no balancing for evaluation
+            val_size=0.0,
+        )
+
+        label_names = test_loader.dataset.label_names
+
+        pt_idx = label_names.index("pt")
+        y0_idx = label_names.index("y-entry")
+
+        true_pts, logits = [], []
+        with torch.no_grad():
+            for i, (x, y) in tqdm(enumerate(test_loader)):
+                x = x.to(device)
+                logits.append(model(x))  # logits
+                true_pts.append(y[:, pt_idx])
+                # preds.append(pred.argmax(dim=1))  # Get the class with highest probability
+                if i >= 100:  # Limit to first 100 batches for quick evaluation
+                    break
+
+        true_pts = np.concatenate(true_pts, axis=0)
+        logits = np.concatenate(logits, axis=0)
+        probs = softmax_np(logits)
+        pred_classes = np.argmax(probs, axis=1).astype(np.int8)
+        true_classes = true_class_from_signed_pt(true_pts, pt_boundary=args.pt_boundary)
+        high_true = (true_classes == 2).astype(np.int32)
+
+        data[model_name] = {
+            "true_pts": true_pts,
+            "logits": logits,
+            "probs": probs,
+            "pred_classes": pred_classes,
+            "true_classes": true_classes,
+            "high_true": high_true,
+        }
 
     p_high = {
-        "towards-model-1": probs1[:, 2].astype(np.float32),
-        "towards-model-2": probs2[:, 2].astype(np.float32),
-        "towards-model-3": probs3[:, 2].astype(np.float32),
+        "towards-model-1": data["towards-model-1"]["probs"][:, 2].astype(np.float32),
+        "towards-model-2": data["towards-model-2"]["probs"][:, 2].astype(np.float32),
+        "towards-model-3": data["towards-model-3"]["probs"][:, 2].astype(np.float32),
     }
 
     cm_by_model = {
-        "towards-model-1": confusion_matrix_3(true_class, pred1),
-        "towards-model-2": confusion_matrix_3(true_class, pred2),
-        "towards-model-3": confusion_matrix_3(true_class, pred3),
+        "towards-model-1": confusion_matrix_3(data["towards-model-1"]["true_classes"], data["towards-model-1"]["pred_classes"]),
+        "towards-model-2": confusion_matrix_3(data["towards-model-2"]["true_classes"], data["towards-model-2"]["pred_classes"]),
+        "towards-model-3": confusion_matrix_3(data["towards-model-3"]["true_classes"], data["towards-model-3"]["pred_classes"]),
     }
+
+
 
     rocs = {}
     for name, ph in p_high.items():
@@ -349,9 +316,103 @@ def main():
 
     plot_confusion(cm_by_model, outdir / "confusion_matrices.png")
     plot_roc(rocs, outdir / "roc_highpt.png")
-    plot_prob_vs_pt(pt_true_signed, p_high, outdir / "pt_probability_vs_true_pt.png", nbins=40)
+    plot_prob_vs_pt(true_pts, p_high, outdir / "pt_probability_vs_true_pt.png", nbins=40)
 
-    print("[DONE] Wrote outputs to:", str(outdir))
+    print("[DONE] Wrote outputs to:", str(outdir))        
+
+    # for ip, lp in zip(test_image_paths, test_label_paths):
+    #     recon_flat = load_recon_flat(ip, nrows=args.max_events_per_file)
+    #     y_raw, _ = load_labels(lp, nrows=args.max_events_per_file)
+
+    #     y = y_raw
+    #     if scaler_y is not None:
+    #         try:
+    #             y = scaler_y.inverse_transform(y_raw)
+    #         except Exception:
+    #             y = y_raw
+
+    #     f1, f2, f3 = make_features(
+    #         recon_flat=recon_flat,
+    #         labels=y,
+    #         label_names=label_names,
+    #         pt_idx=pt_idx,
+    #         y0_idx=y0_idx,
+    #         thr_frac=args.thr_frac,
+    #         slice_index_4000ps=args.slice_index,
+    #     )
+
+    #     pt_signed = y[:, pt_idx].astype(np.float32, copy=False)
+
+    #     X1_all.append(f1)
+    #     X2_all.append(f2)
+    #     X3_all.append(f3)
+    #     pt_all.append(pt_signed)
+
+    # X1 = np.concatenate(X1_all, axis=0)
+    # X2 = np.concatenate(X2_all, axis=0)
+    # X3 = np.concatenate(X3_all, axis=0)
+    # pt_true_signed = np.concatenate(pt_all, axis=0)
+
+    # true_class = true_class_from_signed_pt(pt_true_signed, pt_boundary=args.pt_boundary)
+    # high_true = (true_class == 2).astype(np.int32)
+
+    # if args.trigger_only_highpt:
+    #     keep = np.abs(pt_true_signed) > 2.0
+    #     X1 = X1[keep]
+    #     X2 = X2[keep]
+    #     X3 = X3[keep]
+    #     pt_true_signed = pt_true_signed[keep]
+    #     true_class = true_class[keep]
+    #     high_true = high_true[keep]
+
+    # def load_model(path: str) -> torch.nn.Module:
+    #     return torch.load(path, map_location=device, weights_only=False)
+
+    # m1 = load_model(args.model1).to(device)
+    # m2 = load_model(args.model2).to(device)
+    # m3 = load_model(args.model3).to(device)
+
+    # logits1 = infer(m1, X1, device=device, batch_size=args.batch_size)
+    # logits2 = infer(m2, X2, device=device, batch_size=args.batch_size)
+    # logits3 = infer(m3, X3, device=device, batch_size=args.batch_size)
+
+    # probs1 = logits1 if (logits1.ndim == 2 and logits1.shape[1] == 3) else softmax_np(logits1)
+    # probs2 = logits2 if (logits2.ndim == 2 and logits2.shape[1] == 3) else softmax_np(logits2)
+    # probs3 = logits3 if (logits3.ndim == 2 and logits3.shape[1] == 3) else softmax_np(logits3)
+
+    # pred1 = np.argmax(probs1, axis=1).astype(np.int64)
+    # pred2 = np.argmax(probs2, axis=1).astype(np.int64)
+    # pred3 = np.argmax(probs3, axis=1).astype(np.int64)
+
+    # p_high = {
+    #     "towards-model-1": probs1[:, 2].astype(np.float32),
+    #     "towards-model-2": probs2[:, 2].astype(np.float32),
+    #     "towards-model-3": probs3[:, 2].astype(np.float32),
+    # }
+
+    # cm_by_model = {
+    #     "towards-model-1": confusion_matrix_3(true_class, pred1),
+    #     "towards-model-2": confusion_matrix_3(true_class, pred2),
+    #     "towards-model-3": confusion_matrix_3(true_class, pred3),
+    # }
+
+    # rocs = {}
+    # for name, ph in p_high.items():
+    #     fpr, tpr = roc_curve_binary(high_true, ph)
+    #     auc = auc_trapz(fpr, tpr)
+    #     rocs[name] = (fpr, tpr, auc)
+
+    # for name, cm in cm_by_model.items():
+    #     acc = float(np.trace(cm) / max(cm.sum(), 1))
+    #     print(f"[METRIC] {name} accuracy: {acc:.6f}")
+    # for name, (_, _, auc) in rocs.items():
+    #     print(f"[METRIC] {name} high-vs-low AUC: {auc:.6f}")
+
+    # plot_confusion(cm_by_model, outdir / "confusion_matrices.png")
+    # plot_roc(rocs, outdir / "roc_highpt.png")
+    # plot_prob_vs_pt(pt_true_signed, p_high, outdir / "pt_probability_vs_true_pt.png", nbins=40)
+
+    # print("[DONE] Wrote outputs to:", str(outdir))
 
 
 if __name__ == "__main__":
