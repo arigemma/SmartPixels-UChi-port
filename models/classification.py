@@ -1,4 +1,5 @@
 import torch
+from torchlogix.layers import LogicConv2d, LogicDense, GroupSum, FixedBinarization
 from .registry import register
 
 
@@ -63,7 +64,66 @@ class TowardsModel3(torch.nn.Module):
         x = self.fc2(x)
         
         return self.softmax(x)
+
+
+@register("lgn-dense-2", input_type="y-profile", task_type="classification")
+class DenseLGN2(torch.nn.Sequential):
+    def __init__(self, thresholds):
+        super(DenseLGN2, self).__init__()
+        n_bits = 5
+        print(f"Using {n_bits} bits for binarization in DenseLGN2")
+        layers = [
+            FixedBinarization(thresholds=thresholds),
+            LogicDense(in_dim=n_bits*14, out_dim=3000),
+            LogicDense(in_dim=3000, out_dim=3000),
+            LogicDense(in_dim=3000, out_dim=3000),
+        ]
+        super(DenseLGN2, self).__init__(*layers, GroupSum(3, tau=1.0))
+
+
+@register("lgn-conv-3", input_type="y-profile-timing", task_type="classification")
+class ConvLGN3(torch.nn.Module):
+
+    def __init__(self, thresholds):
+        device = "cpu"
+        super(ConvLGN3, self).__init__()
+        self.n_bits = 5
+        self.binarization = FixedBinarization(thresholds=thresholds, device=device)
+        self.conv1 = LogicConv2d(in_dim=(13, 8), channels=self.n_bits, num_kernels=64, receptive_field_size=3, tree_depth=2, device=device)
+        self.conv2 = LogicConv2d(in_dim=(11, 6), channels=64, num_kernels=128, receptive_field_size=3, tree_depth=2, device=device)
+        self.fc1 = LogicDense(in_dim=128 * 9 * 4 + 5, out_dim=3000, device=device)
+        self.fc2 = LogicDense(in_dim=3000, out_dim=3000, device=device)
+        self.fc3 = LogicDense(in_dim=3000, out_dim=3000, device=device)
+        self.group_sum = GroupSum(3, tau=1.0, device=device)
+
+
+    def forward(self, x):
+        assert x.shape == (x.shape[0], 105), f"Expected input shape (batch_size, 105), but got {x.shape}"
     
+        # print(f"Input shape: {x.shape}")
+        x = self.binarization(x)
+        # print(f"after binarization: {x.shape}")
+
+        y0 = x[:, 0:self.n_bits]
+        profile = x[:, self.n_bits:].view(-1, self.n_bits, 13, 8)
+
+        # print(f"shape before conv1: {profile.shape}")
+
+        x = self.conv1(profile)
+        x = self.conv2(x)
+
+        x = x.view(x.size(0), -1)
+        x = torch.cat((y0, x), dim=1)
+
+        x = self.fc1(x)
+        x = self.fc2(x)
+        x = self.fc3(x)
+
+        # print(f"before group sum: {x.shape}")
+        # print(x)
+
+        return self.group_sum(x)
+
 
 # @register("towards-model-4", input_type="y-profile-timing", task_type="classification")    
 
