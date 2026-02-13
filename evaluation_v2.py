@@ -189,9 +189,7 @@ def plot_acceptance_vs_pt(pt_true_signed: np.ndarray, pred_dict: dict[str, np.nd
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-config", required=True)
-    ap.add_argument("--model1", required=True)
-    ap.add_argument("--model2", required=True)
-    ap.add_argument("--model3", required=True)
+    ap.add_argument("--model-paths", nargs='+', help="paths to the trained models")
     ap.add_argument("--device", choices=["cpu", "cuda", "mps"], default="cpu")
     ap.add_argument("--outdir", action=CreateFolder, default="results/eval_towards")
     ap.add_argument("--pt-boundary", type=float, default=2.0)
@@ -204,12 +202,13 @@ def main():
     def load_model(path: str) -> torch.nn.Module:
         return torch.load(path, map_location=device, weights_only=False)
 
-    m1 = load_model(args.model1).to(device)
-    m2 = load_model(args.model2).to(device)
-    m3 = load_model(args.model3).to(device)
-
     data = {}
-    for model in [m1, m2, m3]:
+    # for model in [m1, m2, m3]:
+    for model_path in args.model_paths:
+
+        print(f"\n[INFO] Loading model from {model_path}...")
+
+        model = load_model(model_path).to(device)
 
         model_name, model_cfg = registry.class_to_config(type(model))
 
@@ -236,11 +235,12 @@ def main():
         true_pts, logits = [], []
         with torch.no_grad():
             for i, (x, y) in tqdm(enumerate(test_loader)):
+            # for x, y in tqdm(test_loader):
                 x = x.to(device)
                 logits.append(model(x))  # logits
                 true_pts.append(y[:, pt_idx])
                 # preds.append(pred.argmax(dim=1))  # Get the class with highest probability
-                if i >= 100:  # Limit to first 100 batches for quick evaluation
+                if i >= 1000:  # Limit to first 100 batches for quick evaluation
                     break
 
         true_pts = np.concatenate(true_pts, axis=0)
