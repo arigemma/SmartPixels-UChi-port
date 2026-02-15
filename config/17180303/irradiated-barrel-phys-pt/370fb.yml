@@ -1,10 +1,10 @@
 root: /scratch/gpfs/IOJALVO/lg0508/SmartPixels/17180303/dataset_8s/dataset_8s_50x12P5_370fb/
 train:
-# - [recon3D_d16401.parquet, labels_d16401.parquet]
-# - [recon3D_d16402.parquet, labels_d16402.parquet]
-# - [recon3D_d16403.parquet, labels_d16403.parquet]
-# - [recon3D_d16404.parquet, labels_d16404.parquet]
-# - [recon3D_d16405.parquet, labels_d16405.parquet]
+- [recon3D_d16401.parquet, labels_d16401.parquet]
+- [recon3D_d16402.parquet, labels_d16402.parquet]
+- [recon3D_d16403.parquet, labels_d16403.parquet]
+- [recon3D_d16404.parquet, labels_d16404.parquet]
+- [recon3D_d16405.parquet, labels_d16405.parquet]
 - [recon3D_d16406.parquet, labels_d16406.parquet]
 - [recon3D_d16407.parquet, labels_d16407.parquet]
 - [recon3D_d16408.parquet, labels_d16408.parquet]
@@ -83,3 +83,8 @@ test:
 - [recon3D_d16480.parquet, labels_d16480.parquet]
 - [recon3D_d16481.parquet, labels_d16481.parquet]
 - [recon3D_d16482.parquet, labels_d16482.parquet]
+scaling:
+  mean_X: [0.336098194869472]
+  std_X: [2.072348605069151]
+  mean_y: [-0.9034536889404695, -0.04592037580025603, 100.0, 0.044096356914212424, -0.00020168529929577033, -2.1289188195422537, 40712.99715909091, -0.00016534939180540983, 0.01995882682458395, -0.015305334081370428, 7.595958548878325e-05, -0.04971835507469527, -0.13818698487193898]
+  std_y: [252.5176593236758, 13.307925748246381, 0.0, 11.052024763316888, 0.3446878855363008, 0.6488503807565766, 23598.169860331724, 4.684926548122567, 2.252046524990442, 4.9803424187180925, 0.15643623389482805, 10.802484361880177, 43.19402363739293]
