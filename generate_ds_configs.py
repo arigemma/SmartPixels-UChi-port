@@ -14,7 +14,7 @@ def get_mean_and_std_for_x_and_y(image_path, label_path):
         [label_path],
         shuffle=False,
         # important: pre-transform with symlog
-        transform=SymLogTransform(),
+        transform=lambda x, y: SymLogTransform()(x),
     )
 
     X, Y = [], []
