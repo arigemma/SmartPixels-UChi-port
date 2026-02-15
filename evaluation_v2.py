@@ -17,7 +17,7 @@ from tqdm import tqdm
 from dataloader import create_dataloaders
 from utils import get_device, CreateFolder
 from models import registry
-import hist
+# import hist
 
 
 LABEL_ORDER = [
@@ -213,6 +213,7 @@ def main():
         model_name, model_cfg = registry.class_to_config(type(model))
 
         input_type = model_cfg["input_type"]
+        task_type = model_cfg["task_type"]
 
         print(f"\n[INFO] Evaluating {model_name} with input_type={input_type}...")
 
@@ -236,15 +237,16 @@ def main():
         with torch.no_grad():
             for i, (x, y) in tqdm(enumerate(test_loader)):
             # for x, y in tqdm(test_loader):
-                x = x.to(device)
-                logits.append(model(x))  # logits
-                true_pts.append(y[:, pt_idx])
+                out = model(x)
+                logits.append(out.detach().cpu().numpy())
+                true_pts.append(y[:, pt_idx].detach().cpu().numpy())
                 # preds.append(pred.argmax(dim=1))  # Get the class with highest probability
                 if i >= 1000:  # Limit to first 100 batches for quick evaluation
                     break
 
         true_pts = np.concatenate(true_pts, axis=0)
         logits = np.concatenate(logits, axis=0)
+        #probs = softmax_np(logits)
         probs = softmax_np(logits)
         pred_classes = np.argmax(probs, axis=1).astype(np.int8)
         true_classes = true_class_from_signed_pt(true_pts, pt_boundary=args.pt_boundary)
@@ -259,17 +261,11 @@ def main():
             "high_true": high_true,
         }
 
-    p_high = {
-        "towards-model-1": data["towards-model-1"]["probs"][:, 2].astype(np.float32),
-        "towards-model-2": data["towards-model-2"]["probs"][:, 2].astype(np.float32),
-        "towards-model-3": data["towards-model-3"]["probs"][:, 2].astype(np.float32),
-    }
+    p_high = {name: d["probs"][:, 2].astype(np.float32) for name, d in data.items()}
 
-    cm_by_model = {
-        "towards-model-1": confusion_matrix_3(data["towards-model-1"]["true_classes"], data["towards-model-1"]["pred_classes"]),
-        "towards-model-2": confusion_matrix_3(data["towards-model-2"]["true_classes"], data["towards-model-2"]["pred_classes"]),
-        "towards-model-3": confusion_matrix_3(data["towards-model-3"]["true_classes"], data["towards-model-3"]["pred_classes"]),
-    }
+
+    cm_by_model = {name: confusion_matrix_3(d["true_classes"], d["pred_classes"]) for name, d in data.items()}
+
 
     rocs = {}
     for name, ph in p_high.items():

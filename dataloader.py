@@ -55,7 +55,7 @@ def get_transform(
 
         # --- preprocess y ---
         y_scaled = scale_y(raw_y)
-        y0 = y_scaled[1]  # second feature
+        y0 = y_scaled[7]  # y-local
 
         # --- build features ---
         if input_type == "full":
@@ -96,6 +96,7 @@ def get_transform(
 def get_target_transform(
     target_type: str = "regression",  # "regression" or "classification"
     scale_dict: Optional[dict] = None,
+    label_format: str = "onehot", # "index"
 ) -> Callable[[Any], torch.Tensor]:
     """
     The transform that builds the targets.
@@ -107,23 +108,42 @@ def get_target_transform(
         scale_y = Identity()
 
     def target_transform(y):
+        if target_type == "raw":
+            return torch.as_tensor(y, dtype=torch.float32)
         if target_type == "classification":
             # extract pt (9th feature)
             pt = y[..., 8]  # preserve batch dimension if present.
 
-            label = np.zeros((*pt.shape, 3))  # Shape: (3,) for single sample, (batch_size, 3) for batch
 
-            label[..., 0] = (0 <= pt) & (pt <= 0.2)
-            label[..., 1] = (-0.2 <= pt) & (pt < 0.)
-            label[..., 2] = (pt < -0.2) | (pt > 0.2)
-            
-            y = label
+            c0 = (0 <= pt) & (pt <= 0.2)
+            c1 = (-0.2 <= pt) & (pt < 0.)
+            c2 = (pt < -0.2) | (pt > 0.2)
+
+            if label_format == "index":
+                idx = np.empty(pt.shape, dtype=np.int64)
+                idx[c0] = 0
+                idx[c1] = 1
+                idx[c2] = 2
+                y_out = torch.as_tensor(idx, dtype=torch.long)
+
+            elif label_format == "onehot":
+                label = np.zeros((*pt.shape, 3))  # Shape: (3,) for single sample, (batch_size, 3) for batch
+
+                label[..., 0] = (0 <= pt) & (pt <= 0.2)
+                label[..., 1] = (-0.2 <= pt) & (pt < 0.)
+                label[..., 2] = (pt < -0.2) | (pt > 0.2)
+                
+                y_out = torch.as_tensor(label, dtype=torch.float32)
+
+            else:
+                raise ValueError(f"Unknown label format, must be 'onehot' or 'index'")
         elif target_type == "regression":
             y = scale_y(y)
+            return torch.as_tensor(y, dtype=torch.float32)
         else:
             raise ValueError(f"Unknown target_type: {target_type}")
-        y = torch.as_tensor(y, dtype=torch.float32)            
-        return y
+        return y_out
+                    
 
     print(f"Built target transform with target_type={target_type}, scaling={'enabled' if scale_dict else 'disabled'}")
 
@@ -138,6 +158,7 @@ def create_dataloaders(
     target_type: str = "regression",  # "regression" or "classification"
     balance_classes: bool = False,
     val_size: float = 0.2,
+    label_format: str = "onehot" # "index"
 ) -> Tuple[DataLoader, DataLoader, DataLoader]:
     
     config_dict = yaml.safe_load(open(config_path, "r"))
@@ -155,7 +176,7 @@ def create_dataloaders(
     # sym log on x in every case
     scale_dict = config_dict.get("scaling", None)
     transform = get_transform(input_type, scale_dict)
-    target_transform = get_target_transform(target_type, scale_dict)
+    target_transform = get_target_transform(target_type, scale_dict, label_format)
 
     # Train-test split of indices
     if val_size > 0.0:
