@@ -72,6 +72,7 @@ class TowardsModel3(torch.nn.Module):
 @register("lgn-dense-1", input_type="y-size", task_type="classification")
 class DenseLGN1(torch.nn.Sequential):
     n_bits = 5
+    k = 256  # scales the model size
 
     def __init__(self, thresholds):
         super(DenseLGN1, self).__init__()
@@ -81,27 +82,231 @@ class DenseLGN1(torch.nn.Sequential):
         }
         layers = [
             LearnableBinarization(thresholds=thresholds, sampling_temperature=0.001, softplus_temperature=0.001),
-            LogicDense(in_dim=self.n_bits*2, out_dim=600, parametrization_kwargs=param_kwargs),
-            LogicDense(in_dim=600, out_dim=600, parametrization_kwargs=param_kwargs),
-            LogicDense(in_dim=600, out_dim=600, parametrization_kwargs=param_kwargs),
+            LogicDense(in_dim=self.n_bits*2, out_dim=3*self.k, parametrization_kwargs=param_kwargs),
+            LogicDense(in_dim=3*self.k, out_dim=3*self.k, parametrization_kwargs=param_kwargs),
+            LogicDense(in_dim=3*self.k, out_dim=3*self.k, parametrization_kwargs=param_kwargs),
         ]
         super(DenseLGN1, self).__init__(*layers, GroupSum(3, tau=1.0))
+
+
+@register("lgn-dense-1-small-5", input_type="y-size", task_type="classification")
+class DenseLGN1Small5(DenseLGN1):
+    n_bits = 5
+    k = 128
+
+@register("lgn-dense-1-medium-5", input_type="y-size", task_type="classification")
+class DenseLGN1Medium5(DenseLGN1):
+    n_bits = 5
+    k = 256
+
+@register("lgn-dense-1-large-5", input_type="y-size", task_type="classification")
+class DenseLGN1Large5(DenseLGN1):
+    n_bits = 5
+    k = 512
+
+@register("lgn-dense-1-huge-5", input_type="y-size", task_type="classification")
+class DenseLGN1Huge5(DenseLGN1):
+    n_bits = 5
+    k = 1024
+
+@register("lgn-dense-1-small-2", input_type="y-size", task_type="classification")
+class DenseLGN1Small2(DenseLGN1):
+    n_bits = 2
+    k = 128
+
+@register("lgn-dense-1-medium-2", input_type="y-size", task_type="classification")
+class DenseLGN1Medium2(DenseLGN1):
+    n_bits = 2
+    k = 256
+
+@register("lgn-dense-1-large-2", input_type="y-size", task_type="classification")
+class DenseLGN1Large2(DenseLGN1):
+    n_bits = 2
+    k = 512
+
+@register("lgn-dense-1-huge-2", input_type="y-size", task_type="classification")
+class DenseLGN1Huge2(DenseLGN1):
+    n_bits = 2
+    k = 1024
+
+@register("lgn-dense-1-small-10", input_type="y-size", task_type="classification")
+class DenseLGN1Small10(DenseLGN1):
+    n_bits = 10
+    k = 128
+
+@register("lgn-dense-1-medium-10", input_type="y-size", task_type="classification")
+class DenseLGN1Medium10(DenseLGN1):
+    n_bits = 10
+    k = 256
+
+@register("lgn-dense-1-large-10", input_type="y-size", task_type="classification")
+class DenseLGN1Large10(DenseLGN1):
+    n_bits = 10
+    k = 512
+
+@register("lgn-dense-1-huge-10", input_type="y-size", task_type="classification")
+class DenseLGN1Huge10(DenseLGN1):
+    n_bits = 10
+    k = 1024
+
+@register("lgn-dense-1-small-20", input_type="y-size", task_type="classification")
+class DenseLGN1Small20(DenseLGN1):
+    n_bits = 20
+    k = 128
+
+@register("lgn-dense-1-medium-20", input_type="y-size", task_type="classification")
+class DenseLGN1Medium20(DenseLGN1):
+    n_bits = 20
+    k = 256
+
+@register("lgn-dense-1-large-20", input_type="y-size", task_type="classification")
+class DenseLGN1Large20(DenseLGN1):
+    n_bits = 20
+    k = 512
+
+@register("lgn-dense-1-huge-20", input_type="y-size", task_type="classification")
+class DenseLGN1Huge20(DenseLGN1):
+    n_bits = 20
+    k = 1024
+
+@register("lgn-dense-1-small-50", input_type="y-size", task_type="classification")
+class DenseLGN1Small50(DenseLGN1):
+    n_bits = 50
+    k = 128
+
+@register("lgn-dense-1-medium-50", input_type="y-size", task_type="classification")
+class DenseLGN1Medium50(DenseLGN1):
+    n_bits = 50
+    k = 256
+
+@register("lgn-dense-1-large-50", input_type="y-size", task_type="classification")
+class DenseLGN1Large50(DenseLGN1):
+    n_bits = 50
+    k = 512
+
+@register("lgn-dense-1-huge-50", input_type="y-size", task_type="classification")
+class DenseLGN1Huge50(DenseLGN1):
+    n_bits = 50
+    k = 1024
 
 
 @register("lgn-dense-2", input_type="y-profile", task_type="classification")
 class DenseLGN2(torch.nn.Sequential):
     n_bits = 5
+    k = 1024
 
     def __init__(self, thresholds):
         super(DenseLGN2, self).__init__()
         print(f"Using {self.n_bits} bits for binarization in DenseLGN2")
         layers = [
             FixedBinarization(thresholds=thresholds),
-            LogicDense(in_dim=self.n_bits*14, out_dim=3000),
-            LogicDense(in_dim=3000, out_dim=3000),
-            LogicDense(in_dim=3000, out_dim=3000),
+            LogicDense(in_dim=self.n_bits*14, out_dim=3*self.k),
+            LogicDense(in_dim=3*self.k, out_dim=3*self.k),
+            LogicDense(in_dim=3*self.k, out_dim=3*self.k),
         ]
         super(DenseLGN2, self).__init__(*layers, GroupSum(3, tau=10.0))
+
+@register("lgn-dense-2-small-5", input_type="y-profile", task_type="classification")
+class DenseLGN2Small5(DenseLGN2):
+    n_bits = 5
+    k = 512
+
+@register("lgn-dense-2-medium-5", input_type="y-profile", task_type="classification")
+class DenseLGN2Medium5(DenseLGN2):
+    n_bits = 5
+    k = 1024
+
+@register("lgn-dense-2-large-5", input_type="y-profile", task_type="classification")
+class DenseLGN2Large5(DenseLGN2):
+    n_bits = 5
+    k = 2048
+
+@register("lgn-dense-2-huge-5", input_type="y-profile", task_type="classification")
+class DenseLGN2Huge5(DenseLGN2):
+    n_bits = 5
+    k = 4096
+
+@register("lgn-dense-2-small-2", input_type="y-profile", task_type="classification")
+class DenseLGN2Small2(DenseLGN2):
+    n_bits = 2
+    k = 512
+
+@register("lgn-dense-2-medium-2", input_type="y-profile", task_type="classification")
+class DenseLGN2Medium2(DenseLGN2):
+    n_bits = 2
+    k = 1024
+
+@register("lgn-dense-2-large-2", input_type="y-profile", task_type="classification")
+class DenseLGN2Large2(DenseLGN2):
+    n_bits = 2
+    k = 2048
+
+@register("lgn-dense-2-huge-2", input_type="y-profile", task_type="classification")
+class DenseLGN2Huge2(DenseLGN2):
+    n_bits = 2
+    k = 4096
+
+@register("lgn-dense-2-small-10", input_type="y-profile", task_type="classification")
+class DenseLGN2Small10(DenseLGN2):
+    n_bits = 10
+    k = 512
+
+@register("lgn-dense-2-medium-10", input_type="y-profile", task_type="classification")
+class DenseLGN2Medium10(DenseLGN2):
+    n_bits = 10
+    k = 1024
+
+@register("lgn-dense-2-large-10", input_type="y-profile", task_type="classification")
+class DenseLGN2Large10(DenseLGN2):
+    n_bits = 10
+    k = 2048
+
+@register("lgn-dense-2-huge-10", input_type="y-profile", task_type="classification")
+class DenseLGN2Huge10(DenseLGN2):
+    n_bits = 10
+    k = 4096
+
+
+@register("lgn-dense-2-small-20", input_type="y-profile", task_type="classification")
+class DenseLGN2Small20(DenseLGN2):
+    n_bits = 20
+    k = 512
+
+@register("lgn-dense-2-medium-20", input_type="y-profile", task_type="classification")
+class DenseLGN2Medium20(DenseLGN2):
+    n_bits = 20
+    k = 1024
+
+@register("lgn-dense-2-large-20", input_type="y-profile", task_type="classification")
+class DenseLGN2Large20(DenseLGN2):
+    n_bits = 20
+    k = 2048
+
+@register("lgn-dense-2-huge-20", input_type="y-profile", task_type="classification")
+class DenseLGN2Huge20(DenseLGN2):
+    n_bits = 20
+    k = 4096
+
+@register("lgn-dense-2-small-50", input_type="y-profile", task_type="classification")
+class DenseLGN2Small50(DenseLGN2):
+    n_bits = 50
+    k = 512
+
+@register("lgn-dense-2-medium-50", input_type="y-profile", task_type="classification")
+class DenseLGN2Medium50(DenseLGN2):
+    n_bits = 50
+    k = 1024
+
+@register("lgn-dense-2-large-50", input_type="y-profile", task_type="classification")
+class DenseLGN2Large50(DenseLGN2):
+    n_bits = 50
+    k = 2048
+
+@register("lgn-dense-2-huge-50", input_type="y-profile", task_type="classification")
+class DenseLGN2Huge50(DenseLGN2):
+    n_bits = 50
+    k = 4096
+
 
 
 @register("lgn-conv-3", input_type="y-profile-timing", task_type="classification")

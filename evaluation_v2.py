@@ -248,8 +248,8 @@ def main():
                 logits.append(model(x))  # logits
                 true_pts.append(y[:, pt_idx])
                 # preds.append(pred.argmax(dim=1))  # Get the class with highest probability
-                # if i >= 5000:  # Limit to first 100 batches for quick evaluation
-                #     break
+                if i >= 1000:  # Limit to first 100 batches for quick evaluation
+                    break
 
         true_pts = np.concatenate(true_pts, axis=0)
         # logits = np.concatenate(logits, axis=0)

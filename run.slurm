@@ -6,17 +6,51 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16G
-#SBATCH --array=0-5   # number of runs - 1
+#SBATCH --array=0-11   # number of runs - 1
 
 # Define argument sets
 ARGS=(
-  # "-m towards-model-3 -o results/SLURM/2026_02_16/10783560/v3/towards-model-3/cross_entropy -lf cross_entropy"
-  "-m towards-model-3 -o results/SLURM/2026_02_16/10783560/v3/towards-model-3/bce2 -lf bce"
-  # "-m towards-model-2 -o results/SLURM/2026_02_16/10783560/v3/towards-model-2/cross_entropy -lf cross_entropy"
-  "-m towards-model-2 -o results/SLURM/2026_02_16/10783560/v3/towards-model-2/bce2 -lf bce"
-  # "-m towards-model-1 -o results/SLURM/2026_02_16/10783560/v3/towards-model-1/cross_entropy -lf cross_entropy"
-  "-m towards-model-1 -o results/SLURM/2026_02_16/10783560/v3/towards-model-1/bce2 -lf bce"
+  # "-m lgn-dense-1-small-2 -o results/SLURM/2026_02_17/lgn-dense-1-small-2"
+  # "-m lgn-dense-1-medium-2 -o results/SLURM/2026_02_17/lgn-dense-1-medium-2"
+  # "-m lgn-dense-1-large-2 -o results/SLURM/2026_02_17/lgn-dense-1-large-2"
+  # "-m lgn-dense-1-huge-2 -o results/SLURM/2026_02_17/lgn-dense-1-huge-2"
+  # "-m lgn-dense-1-small-5 -o results/SLURM/2026_02_17/lgn-dense-1-small-5"
+  # "-m lgn-dense-1-medium-5 -o results/SLURM/2026_02_17/lgn-dense-1-medium-5"
+  # "-m lgn-dense-1-large-5 -o results/SLURM/2026_02_17/lgn-dense-1-large-5"
+  # "-m lgn-dense-1-huge-5 -o results/SLURM/2026_02_17/lgn-dense-1-huge-5"
+  # "-m lgn-dense-1-small-10 -o results/SLURM/2026_02_17/lgn-dense-1-small-10"
+  # "-m lgn-dense-1-medium-10 -o results/SLURM/2026_02_17/lgn-dense-1-medium-10"
+  # "-m lgn-dense-1-large-10 -o results/SLURM/2026_02_17/lgn-dense-1-large-10"
+  # "-m lgn-dense-1-huge-10 -o results/SLURM/2026_02_17/lgn-dense-1-huge-10"
+  # "-m lgn-dense-2-small-2 -o results/SLURM/2026_02_17/lgn-dense-2-small-2"
+  # "-m lgn-dense-2-medium-2 -o results/SLURM/2026_02_17/lgn-dense-2-medium-2"
+  # "-m lgn-dense-2-large-2 -o results/SLURM/2026_02_17/lgn-dense-2-large-2"
+  # "-m lgn-dense-2-huge-2 -o results/SLURM/2026_02_17/lgn-dense-2-huge-2"
+  # "-m lgn-dense-2-small-5 -o results/SLURM/2026_02_17/lgn-dense-2-small-5"
+  # "-m lgn-dense-2-medium-5 -o results/SLURM/2026_02_17/lgn-dense-2-medium-5"
+  # "-m lgn-dense-2-large-5 -o results/SLURM/2026_02_17/lgn-dense-2-large-5"
+  # "-m lgn-dense-2-huge-5 -o results/SLURM/2026_02_17/lgn-dense-2-huge-5"
+  # "-m lgn-dense-2-small-10 -o results/SLURM/2026_02_17/lgn-dense-2-small-10"
+  # "-m lgn-dense-2-medium-10 -o results/SLURM/2026_02_17/lgn-dense-2-medium-10"
+  # "-m lgn-dense-2-large-10 -o results/SLURM/2026_02_17/lgn-dense-2-large-10"
+  # "-m lgn-dense-2-huge-10 -o results/SLURM/2026_02_17/lgn-dense-2-huge-10"
+  "-m lgn-dense-1-small-20 -o results/SLURM/2026_02_17/lgn-dense-1-small-20"
+  "-m lgn-dense-1-medium-20 -o results/SLURM/2026_02_17/lgn-dense-1-medium-20"
+  "-m lgn-dense-1-large-20 -o results/SLURM/2026_02_17/lgn-dense-1-large-20"
+  "-m lgn-dense-1-huge-20 -o results/SLURM/2026_02_17/lgn-dense-1-huge-20"
+  "-m lgn-dense-1-small-50 -o results/SLURM/2026_02_17/lgn-dense-1-small-50"
+  "-m lgn-dense-1-medium-50 -o results/SLURM/2026_02_17/lgn-dense-1-medium-50"
+  "-m lgn-dense-1-large-50 -o results/SLURM/2026_02_17/lgn-dense-1-large-50"
+  "-m lgn-dense-1-huge-50 -o results/SLURM/2026_02_17/lgn-dense-1-huge-50"
+  "-m lgn-dense-2-small-20 -o results/SLURM/2026_02_17/lgn-dense-2-small-20"
+  "-m lgn-dense-2-medium-20 -o results/SLURM/2026_02_17/lgn-dense-2-medium-20"
+  "-m lgn-dense-2-large-20 -o results/SLURM/2026_02_17/lgn-dense-2-large-20"
+  "-m lgn-dense-2-huge-20 -o results/SLURM/2026_02_17/lgn-dense-2-huge-20"
+  "-m lgn-dense-2-small-50 -o results/SLURM/2026_02_17/lgn-dense-2-small-50"
+  "-m lgn-dense-2-medium-50 -o results/SLURM/2026_02_17/lgn-dense-2-medium-50"
+  "-m lgn-dense-2-large-50 -o results/SLURM/2026_02_17/lgn-dense-2-large-50"
+  "-m lgn-dense-2-huge-50 -o results/SLURM/2026_02_17/lgn-dense-2-huge-50"
 )
 
 # Run the command corresponding to this array index
-python train.py -c config/10783560/v3.yml --balance-classes --device cuda -bs 1024 ${ARGS[$SLURM_ARRAY_TASK_ID]}
+python train.py -c config/10783560/v3.yml --balance-classes --device cuda -bs 1024 -lf cross_entropy -lr 0.01 --compile-model ${ARGS[$SLURM_ARRAY_TASK_ID]}

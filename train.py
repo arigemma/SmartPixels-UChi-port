@@ -213,8 +213,6 @@ def main(args):
             criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
         elif args.loss_function == "bce":
             criterion = torch.nn.BCEWithLogitsLoss(pos_weight=class_weights)
-        elif args.loss_function == "bce-sample":
-            criterion = torch.nn.BCEWithLogitsLoss()
     elif task_type == "regression":
         criterion = torch.nn.MSELoss()
     else:
@@ -259,21 +257,7 @@ def main(args):
             labels = labels.to(device)
             optimizer.zero_grad()
             outputs = model(inputs)
-            if args.loss_function == "bce-sample":
-                # Compute sample-wise weights based on class imbalance
-                with torch.no_grad():
-                    sample_weights = torch.ones(labels.shape[0], device=device)
-                    for c in range(labels.shape[1]):
-                        idx = labels[:, c] == 1  # Get indices of samples belonging to class c
-                        class_weight = class_weights[c] if class_weights is not None else 1.0
-                        sample_weights[idx] = class_weight
-                print(f"\nSample weights: {sample_weights}, shape: {sample_weights.shape}")
-                print(f"\nlabels: {labels}, shape: {labels.shape}, unique labels: {torch.unique(labels, dim=0)}")
-                loss = torch.nn.BCEWithLogitsLoss(weight=sample_weights)(outputs, labels)
-
-                # loss = criterion(outputs, labels, weight=sample_weights)
-            else:
-                loss = criterion(outputs, labels)
+            loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
             running_loss += loss
@@ -376,7 +360,7 @@ if __name__ == "__main__":
         "--weight-decay", type=float, default=0.0, help="Weight decay for AdamW optimizer"
     )
     parser.add_argument(
-        "--loss-function", "-lf", type=str, default="cross_entropy", choices=["cross_entropy", "bce", "bce-sample"], help="Loss function to use for classification tasks"
+        "--loss-function", "-lf", type=str, default="cross_entropy", choices=["cross_entropy", "bce"], help="Loss function to use for classification tasks"
     )
 
     args = parser.parse_args()
