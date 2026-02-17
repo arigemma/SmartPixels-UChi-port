@@ -185,64 +185,6 @@ def main(args):
                 print(f"Reached the maximum number of steps: {args.steps}. Stopping training.")
                 return  
 
-        
-    # running_loss, running_n = 0.0, 0
-    # pbar = tqdm(train_loader, desc="Training", unit="batch")
-    # for step, (inputs, labels) in enumerate(pbar):
-    #     inputs = inputs.to(device)
-    #     labels = labels.to(device)
-    #     optimizer.zero_grad()
-    #     outputs = model(inputs)
-    #     loss = criterion(outputs, labels)
-    #     loss.backward()
-    #     optimizer.step()
-    #     running_loss += loss
-    #     running_n += 1
-    #     # running_loss += loss.item() * inputs.size(0)
-    #     if step % 10 == 0:
-    #         pbar.set_postfix({
-    #             "running loss": f"{running_loss.item() / running_n:.3f}",
-    #             "loss": f"{loss.item():.3f}"
-    #         })
-    #         writer.add_scalar("Loss/train_batch", loss.item(), step)
-
-    #     if args.eval_freq > 0 and step % args.eval_freq == 0 :
-    #         model.eval()
-    #         val_loss, val_acc, val_n = 0.0, 0.0, 0
-    #         with torch.no_grad():
-    #             pbar2 = tqdm(val_loader, desc="Validation", leave=True, unit="batch")
-    #             for inputs, labels in pbar2:
-    #                 inputs = inputs.to(device)
-    #                 labels = labels.to(device)
-    #                 outputs = model(inputs)
-    #                 loss = criterion(outputs, labels)
-    #                 val_loss += loss
-    #                 if task_type == "classification":
-    #                     preds = outputs.argmax(dim=1)  # Get the class with highest probability
-                       
-    #                     val_acc += (preds == labels).float().mean().item()
-    #                 val_n += 1
-    #                 pbar2.set_postfix({
-    #                     "running val loss": f"{val_loss.item() / val_n:.3f}",
-    #                     "running val acc": f"{val_acc / val_n:.3f}",
-    #                     "val loss": f"{loss.item():.3f}",
-    #                 })
-    #         writer.add_scalar("Loss/validation", val_loss.item() / val_n, step)
-    #         writer.add_scalar("Accuracy/validation", val_acc / val_n, step)
-
-    #         if val_loss < best_val_loss:
-    #             best_val_loss = val_loss
-    #             # writer.add_hparams(hparams, {"val_loss": val_loss})
-    #             torch.save(model, f"{args.output}/best_model.pth")
-    #         # print(f"Step {step+1}/{len(train_loader)}, Validation Loss: {val_loss:.4f}")
-    #         if early_stopping.step(val_loss):
-    #             print("Early stopping triggered.")
-    #             break
-    #         if args.steps is not None and step >= args.steps:
-    #             print(f"Reached the maximum number of steps: {args.steps}. Stopping training.")
-    #             break
-    #         model.train()
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train SmartPixels models")
@@ -254,8 +196,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model", "-m", type=str, default="towards-model-2", choices=list(REGISTRY.keys()), help="Model architecture."
     )
-    # parser.add_argument("--all-models", action="store_true", help="Train all models in REGISTRY")
-
 
     # Training parameters
     parser.add_argument("--seed", "-s", type=int, default=42, help="Random seed")
