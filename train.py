@@ -72,13 +72,14 @@ def main(args):
         args.data_config,
         batch_size=args.batch_size,
         shuffle=False,
-        val_size=0.01,
+        val_size=args.val_size,
         balance_classes=args.balance_classes,
         input_type=input_type,
         target_type=task_type,
+        label_format="index",
     )
 
-    if args.plot_data:
+    if args.plot_data and task_type != "classification":
         plot_data_distributions(train_loader)
 
     model = model_cfg["class"]()
@@ -88,7 +89,8 @@ def main(args):
     print(f"Number of trainable parameters: {n_params}")
 
     if task_type == "classification":
-        criterion = torch.nn.BCEWithLogitsLoss()
+        # criterion = torch.nn.BCEWithLogitsLoss()
+        criterion = torch.nn.CrossEntropyLoss()
     elif task_type == "regression":
         criterion = torch.nn.MSELoss()
     else:
@@ -102,7 +104,7 @@ def main(args):
         model.compile()
 
     model.train()
-    early_stopping = EarlyStopping(patience=10)
+    early_stopping = EarlyStopping(patience=20)
     best_val_loss = float('inf')
 
     dir_name = f"logs/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
@@ -114,63 +116,74 @@ def main(args):
         "n_params": n_params,
     }
 
-    running_loss, running_n = 0.0, 0
-    pbar = tqdm(train_loader, desc="Training", unit="batch")
-    for step, (inputs, labels) in enumerate(pbar):
-        inputs = inputs.to(device)
-        labels = labels.to(device)
-        optimizer.zero_grad()
-        outputs = model(inputs)
-        loss = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
-        running_loss += loss
-        running_n += 1
-        # running_loss += loss.item() * inputs.size(0)
-        if step % 10 == 0:
-            pbar.set_postfix({
-                "running loss": f"{running_loss.item() / running_n:.3f}",
-                "loss": f"{loss.item():.3f}"
-            })
-            writer.add_scalar("Loss/train_batch", loss.item(), step)
 
-        if step % args.eval_freq == 0:
-            model.eval()
-            val_loss, val_acc, val_n = 0.0, 0.0, 0
-            with torch.no_grad():
-                pbar2 = tqdm(val_loader, desc="Validation", leave=True, unit="batch")
-                for inputs, labels in pbar2:
-                    inputs = inputs.to(device)
-                    labels = labels.to(device)
-                    outputs = model(inputs)
-                    loss = criterion(outputs, labels)
-                    val_loss += loss
-                    if task_type == "classification":
-                        preds = outputs.argmax(dim=1)  # Get the class with highest probability
-                        truth = labels.argmax(dim=1)  # Get the true class
+    global_step = 0
 
-                        val_acc += (preds == truth).float().mean().item()
-                    val_n += 1
-                    pbar2.set_postfix({
-                        "running val loss": f"{val_loss.item() / val_n:.3f}",
-                        "running val acc": f"{val_acc / val_n:.3f}",
-                        "val loss": f"{loss.item():.3f}",
-                    })
-            writer.add_scalar("Loss/validation", val_loss.item() / val_n, step)
-            writer.add_scalar("Accuracy/validation", val_acc / val_n, step)
+    for epoch in range(args.epochs):
+        model.train()
+        running_loss, running_n = 0.0, 0
 
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                # writer.add_hparams(hparams, {"val_loss": val_loss})
-                torch.save(model, f"{args.output}/best_model.pth")
-            # print(f"Step {step+1}/{len(train_loader)}, Validation Loss: {val_loss:.4f}")
-            if early_stopping.step(val_loss):
-                print("Early stopping triggered.")
-                break
-            if args.steps is not None and step >= args.steps:
+        pbar = tqdm(train_loader, desc=f"Training epoch {epoch+1}/{args.epochs}", unit="batch")
+        for step_in_epoch, (inputs, labels) in enumerate(pbar):
+            step = global_step 
+            global_step += 1
+
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+
+            running_loss += loss
+            running_n += 1
+
+            if step % 10 == 0:
+                pbar.set_postfix({
+                    "running loss": f"{running_loss.item() / running_n:.3f}",
+                    "loss": f"{loss.item():.3f}"
+                })
+                writer.add_scalar("Loss/train_batch", loss.item(), step)
+
+            if args.eval_freq > 0 and step % args.eval_freq == 0:
+                model.eval()
+                val_loss, val_acc, val_n = 0.0, 0.0, 0
+                with torch.no_grad():
+                    pbar2 = tqdm(val_loader, desc="Validation", leave=True, unit="batch")
+                    for inputs, labels in pbar2:
+                        inputs = inputs.to(device)
+                        labels = labels.to(device)
+                        outputs = model(inputs)
+                        loss = criterion(outputs, labels)
+                        val_loss += loss
+                        if task_type == "classification":
+                            preds = outputs.argmax(dim=1)
+                            val_acc += (preds == labels).float().mean().item()
+                        val_n += 1
+                        pbar2.set_postfix({
+                            "running val loss": f"{val_loss.item() / val_n:.3f}",
+                            "running val acc": f"{val_acc / val_n:.3f}",
+                            "val loss": f"{loss.item():.3f}",
+                        })
+
+                writer.add_scalar("Loss/validation", val_loss.item() / val_n, step)
+                writer.add_scalar("Accuracy/validation", val_acc / val_n, step)
+
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    torch.save(model, f"{args.output}/best_model.pth")
+
+                if early_stopping.step(val_loss):
+                    print("Early stopping triggered.")
+                    return  
+
+                model.train()
+
+            # keep step limit feature working from before
+            if args.steps is not None and global_step >= args.steps:
                 print(f"Reached the maximum number of steps: {args.steps}. Stopping training.")
-                break
-            model.train()
+                return  
 
 
 if __name__ == "__main__":
@@ -186,8 +199,10 @@ if __name__ == "__main__":
 
     # Training parameters
     parser.add_argument("--seed", "-s", type=int, default=42, help="Random seed")
-    parser.add_argument("--batch-size", "-bs", type=int, default=128, help="Batch size")
+    parser.add_argument("--epochs", type=int, default=200)
+    parser.add_argument("--batch-size", "-bs", type=int, default=1024, help="Batch size")
     parser.add_argument("--learning-rate", "-lr", type=float, default=0.001, help="Learning rate")
+    parser.add_argument("--val-size", type=float, default=0.01)
     parser.add_argument(
         "--num-iterations", "-ni", type=int, default=100_000, help="Number of training iterations"
     )

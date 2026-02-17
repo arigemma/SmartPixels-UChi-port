@@ -18,7 +18,7 @@ class TowardsModel1(torch.nn.Module):
         assert x.shape == (x.shape[0], 2), f"Expected input shape (batch_size, 2), but got {x.shape}"
         x = torch.relu(self.fc1(x))
         x = self.fc2(x)
-        return self.softmax(x)
+        return x  # return raw logits, no softmax applied
 
 
 @register("towards-model-2", input_type="y-profile", task_type="classification")
@@ -33,7 +33,7 @@ class TowardsModel2(torch.nn.Module):
         assert x.shape == (x.shape[0], 14), f"Expected input shape (batch_size, 14), but got {x.shape}"
         x = torch.relu(self.fc1(x))
         x = self.fc2(x)
-        return self.softmax(x)
+        return x
     
 
 @register("towards-model-3", input_type="y-profile-timing", task_type="classification")
@@ -63,7 +63,7 @@ class TowardsModel3(torch.nn.Module):
         x = self.dropout(x)
         x = self.fc2(x)
         
-        return self.softmax(x)
+        return x
 
 
 @register("lgn-dense-2", input_type="y-profile", task_type="classification")
