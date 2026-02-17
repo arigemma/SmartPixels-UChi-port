@@ -14,7 +14,7 @@ def get_mean_and_std_for_x_and_y(image_path, label_path):
         [label_path],
         shuffle=False,
         # important: pre-transform with symlog
-        transform=SymLogTransform(),
+        transform=lambda x, y: SymLogTransform()(x),
     )
 
     X, Y = [], []
@@ -145,7 +145,7 @@ if __name__ == "__main__":
         help="Output directory to save dataset configuration files."
     )
     parser.add_argument(
-        "--test-ratio", type=float, default=0.333,
+        "--test-ratio", type=float, default=0.2,
         help="Ratio of the dataset to use for testing."
     )
     args = parser.parse_args()

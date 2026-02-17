@@ -8,7 +8,7 @@ Look at the notebook `playground.ipynb` for data exploration.
 
 ### Optional: Generate dataset configs
 ```
-python generate_ds_configs.py --data-root /path/to/datasets --output-dir config --test-ratio 0.333
+python generate_ds_configs.py --data-root /path/to/datasets --output-dir config --test-ratio 0.2
 ```
 This derives data splits feature scaling params (linear mapping to `mean=0` and `std=1` after symlog transform on `X`.)
 
@@ -53,3 +53,4 @@ In their code, they als reference a `16x16` model. But I dont know what data tha
 - Where is the source code for the `Co-design` paper?
 - Why the different `pT` spectrum for the first files?
 - Usage of `y0` in input `y`-profile: this is a *label*, right? Is it legit to use this in the input? Would it be available in real-world deployment?
+- Paper says 800,000 clusters. We have 8,000,000 events.
