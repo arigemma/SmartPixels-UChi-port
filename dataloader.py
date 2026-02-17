@@ -110,40 +110,36 @@ def get_target_transform(
     def target_transform(y):
         if target_type == "raw":
             return torch.as_tensor(y, dtype=torch.float32)
-        if target_type == "classification":
+
+        elif target_type == "regression":
+            y = scale_y(y)
+            return torch.as_tensor(y, dtype=torch.float32)
+        
+        elif target_type == "classification":
             # extract pt (9th feature)
             pt = y[..., 8]  # preserve batch dimension if present.
-
 
             c0 = (0 <= pt) & (pt <= 0.2)
             c1 = (-0.2 <= pt) & (pt < 0.)
             c2 = (pt < -0.2) | (pt > 0.2)
 
+            idx = np.empty(pt.shape, dtype=np.int64)
+            idx[c0] = 0
+            idx[c1] = 1
+            idx[c2] = 2
+            index = torch.as_tensor(idx, dtype=torch.long)
+
             if label_format == "index":
-                idx = np.empty(pt.shape, dtype=np.int64)
-                idx[c0] = 0
-                idx[c1] = 1
-                idx[c2] = 2
-                y_out = torch.as_tensor(idx, dtype=torch.long)
+                return index
 
             elif label_format == "onehot":
-                label = np.zeros((*pt.shape, 3))  # Shape: (3,) for single sample, (batch_size, 3) for batch
-
-                label[..., 0] = (0 <= pt) & (pt <= 0.2)
-                label[..., 1] = (-0.2 <= pt) & (pt < 0.)
-                label[..., 2] = (pt < -0.2) | (pt > 0.2)
-                
-                y_out = torch.as_tensor(label, dtype=torch.float32)
+                return torch.nn.functional.one_hot(index, num_classes=3).float()
 
             else:
-                raise ValueError(f"Unknown label format, must be 'onehot' or 'index'")
-        elif target_type == "regression":
-            y = scale_y(y)
-            return torch.as_tensor(y, dtype=torch.float32)
+                raise ValueError(f"Unknown label_format: {label_format}")
+    
         else:
             raise ValueError(f"Unknown target_type: {target_type}")
-        return y_out
-                    
 
     print(f"Built target transform with target_type={target_type}, scaling={'enabled' if scale_dict else 'disabled'}")
 
