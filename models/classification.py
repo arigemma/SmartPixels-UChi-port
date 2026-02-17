@@ -1,5 +1,5 @@
 import torch
-from torchlogix.layers import LogicConv2d, LogicDense, GroupSum #, FixedBinarization
+from torchlogix.layers import LogicConv2d, LogicDense, GroupSum, FixedBinarization
 from .registry import register
 
 
