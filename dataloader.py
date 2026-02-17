@@ -96,7 +96,7 @@ def get_transform(
 def get_target_transform(
     target_type: str = "regression",  # "regression" or "classification"
     scale_dict: Optional[dict] = None,
-    label_format: str = "onehot", # "index"
+    label_format: str = "one-hot", # "index"
 ) -> Callable[[Any], torch.Tensor]:
     """
     The transform that builds the targets.
@@ -132,7 +132,7 @@ def get_target_transform(
             if label_format == "index":
                 return index
 
-            elif label_format == "onehot":
+            elif label_format == "one-hot":
                 return torch.nn.functional.one_hot(index, num_classes=3).float()
 
             else:
@@ -154,7 +154,7 @@ def create_dataloaders(
     target_type: str = "regression",  # "regression" or "classification"
     balance_classes: bool = False,
     val_size: float = 0.2,
-    label_format: str = "onehot" # "index"
+    label_format: str = "one-hot" # "index"
 ) -> Tuple[DataLoader, DataLoader, DataLoader]:
     
     config_dict = yaml.safe_load(open(config_path, "r"))

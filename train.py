@@ -76,7 +76,7 @@ def main(args):
         balance_classes=args.balance_classes,
         input_type=input_type,
         target_type=task_type,
-        label_format=("index" if task_type == "classification" else "onehot"),
+        label_format="index",
     )
 
     if args.plot_data and task_type != "classification":

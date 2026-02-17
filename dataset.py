@@ -168,21 +168,6 @@ class SmartPixelsDataset(Dataset):
             y = self.target_transform(y)
 
         return x, y
-
-   
-    # def get_all_class_labels(self):
-    #     all_labels = []
-    #     for f in self.label_paths:
-    #         label_df = pd.read_parquet(f)
-    #         labels = label_df.values
-    #         if self.target_transform:
-    #             labels = self.target_transform(labels)
-    #         assert torch.all((labels == 0) | (labels == 1)) and torch.all(labels.sum(dim=-1) == 1), \
-    #             "Expected one-hot encoded binary labels after target_transform for classification" \
-    #             "Got labels[:3] = {}".format(labels[:3])
-    #         labels = np.argmax(labels, axis=1)  # convert one-hot to class indices
-    #         all_labels.append(labels)
-    #     return np.concatenate(all_labels, axis=0)
     
 
     def get_all_class_labels(self):
@@ -191,7 +176,7 @@ class SmartPixelsDataset(Dataset):
         This assumes one-hot encoding for classification (Not applicable for regression targets).
         More efficient than iterating through __getitem__ since it doesn't need to load the large inputs.
         
-        Edited to support onehot and index label format.
+        Edited to support one-hot and index label format.
 
         """
         file_labels = {}
@@ -201,27 +186,27 @@ class SmartPixelsDataset(Dataset):
             if self.target_transform:
                 labels = self.target_transform(labels)
 
-            if labels.ndim == 2:
-
-
-
+            if labels.ndim == 2:  # one-hot encoded
                 if first:  # assert only once for efficiency
                     assert torch.all((labels == 0) | (labels == 1)) and torch.all(labels.sum(dim=-1) == 1), \
                         "Expected one-hot encoded binary labels after target_transform for classification" \
                         "Got labels[:3] = {}".format(labels[:3])
                     first = False
-
                 labels_idx = torch.argmax(labels, dim=1).cpu().numpy().astype(int)
-            elif labels.ndim == 1:
+    
+            elif labels.ndim == 1:  # already class indices
                 if first:
+                    assert torch.all(labels >= 0) and torch.all(labels == labels.long()), \
+                        "Expected integer class indices for classification" \
+                        "Got labels[:3] = {}".format(labels[:3])
                     first = False
-
                 labels_idx = labels.cpu().numpy().astype(int)
-      
+    
             else:
                 raise ValueError(f"Unexpected label shape.")
             
             file_labels[file_idx] = labels_idx
+
         # project into dataset index space
         ordered_labels = np.empty(len(self.index), dtype=int)
         for i, (file_idx, inside_idx) in enumerate(self.index):
