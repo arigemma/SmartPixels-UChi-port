@@ -162,6 +162,14 @@ def plot_acceptance_vs_pt(pt_true_signed: np.ndarray, pred_dict: dict[str, np.nd
     
     for model_name, preds in pred_dict.items():
         assert pt_true_signed.shape == preds.shape, "pt_true_signed and preds must have the same shape"
+        high_pt_idx = np.abs(pt_true_signed) >= 2.0
+        high_pt_n = int(high_pt_idx.sum())
+        high_pt_preds = preds[high_pt_idx]
+        sig_eff = float((high_pt_preds == 2).sum()) / max(high_pt_n, 1)
+        low_pt_idx = np.abs(pt_true_signed) < 2.0
+        low_pt_n = int(low_pt_idx.sum())
+        low_pt_preds = preds[low_pt_idx]
+        bkg_rejection = float((low_pt_preds != 2).sum()) / max(low_pt_n, 1)
         acceptances = []
         for i_bin in range(len(edges) - 1):
             idx = (pt_true_signed >= edges[i_bin]) & (pt_true_signed < edges[i_bin + 1])
@@ -172,7 +180,7 @@ def plot_acceptance_vs_pt(pt_true_signed: np.ndarray, pred_dict: dict[str, np.nd
                 acceptance = float((preds[idx] == 2).sum()) / n
             print(f"Bin {i_bin}: true pt in [{edges[i_bin]:.2f}, {edges[i_bin + 1]:.2f}), acceptance: {acceptance:.4f} ({(preds[idx] == 2).sum()}/{n})")
             acceptances.append(acceptance)
-        plt.plot(centers, acceptances, label=model_name, marker="o")
+        plt.plot(centers, acceptances, label=f"{model_name} (sig eff: {sig_eff:.4f}, bkg rej: {bkg_rejection:.4f})", marker="o")
     # add horizontal lines and y-ticks at 0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 1
     plt.yticks([0.0, 0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 1.0])
     plt.ylim(0.0, 1.02)
@@ -234,18 +242,20 @@ def main():
 
         true_pts, logits = [], []
         with torch.no_grad():
-            for i, (x, y) in tqdm(enumerate(test_loader)):
+            for i, (x, y) in enumerate(tqdm(test_loader)):
             # for x, y in tqdm(test_loader):
                 x = x.to(device)
                 logits.append(model(x))  # logits
                 true_pts.append(y[:, pt_idx])
                 # preds.append(pred.argmax(dim=1))  # Get the class with highest probability
-                if i >= 1000:  # Limit to first 100 batches for quick evaluation
-                    break
+                # if i >= 5000:  # Limit to first 100 batches for quick evaluation
+                #     break
 
         true_pts = np.concatenate(true_pts, axis=0)
-        logits = np.concatenate(logits, axis=0)
-        probs = softmax_np(logits)
+        # logits = np.concatenate(logits, axis=0)
+        logits = torch.cat(logits, dim=0)
+        probs = torch.softmax(logits, dim=1).cpu().numpy()
+        # probs = softmax_np(logits)
         pred_classes = np.argmax(probs, axis=1).astype(np.int8)
         true_classes = true_class_from_signed_pt(true_pts, pt_boundary=args.pt_boundary)
         high_true = (true_classes == 2).astype(np.int32)
@@ -259,33 +269,33 @@ def main():
             "high_true": high_true,
         }
 
-    p_high = {
-        "towards-model-1": data["towards-model-1"]["probs"][:, 2].astype(np.float32),
-        "towards-model-2": data["towards-model-2"]["probs"][:, 2].astype(np.float32),
-        "towards-model-3": data["towards-model-3"]["probs"][:, 2].astype(np.float32),
-    }
+    # p_high = {
+    #     "towards-model-1": data["towards-model-1"]["probs"][:, 2].astype(np.float32),
+    #     "towards-model-2": data["towards-model-2"]["probs"][:, 2].astype(np.float32),
+    #     "towards-model-3": data["towards-model-3"]["probs"][:, 2].astype(np.float32),
+    # }
 
-    cm_by_model = {
-        "towards-model-1": confusion_matrix_3(data["towards-model-1"]["true_classes"], data["towards-model-1"]["pred_classes"]),
-        "towards-model-2": confusion_matrix_3(data["towards-model-2"]["true_classes"], data["towards-model-2"]["pred_classes"]),
-        "towards-model-3": confusion_matrix_3(data["towards-model-3"]["true_classes"], data["towards-model-3"]["pred_classes"]),
-    }
+    # cm_by_model = {
+    #     "towards-model-1": confusion_matrix_3(data["towards-model-1"]["true_classes"], data["towards-model-1"]["pred_classes"]),
+    #     "towards-model-2": confusion_matrix_3(data["towards-model-2"]["true_classes"], data["towards-model-2"]["pred_classes"]),
+    #     "towards-model-3": confusion_matrix_3(data["towards-model-3"]["true_classes"], data["towards-model-3"]["pred_classes"]),
+    # }
 
-    rocs = {}
-    for name, ph in p_high.items():
-        fpr, tpr = roc_curve_binary(high_true, ph)
-        auc = auc_trapz(fpr, tpr)
-        rocs[name] = (fpr, tpr, auc)
+    # rocs = {}
+    # for name, ph in p_high.items():
+    #     fpr, tpr = roc_curve_binary(high_true, ph)
+    #     auc = auc_trapz(fpr, tpr)
+    #     rocs[name] = (fpr, tpr, auc)
 
-    for name, cm in cm_by_model.items():
-        acc = float(np.trace(cm) / max(cm.sum(), 1))
-        print(f"[METRIC] {name} accuracy: {acc:.6f}")
-    for name, (_, _, auc) in rocs.items():
-        print(f"[METRIC] {name} high-vs-low AUC: {auc:.6f}")
+    # for name, cm in cm_by_model.items():
+    #     acc = float(np.trace(cm) / max(cm.sum(), 1))
+    #     print(f"[METRIC] {name} accuracy: {acc:.6f}")
+    # for name, (_, _, auc) in rocs.items():
+    #     print(f"[METRIC] {name} high-vs-low AUC: {auc:.6f}")
 
-    plot_confusion(cm_by_model, outdir / "confusion_matrices.png")
-    plot_roc(rocs, outdir / "roc_highpt.png")
-    plot_prob_vs_pt(true_pts, p_high, outdir / "pt_confidence_vs_true_pt.png", nbins=40)
+    # plot_confusion(cm_by_model, outdir / "confusion_matrices.png")
+    # plot_roc(rocs, outdir / "roc_highpt.png")
+    # plot_prob_vs_pt(true_pts, p_high, outdir / "pt_confidence_vs_true_pt.png", nbins=40)
 
     plot_acceptance_vs_pt(true_pts, {name: data[name]["pred_classes"] for name in data.keys()}, outdir / "acceptance_vs_true_pt.png")
 

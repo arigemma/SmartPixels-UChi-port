@@ -1,5 +1,5 @@
 import torch
-from torchlogix.layers import LogicConv2d, LogicDense, GroupSum, FixedBinarization
+from torchlogix.layers import LogicConv2d, LogicDense, GroupSum, FixedBinarization, LearnableBinarization
 from .registry import register
 
 
@@ -18,7 +18,8 @@ class TowardsModel1(torch.nn.Module):
         assert x.shape == (x.shape[0], 2), f"Expected input shape (batch_size, 2), but got {x.shape}"
         x = torch.relu(self.fc1(x))
         x = self.fc2(x)
-        return self.softmax(x)
+        return x
+        # return self.softmax(x)
 
 
 @register("towards-model-2", input_type="y-profile", task_type="classification")
@@ -33,7 +34,8 @@ class TowardsModel2(torch.nn.Module):
         assert x.shape == (x.shape[0], 14), f"Expected input shape (batch_size, 14), but got {x.shape}"
         x = torch.relu(self.fc1(x))
         x = self.fc2(x)
-        return self.softmax(x)
+        return x
+        # return self.softmax(x)
     
 
 @register("towards-model-3", input_type="y-profile-timing", task_type="classification")
@@ -63,29 +65,51 @@ class TowardsModel3(torch.nn.Module):
         x = self.dropout(x)
         x = self.fc2(x)
         
-        return self.softmax(x)
+        return x
+        # return self.softmax(x)
+
+
+@register("lgn-dense-1", input_type="y-size", task_type="classification")
+class DenseLGN1(torch.nn.Sequential):
+    n_bits = 5
+
+    def __init__(self, thresholds):
+        super(DenseLGN1, self).__init__()
+        print(f"Using {self.n_bits} bits for binarization in DenseLGN1")
+        param_kwargs = {
+            "weight_init": "residual",
+        }
+        layers = [
+            LearnableBinarization(thresholds=thresholds, sampling_temperature=0.001, softplus_temperature=0.001),
+            LogicDense(in_dim=self.n_bits*2, out_dim=600, parametrization_kwargs=param_kwargs),
+            LogicDense(in_dim=600, out_dim=600, parametrization_kwargs=param_kwargs),
+            LogicDense(in_dim=600, out_dim=600, parametrization_kwargs=param_kwargs),
+        ]
+        super(DenseLGN1, self).__init__(*layers, GroupSum(3, tau=1.0))
 
 
 @register("lgn-dense-2", input_type="y-profile", task_type="classification")
 class DenseLGN2(torch.nn.Sequential):
+    n_bits = 5
+
     def __init__(self, thresholds):
         super(DenseLGN2, self).__init__()
-        n_bits = 5
-        print(f"Using {n_bits} bits for binarization in DenseLGN2")
+        print(f"Using {self.n_bits} bits for binarization in DenseLGN2")
         layers = [
             FixedBinarization(thresholds=thresholds),
-            LogicDense(in_dim=n_bits*14, out_dim=3000),
+            LogicDense(in_dim=self.n_bits*14, out_dim=3000),
             LogicDense(in_dim=3000, out_dim=3000),
             LogicDense(in_dim=3000, out_dim=3000),
         ]
-        super(DenseLGN2, self).__init__(*layers, GroupSum(3, tau=1.0))
+        super(DenseLGN2, self).__init__(*layers, GroupSum(3, tau=10.0))
 
 
 @register("lgn-conv-3", input_type="y-profile-timing", task_type="classification")
 class ConvLGN3(torch.nn.Module):
+    n_bits = 5
 
     def __init__(self, thresholds):
-        device = "cpu"
+        device = "cuda"
         super(ConvLGN3, self).__init__()
         self.n_bits = 5
         self.binarization = FixedBinarization(thresholds=thresholds, device=device)
@@ -94,7 +118,7 @@ class ConvLGN3(torch.nn.Module):
         self.fc1 = LogicDense(in_dim=128 * 9 * 4 + 5, out_dim=3000, device=device)
         self.fc2 = LogicDense(in_dim=3000, out_dim=3000, device=device)
         self.fc3 = LogicDense(in_dim=3000, out_dim=3000, device=device)
-        self.group_sum = GroupSum(3, tau=1.0, device=device)
+        self.group_sum = GroupSum(3, tau=10.0, device=device)
 
 
     def forward(self, x):

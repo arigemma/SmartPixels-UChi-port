@@ -55,7 +55,7 @@ def get_transform(
 
         # --- preprocess y ---
         y_scaled = scale_y(raw_y)
-        y0 = y_scaled[1]  # second feature
+        y0 = y_scaled[7]  # eigth feature
 
         # --- build features ---
         if input_type == "full":
@@ -113,13 +113,26 @@ def get_target_transform(
 
             label = np.zeros((*pt.shape, 3))  # Shape: (3,) for single sample, (batch_size, 3) for batch
 
-            label[..., 0] = (0 <= pt) & (pt <= 0.2)
+            label[..., 0] = (0. <= pt) & (pt <= 0.2)
             label[..., 1] = (-0.2 <= pt) & (pt < 0.)
             label[..., 2] = (pt < -0.2) | (pt > 0.2)
             
             y = label
+        elif target_type == "classification-2-GeV":
+            # extract pt (9th feature)
+            pt = y[..., 8]  # preserve batch dimension if present.
+
+            label = np.zeros((*pt.shape, 3))  # Shape: (3,) for single sample, (batch_size, 3) for batch
+
+            label[..., 0] = (0. <= pt) & (pt <= 2.)
+            label[..., 1] = (-2. <= pt) & (pt < 0.)
+            label[..., 2] = (pt < -2.) | (pt > 2.)
+
+            y = label
         elif target_type == "regression":
             y = scale_y(y)
+        elif target_type == "raw":
+            y = y
         else:
             raise ValueError(f"Unknown target_type: {target_type}")
         y = torch.as_tensor(y, dtype=torch.float32)            
@@ -191,12 +204,17 @@ def create_dataloaders(
         # "pin_memory": True
     }
 
-    if balance_classes:
-        sampler = UnderSampler(train_dataset, target_class_ratios={0: 0.33, 1: 0.33, 2: 0.34})
-    else:
-        sampler = None
+    # if balance_classes:
+    #     sampler = UnderSampler(train_dataset, target_class_ratios={0: 1/3, 1: 1/3, 2: 1/3}, max_oversampling_rate=35.0)
+    #     # sampler = UnderSampler(train_dataset, target_class_ratios={0: 1/6, 1: 1/6, 2: 2/3}, max_oversampling_rate=3.0) # collapses
+    #     # sampler = UnderSampler(train_dataset, target_class_ratios={0: 1/4, 1: 1/4, 2: 1/2}, max_oversampling_rate=3.0) # collapses
+    #     # sampler = UnderSampler(train_dataset, target_class_ratios={0: 0.3, 1: 0.3, 2: 0.4}, max_oversampling_rate=3.0) # works well
+    #     # sampler = UnderSampler(train_dataset, target_class_ratios={0: 0.28, 1: 0.28, 2: 0.44}, max_oversampling_rate=3.0) # works well
+    # else:
+    #     sampler = None
 
-    train_loader = DataLoader(train_dataset, sampler=sampler, **loader_kwargs)
+    # train_loader = DataLoader(train_dataset, sampler=sampler, **loader_kwargs)
+    train_loader = DataLoader(train_dataset, **loader_kwargs)
     val_loader = DataLoader(val_dataset, **loader_kwargs)
     test_loader = DataLoader(test_dataset, **loader_kwargs)
 

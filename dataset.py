@@ -18,10 +18,10 @@ class UnderSampler(Sampler):
     Resulting indices are sorted to maintain caching efficiency.
     """
 
-    def __init__(self, dataset: Dataset, target_class_ratios: dict, max_oversampling_factor: float=1.0):
+    def __init__(self, dataset: Dataset, target_class_ratios: dict, max_oversampling_rate: float=1.0):
         self.dataset = dataset
         self.target_class_ratios = target_class_ratios
-        self.max_oversampling_factor = max_oversampling_factor
+        self.max_oversampling_rate = max_oversampling_rate
         self.indeces = []
 
         all_labels = self.dataset.get_all_class_labels()
@@ -39,12 +39,21 @@ class UnderSampler(Sampler):
 
         # identify the largest one and scale all such that the largest becomes 1
         max_prob = max(class_probs.values())
-        class_probs = {label: prob / max_prob for label, prob in class_probs.items()}
+        class_probs = {label: prob / max_prob * self.max_oversampling_rate for label, prob in class_probs.items()}
 
         for label, prob in class_probs.items():
             label_idx = (all_labels == label)
-            n_sampled = int(prob * np.sum(label_idx))
-            sampled = np.random.choice(np.where(label_idx)[0], size=n_sampled, replace=False)
+            n_avail = np.sum(label_idx)
+            n_sampled = int(prob * n_avail)
+            if n_sampled > n_avail:
+                full_reps = n_sampled // n_avail
+                remainder = n_sampled % n_avail
+                sampled = np.concatenate([
+                    np.where(label_idx)[0].repeat(full_reps),
+                    np.random.choice(np.where(label_idx)[0], size=remainder, replace=False)
+                ])
+            else:
+                sampled = np.random.choice(np.where(label_idx)[0], size=n_sampled, replace=False)
             self.indeces.append(sampled)
             print(f"Class {label}: existing ratio = {existing_ratios[label]:.3f}, target ratio = {target_class_ratios[label]:.3f}, \
                     sampling probability = {prob:.3f}, sampled {n_sampled} out of {np.sum(label_idx)}")
@@ -124,6 +133,17 @@ class SmartPixelsDataset(Dataset):
             self.index.extend((file_idx, inside_idx) for inside_idx in internal_indices)
 
 
+    def shuffle_indices(self):
+        file_indices = list(self.index_dict.keys())
+        random.shuffle(file_indices)
+
+        for file_idx in file_indices:
+            internal_indices = list(self.index_dict[file_idx])
+            random.shuffle(internal_indices)
+
+            self.index.extend((file_idx, inside_idx) for inside_idx in internal_indices)
+
+
     def __len__(self):
         return len(self.index)
 
@@ -168,22 +188,7 @@ class SmartPixelsDataset(Dataset):
             y = self.target_transform(y)
 
         return x, y
-
    
-    def get_all_class_labels(self):
-        all_labels = []
-        for f in self.label_paths:
-            label_df = pd.read_parquet(f)
-            labels = label_df.values
-            if self.target_transform:
-                labels = self.target_transform(labels)
-            assert torch.all((labels == 0) | (labels == 1)) and torch.all(labels.sum(dim=-1) == 1), \
-                "Expected one-hot encoded binary labels after target_transform for classification" \
-                "Got labels[:3] = {}".format(labels[:3])
-            labels = np.argmax(labels, axis=1)  # convert one-hot to class indices
-            all_labels.append(labels)
-        return np.concatenate(all_labels, axis=0)
-    
 
     def get_all_class_labels(self):
         """
@@ -212,6 +217,8 @@ class SmartPixelsDataset(Dataset):
 
         return ordered_labels
 
+
+# class SmartPixelsDataSet
 
 
 if __name__ == "__main__":

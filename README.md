@@ -51,6 +51,9 @@ In their code, they als reference a `16x16` model. But I dont know what data tha
 
 ## Open Questions
 - Where is the source code for the `Co-design` paper?
-- Why the different `pT` spectrum for the first files?
+- Why the different `pT` spectrum for the first files? (Not so important as not used for training)
 - Usage of `y0` in input `y`-profile: this is a *label*, right? Is it legit to use this in the input? Would it be available in real-world deployment?
 - Paper says 800,000 clusters. We have 8,000,000 events.
+- Why train a 3-class classifier and then evaluate as binary classifier?
+- About the 200 MeV vs 2 GeV thing: why not train a regressor and cut on the prediction? Why not control precision / recall via weight?
+- Are you discarding some high-pT events to achieve a balanced dataset? If so, why not used weighted samples instead for higher data variance?

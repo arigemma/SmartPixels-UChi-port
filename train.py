@@ -2,9 +2,11 @@ import argparse
 from pathlib import Path
 import numpy as np
 from glob import glob
+from collections import defaultdict
 from tensorboardX import SummaryWriter
 
 import torch
+import torch.nn.functional as F
 from tqdm import tqdm
 
 from utils import CreateFolder, IsValidFile, IsReadableDir, EarlyStopping
@@ -13,6 +15,109 @@ from utils import get_device
 import pandas as pd
 from models.registry import REGISTRY
 from datetime import datetime
+
+
+def get_roc_auc(preds, y):
+    from sklearn.metrics import roc_auc_score
+
+    # preds = preds.cpu().numpy()
+    # y = y.cpu().numpy()
+
+    # if y.shape[1] == 1:
+    #     # Binary classification with single output neuron
+    #     return roc_auc_score(y, preds)
+    # else:
+    y_class = y.argmax(dim=-1).cpu().numpy()
+    probs = F.softmax(preds, dim=-1).cpu().numpy()
+    # print(f"y_class.shape: {y_class.shape}, preds.shape: {preds.shape}")
+    # score = roc_auc_score(y_class, probs, multi_class='ovr', average=None)
+    # score = roc_auc_score(y_class, probs, multi_class='ovo', average=None)
+    # print(f"ROC AUC score: {score}")
+    return roc_auc_score(y_class, probs, multi_class='ovr')
+
+
+def get_class_weights(data_loader):
+    """Calculate class weights for imbalanced classification."""
+    all_labels = data_loader.dataset.get_all_class_labels()
+    class_counts = np.bincount(all_labels)
+    total_samples = len(all_labels)
+    num_classes = len(class_counts)
+
+    # Calculate weights inversely proportional to class frequencies
+    class_weights = total_samples / (num_classes * class_counts)
+    return torch.tensor(class_weights, dtype=torch.float32)
+
+
+def get_pos_class_weights(data_loader):
+    """Calculate positive class weights for imbalanced multi-label classification."""
+    all_labels = data_loader.dataset.get_all_class_labels()
+    unique_labels = np.unique(all_labels)
+    pos_weights = torch.ones(len(unique_labels), dtype=torch.float32)
+    for i, label in enumerate(unique_labels):
+        pos_weights[i] = (all_labels != label).sum() / (all_labels == label).sum()
+    print(f"Positive class weights: {pos_weights}")
+    return pos_weights
+
+
+def derive_thresholds_from_data(data_loader, num_bits, one_per="feature", method="distributive"):
+    """Derive thresholds for binarization from the training data.
+    Args:
+        data_loader: DataLoader providing the training data.
+        num_bits: Number of bits for binarization.
+        one_per: Whether to derive thresholds per feature or globally. Options: "feature", "global", "channel".
+        method: Method to derive thresholds. Options: "distributive", "uniform".
+    Returns:
+        thresholds: Tensor of shape (num_features, num_bits) containing the derived thresholds.
+    """
+    from torchlogix.layers import Binarization
+
+    data_set = []
+    for i, (x, y) in enumerate(data_loader):
+        if i >= 5:  # Use only a subset of the data for threshold derivation
+            break
+        data_set.append(x)
+    data_set = torch.cat(data_set, dim=0)
+
+    thresholds = Binarization.get_initial_thresholds(
+        data_set,
+        num_bits=num_bits,
+        one_per=one_per,
+        method=method
+    )
+    return thresholds
+
+
+def evaluate_model(model, loader, eval_functions, mode="eval", device="cuda"):
+    """Evaluate model on a data loader with given evaluation functions.
+    Assumes metrics can be computed in batches and averaged."""
+    orig_mode = model.training
+    model.train(mode == "train")
+
+    metrics = defaultdict(list)
+
+    pbar = tqdm(loader, desc=f"Validation ({mode} mode)", leave=True, unit="batch")
+
+    with torch.no_grad():
+        for i, (x, y) in enumerate(pbar):
+            x, y = x.to(device), y.to(device)
+
+            preds = model(x)
+
+            for name, fn in eval_functions.items():
+                vals = fn(preds, y)
+                if isinstance(vals, torch.Tensor):
+                    val = vals.mean().item()  # Average over the batch and convert to scalar
+                else:
+                    val = np.mean(vals)
+                # metrics[name].append(fn(preds, y).to(torch.float32).mean().item())
+                metrics[name].append(val)
+
+            if i % 100 == 0:
+                pbar.set_postfix(**{name: f"{np.mean(vals):.3f}" for name, vals in metrics.items()})
+
+    model.train(orig_mode)
+
+    return {name: np.mean(vals) for name, vals in metrics.items()}
 
 
 def plot_data_distributions(data_loader):
@@ -81,28 +186,56 @@ def main(args):
     if args.plot_data:
         plot_data_distributions(train_loader)
 
-    model = model_cfg["class"]()
+    model_cls = model_cfg["class"]
+
+    if "lgn" in args.model:
+        thresholds = derive_thresholds_from_data(train_loader, num_bits=model_cls.n_bits)
+        print(f"Derived thresholds for binarization: {thresholds}")
+        model = model_cls(thresholds=thresholds)
+    else:
+        model = model_cls()
 
     print(model)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Number of trainable parameters: {n_params}")
 
+    # derive class weights for imbalanced classification
+    if args.balance_classes and task_type == "classification":
+        if args.loss_function == "cross_entropy":
+            class_weights = get_class_weights(train_loader).to(device)
+        elif args.loss_function == "bce":
+            class_weights = get_pos_class_weights(train_loader).to(device)
+    else:
+        class_weights = None
+
     if task_type == "classification":
-        criterion = torch.nn.BCEWithLogitsLoss()
+        if args.loss_function == "cross_entropy":
+            criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
+        elif args.loss_function == "bce":
+            criterion = torch.nn.BCEWithLogitsLoss(pos_weight=class_weights)
+        elif args.loss_function == "bce-sample":
+            criterion = torch.nn.BCEWithLogitsLoss()
     elif task_type == "regression":
         criterion = torch.nn.MSELoss()
     else:
         raise ValueError(f"Unknown task: {task_type}")
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
     model.to(device)
+
+    eval_functions = {
+        "loss": criterion,
+        "acc": lambda preds, y: (preds.argmax(-1) == y.argmax(-1)).to(torch.float32).mean(),
+        "balanced_acc": lambda preds, y: torch.stack([(preds.argmax(-1)[y.argmax(-1) == c] == c).to(torch.float32).mean() for c in range(y.shape[-1])]).mean(),
+        "roc_auc": get_roc_auc,
+    }
 
     if args.compile_model:
         print("Compiling the model...")
-        model.compile()
+        model.compile(dynamic=True)
 
     model.train()
-    early_stopping = EarlyStopping(patience=10)
+    early_stopping = EarlyStopping(patience=200)
     best_val_loss = float('inf')
 
     dir_name = f"logs/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
@@ -114,63 +247,80 @@ def main(args):
         "n_params": n_params,
     }
 
-    running_loss, running_n = 0.0, 0
-    pbar = tqdm(train_loader, desc="Training", unit="batch")
-    for step, (inputs, labels) in enumerate(pbar):
-        inputs = inputs.to(device)
-        labels = labels.to(device)
-        optimizer.zero_grad()
-        outputs = model(inputs)
-        loss = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
-        running_loss += loss
-        running_n += 1
-        # running_loss += loss.item() * inputs.size(0)
-        if step % 10 == 0:
-            pbar.set_postfix({
-                "running loss": f"{running_loss.item() / running_n:.3f}",
-                "loss": f"{loss.item():.3f}"
-            })
-            writer.add_scalar("Loss/train_batch", loss.item(), step)
+    step, running_loss, running_n, stop = 0, 0.0, 0, False
+    for epoch in range(10):
+        if stop:
+            break
+        train_loader.dataset.shuffle_indices()  # Shuffle the dataset at the beginning of each epoch
+        pbar = tqdm(train_loader, desc=f"Training (Epoch {epoch})", unit="batch", leave=True)
+        for inputs, labels in pbar:
+            step += 1
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            if args.loss_function == "bce-sample":
+                # Compute sample-wise weights based on class imbalance
+                with torch.no_grad():
+                    sample_weights = torch.ones(labels.shape[0], device=device)
+                    for c in range(labels.shape[1]):
+                        idx = labels[:, c] == 1  # Get indices of samples belonging to class c
+                        class_weight = class_weights[c] if class_weights is not None else 1.0
+                        sample_weights[idx] = class_weight
+                print(f"\nSample weights: {sample_weights}, shape: {sample_weights.shape}")
+                print(f"\nlabels: {labels}, shape: {labels.shape}, unique labels: {torch.unique(labels, dim=0)}")
+                loss = torch.nn.BCEWithLogitsLoss(weight=sample_weights)(outputs, labels)
 
-        if step % args.eval_freq == 0:
-            model.eval()
-            val_loss, val_acc, val_n = 0.0, 0.0, 0
-            with torch.no_grad():
-                pbar2 = tqdm(val_loader, desc="Validation", leave=True, unit="batch")
-                for inputs, labels in pbar2:
-                    inputs = inputs.to(device)
-                    labels = labels.to(device)
-                    outputs = model(inputs)
-                    loss = criterion(outputs, labels)
-                    val_loss += loss
-                    if task_type == "classification":
-                        preds = outputs.argmax(dim=1)  # Get the class with highest probability
-                        truth = labels.argmax(dim=1)  # Get the true class
+                # loss = criterion(outputs, labels, weight=sample_weights)
+            else:
+                loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss
+            running_n += 1
+            if step % 100 == 0:
+                preds = outputs.argmax(dim=1)  # Get the class with highest probability
+                truth = labels.argmax(dim=1)  # Get the true class
+                acc = (preds == truth).float().mean().item()
+                pbar.set_postfix({
+                    "running loss": f"{running_loss.item() / running_n:.3f}",
+                    "acc": f"{acc:.3f}",
+                    "loss": f"{loss.item():.3f}"
+                })
+                writer.add_scalar("Loss/train_batch", loss.item(), step)
 
-                        val_acc += (preds == truth).float().mean().item()
-                    val_n += 1
-                    pbar2.set_postfix({
-                        "running val loss": f"{val_loss.item() / val_n:.3f}",
-                        "running val acc": f"{val_acc / val_n:.3f}",
-                        "val loss": f"{loss.item():.3f}",
-                    })
-            writer.add_scalar("Loss/validation", val_loss.item() / val_n, step)
-            writer.add_scalar("Accuracy/validation", val_acc / val_n, step)
 
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                # writer.add_hparams(hparams, {"val_loss": val_loss})
-                torch.save(model, f"{args.output}/best_model.pth")
-            # print(f"Step {step+1}/{len(train_loader)}, Validation Loss: {val_loss:.4f}")
-            if early_stopping.step(val_loss):
-                print("Early stopping triggered.")
-                break
-            if args.steps is not None and step >= args.steps:
-                print(f"Reached the maximum number of steps: {args.steps}. Stopping training.")
-                break
-            model.train()
+            if step % args.eval_freq == 0:
+                metrics = evaluate_model(
+                    model, val_loader, eval_functions, mode="eval", device=args.device
+                )
+                for name, val in metrics.items():
+                    writer.add_scalar(f"Discrete/{name}", val, step)
+                if "lgn" in args.model:
+                    relaxed_metrics = evaluate_model(
+                        model, val_loader, eval_functions, mode="train", device=args.device
+                    )
+                    for name, val in relaxed_metrics.items():
+                        writer.add_scalar(f"Relaxed/{name}", val, step)
+
+                # if val_loss < best_val_loss:
+                if metrics["loss"] < best_val_loss:
+                    best_val_loss = metrics["loss"]
+                    # writer.add_hparams(hparams, {"val_loss": val_loss})
+                    # print(f"New best model found at step {step+1} with validation loss {val_loss:.4f}. Saving model...")
+                    torch.save(model, f"{args.output}/best_model.pth")
+                # print(f"Step {step+1}/{len(train_loader)}, Validation Loss: {val_loss:.4f}")
+                if early_stopping.step(metrics["loss"]):
+                    stop = True
+                    print("Early stopping triggered.")
+                    break
+                if args.steps is not None and step >= args.steps:
+                    stop = True
+                    print(f"Reached the maximum number of steps: {args.steps}. Stopping training.")
+                    break
+                model.train()
+
+    torch.save(model, f"{args.output}/final_model.pth")
 
 
 if __name__ == "__main__":
@@ -222,7 +372,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--balance-classes",  action='store_true', help="Balance the dataset classes during training (only for classification tasks)."
     )
-    
+    parser.add_argument(
+        "--weight-decay", type=float, default=0.0, help="Weight decay for AdamW optimizer"
+    )
+    parser.add_argument(
+        "--loss-function", "-lf", type=str, default="cross_entropy", choices=["cross_entropy", "bce", "bce-sample"], help="Loss function to use for classification tasks"
+    )
+
     args = parser.parse_args()
 
     main(args)

@@ -43,10 +43,10 @@ class CreateFolder(argparse.Action):
         Create a new directory if not exist. The action might throw
         OSError, along with other kinds of exception
         """
-        if not os.path.isdir(folder_name):
-            os.mkdir(folder_name)
+        # Create all parent directories if they don't exist
+        print(f"Creating folder: {folder_name}")
+        os.makedirs(folder_name, exist_ok=True)
 
-        # folder_name = folder_name.rstrip(os.sep)
         folder_name = os.path.normpath(folder_name)
         return folder_name
 
