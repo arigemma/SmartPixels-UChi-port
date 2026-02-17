@@ -18,7 +18,7 @@ class TowardsModel1(torch.nn.Module):
         assert x.shape == (x.shape[0], 2), f"Expected input shape (batch_size, 2), but got {x.shape}"
         x = torch.relu(self.fc1(x))
         x = self.fc2(x)
-        return x #originally returned softmax, but changing to cross-entropy loss
+        return x  # return raw logits, no softmax applied
 
 
 @register("towards-model-2", input_type="y-profile", task_type="classification")
