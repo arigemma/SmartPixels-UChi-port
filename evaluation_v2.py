@@ -213,7 +213,6 @@ def main():
         model_name, model_cfg = registry.class_to_config(type(model))
 
         input_type = model_cfg["input_type"]
-        task_type = model_cfg["task_type"]
 
         print(f"\n[INFO] Evaluating {model_name} with input_type={input_type}...")
 
@@ -235,19 +234,17 @@ def main():
 
         true_pts, logits = [], []
         with torch.no_grad():
-            for i, (x, y) in tqdm(enumerate(test_loader)):
-            # for x, y in tqdm(test_loader):
+            for i, (x, y) in enumerate(tqdm(test_loader)):
+                x = x.to(device)
                 out = model(x)
-                logits.append(out.detach().cpu().numpy())
-                true_pts.append(y[:, pt_idx].detach().cpu().numpy())
-                # preds.append(pred.argmax(dim=1))  # Get the class with highest probability
+                logits.append(out)
+                true_pts.append(y[:, pt_idx])
                 if i >= 1000:  # Limit to first 100 batches for quick evaluation
                     break
 
         true_pts = np.concatenate(true_pts, axis=0)
-        logits = np.concatenate(logits, axis=0)
-        #probs = softmax_np(logits)
-        probs = softmax_np(logits)
+        logits = torch.cat(logits, dim=0)
+        probs = torch.softmax(logits, dim=1).cpu().numpy()
         pred_classes = np.argmax(probs, axis=1).astype(np.int8)
         true_classes = true_class_from_signed_pt(true_pts, pt_boundary=args.pt_boundary)
         high_true = (true_classes == 2).astype(np.int32)
