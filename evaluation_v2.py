@@ -17,7 +17,7 @@ from tqdm import tqdm
 from dataloader import create_dataloaders
 from utils import get_device, CreateFolder
 from models import registry
-import hist
+# import hist
 
 
 LABEL_ORDER = [
@@ -153,6 +153,7 @@ def plot_prob_vs_pt(pt_true_signed: np.ndarray, p_high_by_model: Dict[str, np.nd
     savefig(fig, outpath)
 
 
+
 def plot_acceptance_vs_pt(pt_true_signed: np.ndarray, pred_dict: dict[str, np.ndarray], outpath: Path):
     
     # use variable bin edges
@@ -194,6 +195,9 @@ def plot_acceptance_vs_pt(pt_true_signed: np.ndarray, pred_dict: dict[str, np.nd
 
     # fig, ax = plt.subplots(1, 1, figsize=(6.8, 4.2), constrained_layout=True)
 
+
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-config", required=True)
@@ -201,6 +205,14 @@ def main():
     ap.add_argument("--device", choices=["cpu", "cuda", "mps"], default="cpu")
     ap.add_argument("--outdir", action=CreateFolder, default="results/eval_towards")
     ap.add_argument("--pt-boundary", type=float, default=2.0)
+    ap.add_argument(
+    "--forward",
+    choices=["relaxed", "discrete"],
+    default="relaxed",
+    help="Which forward to use for TorchLogix models. "
+         "'relaxed' uses the soft/relaxation path; 'discrete' uses hard/thresholded path.",
+    )
+
     ap.add_argument("--batch-size", type=int, default=1024)
     args = ap.parse_args()
 
@@ -217,6 +229,10 @@ def main():
         print(f"\n[INFO] Loading model from {model_path}...")
 
         model = load_model(model_path).to(device)
+        if args.forward == "discrete":
+            model.eval()
+        else:
+            model.train()
 
         model_name, model_cfg = registry.class_to_config(type(model))
 
@@ -254,9 +270,13 @@ def main():
         true_pts = np.concatenate(true_pts, axis=0)
         # logits = np.concatenate(logits, axis=0)
         logits = torch.cat(logits, dim=0)
-        probs = torch.softmax(logits, dim=1).cpu().numpy()
-        # probs = softmax_np(logits)
-        pred_classes = np.argmax(probs, axis=1).astype(np.int8)
+
+        if args.forward == "discrete":
+            pred_classes = logits.argmax(dim=1).cpu().numpy().astype(np.int8)
+            probs = None
+        else:
+            probs = torch.softmax(logits, dim=1).cpu().numpy()
+            pred_classes = np.argmax(probs, axis=1).astype(np.int8)
         true_classes = true_class_from_signed_pt(true_pts, pt_boundary=args.pt_boundary)
         high_true = (true_classes == 2).astype(np.int32)
 

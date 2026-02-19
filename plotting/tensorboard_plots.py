@@ -3,27 +3,22 @@ import argparse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
-import re
 
 import matplotlib.pyplot as plt
-
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
-
 
 # ---- What we will plot (TensorBoard scalar tags) ----
 TAGS = {
     "balanced_acc_discrete": "Discrete/balanced_acc",
     "balanced_acc_relaxed":  "Relaxed/balanced_acc",
-    "roc_auc_discrete":       "Discrete/roc_auc",
-    "roc_auc_relaxed":        "Relaxed/roc_auc",
+    "roc_auc_discrete":      "Discrete/roc_auc",
+    "roc_auc_relaxed":       "Relaxed/roc_auc",
 }
-
 
 @dataclass
 class RunSpec:
     label: str
     root: Path  # directory that contains logs/**/events.out.tfevents*
-
 
 def _parse_run(run_arg: str) -> RunSpec:
     if "=" not in run_arg:
@@ -36,24 +31,29 @@ def _parse_run(run_arg: str) -> RunSpec:
     root = Path(path).expanduser()
     return RunSpec(label=label, root=root)
 
+def _discover_runs(root_dir: Path) -> List[RunSpec]:
+    """
+    Discover run directories as immediate subdirectories of root_dir.
+    Label = subdir name, root = subdir path.
+    """
+    root_dir = root_dir.expanduser()
+    if not root_dir.exists() or not root_dir.is_dir():
+        return []
+    runs: List[RunSpec] = []
+    for p in sorted(root_dir.iterdir()):
+        if p.is_dir():
+            runs.append(RunSpec(label=p.name, root=p))
+    return runs
 
 def _find_event_dirs(root: Path) -> List[Path]:
-
     if not root.exists():
         return []
     event_files = list(root.rglob("events.out.tfevents.*"))
     dirs = sorted({p.parent for p in event_files})
     return dirs
 
-
 def _load_scalars_from_event_dir(event_dir: Path, size_guidance: int = 0) -> Dict[str, List[Tuple[int, float]]]:
-
-    ea = EventAccumulator(
-        str(event_dir),
-        size_guidance={
-            "scalars": size_guidance,  
-        },
-    )
+    ea = EventAccumulator(str(event_dir), size_guidance={"scalars": size_guidance})
     ea.Reload()
 
     out: Dict[str, List[Tuple[int, float]]] = {}
@@ -63,25 +63,19 @@ def _load_scalars_from_event_dir(event_dir: Path, size_guidance: int = 0) -> Dic
         out[tag] = [(int(e.step), float(e.value)) for e in events]
     return out
 
-
 def _merge_series(series_list: List[List[Tuple[int, float]]]) -> List[Tuple[int, float]]:
-
     last_by_step: Dict[int, float] = {}
     for series in series_list:
         for step, val in series:
             last_by_step[step] = val
-    merged = sorted(last_by_step.items(), key=lambda x: x[0])
-    return merged
-
+    return sorted(last_by_step.items(), key=lambda x: x[0])
 
 def _cap_steps(series: List[Tuple[int, float]], max_step: Optional[int]) -> List[Tuple[int, float]]:
     if max_step is None:
         return series
     return [(s, v) for (s, v) in series if s <= max_step]
 
-
 def _smooth(series: List[Tuple[int, float]], window: int) -> List[Tuple[int, float]]:
-
     if window <= 1 or len(series) < 3:
         return series
     steps = [s for s, _ in series]
@@ -94,7 +88,6 @@ def _smooth(series: List[Tuple[int, float]], window: int) -> List[Tuple[int, flo
         hi = min(n, i + half + 1)
         smoothed.append(sum(vals[lo:hi]) / (hi - lo))
     return list(zip(steps, smoothed))
-
 
 def _plot_metric(
     runs_data: Dict[str, List[Tuple[int, float]]],
@@ -124,44 +117,60 @@ def _plot_metric(
     plt.savefig(out_path, dpi=200)
     plt.close()
 
-
 def main():
     ap = argparse.ArgumentParser(description="Plot TensorBoard scalars across multiple runs.")
     ap.add_argument(
         "-r", "--run",
         action="append",
-        required=True,
+        default=[],
         help='Repeatable. Format: "label=PATH". PATH is your training output folder (the one you passed as -o to train.py).',
     )
     ap.add_argument(
-        "--max-step",
-        type=int,
+        "--runs-root",
+        action="append",
+        default=[],
+        help="Repeatable. Auto-add all runs found as immediate subdirectories of this directory "
+             "(e.g. results/SLURM/2026_02_17).",
+    )
+    ap.add_argument("--max-step", type=int, default=None)
+    ap.add_argument("--smooth", type=int, default=1)
+    ap.add_argument("--outdir", type=str, default="results/tb_plots")
+    ap.add_argument("--prefer-latest", action="store_true")
+    ap.add_argument(
+        "--discrete-filter",
+        nargs="?",
+        const=0.6,
+        type=float,
         default=None,
-        help="Only plot points with step <= max-step. (default: no cap)",
-    )
-    ap.add_argument(
-        "--smooth",
-        type=int,
-        default=1,
-        help="Moving-average smoothing window (odd integers work best). 1 disables smoothing.",
-    )
-    ap.add_argument(
-        "--outdir",
-        type=str,
-        default="tb_plots",
-        help="Where to write PNGs (default: tb_plots).",
-    )
-    ap.add_argument(
-        "--prefer-latest",
-        action="store_true",
-        help="If a run directory contains multiple event subdirs, only use the most recent one (lexicographically).",
+        help="If set, print runs whose max Discrete/balanced_acc >= THRESH. "
+             "Use '--discrete-filter' (defaults to 0.6) or '--discrete-filter 0.72'.",
     )
     args = ap.parse_args()
 
-    runs = [_parse_run(r) for r in args.run]
+    runs: List[RunSpec] = []
+
+    for r in args.run:
+        runs.append(_parse_run(r))
+
+    for rr in args.runs_root:
+        discovered = _discover_runs(Path(rr))
+        if not discovered:
+            print(f"WARNING: --runs-root had no subdirectories (or missing): {rr}")
+        runs.extend(discovered)
+
+    runs_by_label: Dict[str, RunSpec] = {}
+    for rs in runs:
+        runs_by_label[rs.label] = rs
+    runs = list(runs_by_label.values())
+
+    if not runs:
+        raise SystemExit("No runs specified. Provide --runs-root DIR and/or one or more -r label=PATH.")
+
+    run_root_by_label: Dict[str, Path] = {rs.label: rs.root for rs in runs}
+
     outdir = Path(args.outdir).expanduser()
 
-    per_run_series: Dict[str, Dict[str, List[Tuple[int, float]]]] = {}  
+    per_run_series: Dict[str, Dict[str, List[Tuple[int, float]]]] = {}
     missing_runs = []
     for run in runs:
         event_dirs = _find_event_dirs(run.root)
@@ -221,17 +230,30 @@ def main():
         )
         print(f"Wrote: {path}")
 
-    # print("\nPer-run tag availability:")
-    # for label, tagmap in per_run_series.items():
-    #     available = set(tagmap.keys())
-    #     wanted = [TAGS[k] for k in TAGS]
-    #     have = [t for t in wanted if t in available]
-    #     miss = [t for t in wanted if t not in available]
-    #     print(f"- {label}:")
-    #     print(f"    have: {have}")
-    #     if miss:
-    #         print(f"    missing: {miss}")
+    if args.discrete_filter is not None:
+        thr = float(args.discrete_filter)
+        tag = TAGS["balanced_acc_discrete"]
+        winners: List[Tuple[str, Path, float, int]] = []
 
+        for label, tagmap in per_run_series.items():
+            series = tagmap.get(tag)
+            if not series:
+                continue
+            series = _cap_steps(series, args.max_step)
+            if not series:
+                continue
+            best_step, best_val = max(series, key=lambda sv: sv[1])
+            if best_val >= thr:
+                winners.append((label, run_root_by_label.get(label, Path("UNKNOWN")), best_val, best_step))
+
+        winners.sort(key=lambda x: x[2], reverse=True)
+
+        print(f"\nRuns with max {tag} >= {thr}:")
+        if not winners:
+            print("  (none)")
+        else:
+            for label, root, best_val, best_step in winners:
+                print(f"  - {label}: {best_val:.4f} @ step {best_step}  ({root})")
 
 if __name__ == "__main__":
     main()
