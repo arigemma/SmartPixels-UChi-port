@@ -189,7 +189,7 @@ def plot_acceptance_vs_pt(pt_true_signed: np.ndarray, pred_dict: dict[str, np.nd
 
     plt.xlabel(r"true $p_T$ [GeV]")
     # plt.ylabel(r"acceptance as \textit{high-$p_T$}")
-    plt.ylabel(r"acceptance as $\it{high}$-$p_T$")
+    plt.ylabel(r"acceptance p_T>|0.2 GeV|")
     plt.legend(loc="best", fontsize=8, framealpha=0.2)
     plt.savefig(outpath, dpi=160)
 
