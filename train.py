@@ -73,7 +73,7 @@ def derive_thresholds_from_data(data_loader, num_bits, one_per="feature", method
 
     data_set = []
     for i, (x, y) in enumerate(data_loader):
-        if i >= 5:  # Use only a subset of the data for threshold derivation
+        if i >= 15:  # Use only a subset of the data for threshold derivation
             break
         data_set.append(x)
     data_set = torch.cat(data_set, dim=0)
@@ -173,7 +173,21 @@ def main(args):
     if task_type == "regression" and args.balance_classes:
         raise ValueError("Balancing classes is not supported for regression tasks.")
 
-    train_loader, val_loader, test_loader = create_dataloaders(
+    if args.filter:
+        train_loader, val_loader, test_loader = create_dataloaders(
+            args.data_config,
+            batch_size=args.batch_size,
+            shuffle=False,
+            val_size=0.01,
+            balance_classes=args.balance_classes,
+            input_type=input_type,
+            target_type=task_type,
+            drop_dominant_features=True,
+            dominant_thr=0.95, 
+            dominant_num_batches=10, 
+            )
+    else:
+        train_loader, val_loader, test_loader = create_dataloaders(
         args.data_config,
         batch_size=args.batch_size,
         shuffle=False,
@@ -181,7 +195,10 @@ def main(args):
         balance_classes=args.balance_classes,
         input_type=input_type,
         target_type=task_type,
-    )
+        drop_dominant_features=True,
+        dominant_thr=1.0, #set to 1 not to filter
+        dominant_num_batches=1, #set to 1 not to filter
+        )
 
     if args.plot_data:
         plot_data_distributions(train_loader)
@@ -361,6 +378,10 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--loss-function", "-lf", type=str, default="cross_entropy", choices=["cross_entropy", "bce"], help="Loss function to use for classification tasks"
+    )
+
+    parser.add_argument(
+        "--filter", action = 'store_true', help="Choose to filter mostly non-varying fetures."
     )
 
     args = parser.parse_args()

@@ -16,6 +16,53 @@ LAST_FRAME = N_TIME - 1
 N_SLICES = 8
 
 
+class MaskFeaturesDataset(Dataset):
+    def __init__(self, base_ds: Dataset, keep_mask: torch.Tensor):
+        self.base_ds = base_ds
+        self.keep_mask = keep_mask.detach().cpu().bool()
+
+    def __len__(self):
+        return len(self.base_ds)
+
+    def __getitem__(self, idx):
+        x, y = self.base_ds[idx]
+        x = x.reshape(-1)
+        x = x[self.keep_mask]
+        return x, y
+
+    def __getattr__(self, name):
+        return getattr(self.base_ds, name)
+
+
+def compute_keep_mask_from_loader(
+    loader: DataLoader,
+    thr: float = 0.95,
+    num_batches: int = 10,
+) -> torch.Tensor:
+    mode_match_total = None
+    total_n = 0
+
+    for i, (xb, _) in enumerate(loader):
+        if i >= num_batches:
+            break
+
+        xb = xb.reshape(xb.size(0), -1) 
+        B, D = xb.shape
+
+        mode_vals, _ = torch.mode(xb, dim=0)  
+        mode_counts = (xb == mode_vals.unsqueeze(0)).sum(dim=0)  
+
+        if mode_match_total is None:
+            mode_match_total = mode_counts.clone()
+        else:
+            mode_match_total += mode_counts
+
+        total_n += B
+
+    mode_frac = mode_match_total.float() / float(total_n)
+    keep_mask = mode_frac < thr
+    return keep_mask
+
 def _y_profile_last_frame(x: torch.Tensor) -> torch.Tensor:
     """Mean over x-dimension for last time frame."""
     return x[LAST_FRAME].mean(axis=-1)
@@ -151,6 +198,9 @@ def create_dataloaders(
     target_type: str = "regression",  # "regression" or "classification"
     balance_classes: bool = False,
     val_size: float = 0.2,
+    drop_dominant_features: bool = False,
+    dominant_thr: float = 0.95, 
+    dominant_num_batches: int = 10,
 ) -> Tuple[DataLoader, DataLoader, DataLoader]:
     
     config_dict = yaml.safe_load(open(config_path, "r"))
@@ -217,6 +267,25 @@ def create_dataloaders(
     train_loader = DataLoader(train_dataset, **loader_kwargs)
     val_loader = DataLoader(val_dataset, **loader_kwargs)
     test_loader = DataLoader(test_dataset, **loader_kwargs)
+
+    # drop features
+    if drop_dominant_features:
+        keep_mask = compute_keep_mask_from_loader(
+            train_loader,
+            thr=dominant_thr,
+            num_batches=dominant_num_batches,
+        )
+
+        print(f"[feature-drop] thr={dominant_thr}, batches={dominant_num_batches}")
+        print(f"[feature-drop] dropped {(~keep_mask).sum().item()} / {keep_mask.numel()} features")
+
+        train_dataset = MaskFeaturesDataset(train_dataset, keep_mask)
+        val_dataset   = MaskFeaturesDataset(val_dataset, keep_mask)
+        test_dataset  = MaskFeaturesDataset(test_dataset, keep_mask)
+
+        train_loader = DataLoader(train_dataset, **loader_kwargs)
+        val_loader   = DataLoader(val_dataset, **loader_kwargs)
+        test_loader  = DataLoader(test_dataset, **loader_kwargs)
 
     return train_loader, val_loader, test_loader
 
