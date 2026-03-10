@@ -366,7 +366,7 @@ def eval_model_pred_classes(
             target_type="raw",
             balance_classes=False,
             val_size=0.0,
-            drop_dominant_features=True,
+            drop_dominant_features=False,
             dominant_thr=0.95,
             dominant_num_batches=10,
         )
@@ -506,6 +506,48 @@ def plot_acceptance(
     savefig(fig, outpath)
 
 
+
+def plot_acceptance_multiple_baselines(
+    baseline_items: List[Tuple[str, np.ndarray, np.ndarray]],
+    outpath: Path,
+    z: float = 1.0,
+):
+    """
+    baseline_items: list of (label, true_pts_signed, preds)
+    """
+    edges = np.array(
+        [-5, -4.5, -4, -3.5, -3, -2.5, -2, -1.8, -1.6, -1.4, -1.2, -1, -0.8, -0.6, -0.4,
+         -0.15, 0.15, 0.2, 0.3, 0.4, 0.6, 0.8, 1, 1.2, 1.4, 1.6, 1.8, 2, 2.5, 3, 3.5, 4, 4.5, 5],
+        dtype=np.float64
+    )
+
+    fig, ax = plt.subplots(1, 1, figsize=(7.4, 4.4), constrained_layout=True)
+
+    for i, (label, pt_true_signed, preds) in enumerate(baseline_items):
+        linestyle = "-" if i == 0 else "--"
+        marker = "o" if i == 0 else "s"
+
+        plot_curve_with_wilson(
+            ax=ax,
+            pt_true_signed=pt_true_signed,
+            preds=preds,
+            edges=edges,
+            label=label,
+            marker=marker,
+            linestyle=linestyle,
+            z=z,
+        )
+
+    ax.set_title("Acceptance vs true $p_T$")
+    ax.set_xlabel(r"true $p_T$ [GeV]")
+    ax.set_ylabel(r"acceptance as high-$p_T$ (class=2)")
+    ax.set_ylim(0.0, 1.02)
+    ax.set_yticks([0.0, 0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 1.0])
+    ax.grid(True, alpha=0.35)
+    ax.legend(loc="best", fontsize=8, framealpha=0.85)
+
+    savefig(fig, outpath)
+
 def plot_acceptance_baseline_only(
     input_type: str,
     pt_true_signed: np.ndarray,
@@ -601,6 +643,11 @@ def main():
         default=1.0,
         help="Wilson interval z-value for error bars. 1.0 ~ 68%%, 1.96 ~ 95%%.",
     )
+    ap.add_argument(
+    "--combine-baselines",
+    action="store_true",
+    help="If set and no candidates are given, plot all baselines on one acceptance plot.",
+    )
 
     args = ap.parse_args()
     device = get_device(args.device)
@@ -668,6 +715,23 @@ def main():
                 kind="lgn",
                 hw=hw_ballpark(model_r, x_sample_r, kind="lgn"),
             )
+
+    if not args.candidates and args.combine_baselines:
+        baseline_items = []
+        for input_type, b in baseline_by_input.items():
+            baseline_fallback = f"Baseline ({Path(b['path']).parent.name})"
+            baseline_label = label_for(b["path"], baseline_fallback, name_overrides)
+            baseline_items.append((baseline_label, b["true_pts"], b["preds_relaxed"]))
+
+        outpath = outdir / "acceptance_baselines_combined.png"
+        plot_acceptance_multiple_baselines(
+            baseline_items=baseline_items,
+            outpath=outpath,
+            z=args.baseline_error_z,
+        )
+
+        print("[DONE] Wrote outputs to:", str(outdir))
+        return
 
     best_relaxed: Dict[str, Dict] = {}
     best_discrete: Dict[str, Dict] = {}
