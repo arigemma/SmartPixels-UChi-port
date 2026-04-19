@@ -59,7 +59,7 @@ def score_model(sig_eff: float, bkg_rej: float) -> float:
 
 
 def load_model(path: str, device: torch.device) -> torch.nn.Module:
-    return torch.load(path, map_location=device, weights_only=False)
+    return registry.load_registered_model(path, map_location=device)
 
 
 def count_params(model: torch.nn.Module) -> int:

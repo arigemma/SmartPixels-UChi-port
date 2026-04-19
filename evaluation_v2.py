@@ -220,7 +220,7 @@ def main():
     outdir = Path(args.outdir)
 
     def load_model(path: str) -> torch.nn.Module:
-        return torch.load(path, map_location=device, weights_only=False)
+        return registry.load_registered_model(path, map_location=device)
 
     data = {}
     # for model in [m1, m2, m3]:

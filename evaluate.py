@@ -12,12 +12,12 @@ import pandas as pd
 import seaborn as sns
 import math
 import matplotlib.pyplot as plt
-from models.registry import REGISTRY, class_to_config
+from models.registry import REGISTRY, class_to_config, load_registered_model
 
 
 def main(args):
 
-    model = torch.load(args.model_path, weights_only=False)
+    model = load_registered_model(args.model_path)
     model.to(args.device)
 
     name, model_cfg = class_to_config(type(model))

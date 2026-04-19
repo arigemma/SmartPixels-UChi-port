@@ -17,6 +17,17 @@ from models.registry import REGISTRY
 from datetime import datetime
 
 
+def save_model(model, model_name, path):
+    if "brevitas" in model_name:
+        torch.save({
+            "format": "registry_state_dict",
+            "model": model_name,
+            "state_dict": model.state_dict(),
+        }, path)
+    else:
+        torch.save(model, path)
+
+
 def get_roc_auc(preds, y):
     from sklearn.metrics import roc_auc_score
 
@@ -309,7 +320,7 @@ def main(args):
                     best_val_loss = metrics["loss"]
                     # writer.add_hparams(hparams, {"val_loss": val_loss})
                     # print(f"New best model found at step {step+1} with validation loss {val_loss:.4f}. Saving model...")
-                    torch.save(model, f"{args.output}/best_model.pth")
+                    save_model(model, args.model, f"{args.output}/best_model.pth")
                 # print(f"Step {step+1}/{len(train_loader)}, Validation Loss: {val_loss:.4f}")
                 if early_stopping.step(metrics["loss"]):
                     stop = True
@@ -321,7 +332,7 @@ def main(args):
                     break
                 model.train()
 
-    torch.save(model, f"{args.output}/final_model.pth")
+    save_model(model, args.model, f"{args.output}/final_model.pth")
 
 
 if __name__ == "__main__":
