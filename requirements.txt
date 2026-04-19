@@ -1,6 +1,8 @@
 numpy==1.26.4
 torch
+brevitas
 pandas
+tensorboardX
 seaborn
 matplotlib
 scikit-learn
