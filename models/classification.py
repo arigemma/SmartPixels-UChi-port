@@ -1,6 +1,17 @@
 import torch
-from torchlogix.layers import LogicConv2d, LogicDense, GroupSum, FixedBinarization, LearnableBinarization, OrPooling2d
 from .registry import register
+
+_TORCHLOGIX_IMPORT_ERROR = None
+try:
+    from torchlogix.layers import LogicConv2d, LogicDense, GroupSum, FixedBinarization, LearnableBinarization, OrPooling2d
+except ImportError as exc:
+    _TORCHLOGIX_IMPORT_ERROR = exc
+
+    class _MissingTorchLogixLayer:
+        def __init__(self, *args, **kwargs):
+            raise ImportError("torchlogix is required for LGN models.") from _TORCHLOGIX_IMPORT_ERROR
+
+    LogicConv2d = LogicDense = GroupSum = FixedBinarization = LearnableBinarization = OrPooling2d = _MissingTorchLogixLayer
 
 
 # models like in paper: https://iopscience.iop.org/article/10.1088/2632-2153/ad6a00/pdf
@@ -65,6 +76,124 @@ class TowardsModel3(torch.nn.Module):
         x = self.fc2(x)
         
         return x
+
+
+def _import_brevitas_nn():
+    try:
+        import brevitas.nn as qnn
+    except ImportError as exc:
+        raise ImportError(
+            "Brevitas is required for quantized towards models. "
+            "Install dependencies from requirements.txt before using them."
+        ) from exc
+    return qnn
+
+
+class QuantizedTowardsModel2(torch.nn.Module):
+    weight_bit_width = None
+    act_bit_width = None
+
+    def __init__(self):
+        super(QuantizedTowardsModel2, self).__init__()
+        qnn = _import_brevitas_nn()
+        self.quant_inp = qnn.QuantIdentity(bit_width=self.act_bit_width)
+        self.fc1 = qnn.QuantLinear(14, 128, weight_bit_width=self.weight_bit_width)
+        self.relu1 = qnn.QuantReLU(bit_width=self.act_bit_width)
+        self.fc2 = qnn.QuantLinear(128, 3, weight_bit_width=self.weight_bit_width)
+        self.softmax = torch.nn.Softmax(dim=1)
+
+    def forward(self, x):
+        assert x.shape == (x.shape[0], 14), f"Expected input shape (batch_size, 14), but got {x.shape}"
+        x = self.quant_inp(x)
+        x = self.relu1(self.fc1(x))
+        x = self.fc2(x)
+        return x
+
+
+class QuantizedTowardsModel3(torch.nn.Module):
+    weight_bit_width = None
+    act_bit_width = None
+
+    def __init__(self):
+        super(QuantizedTowardsModel3, self).__init__()
+        qnn = _import_brevitas_nn()
+        self.quant_inp = qnn.QuantIdentity(bit_width=self.act_bit_width)
+        self.conv1 = qnn.QuantConv2d(1, 16, kernel_size=3, stride=1, weight_bit_width=self.weight_bit_width)
+        self.relu1 = qnn.QuantReLU(bit_width=self.act_bit_width)
+        self.conv2 = qnn.QuantConv2d(16, 64, kernel_size=3, stride=1, weight_bit_width=self.weight_bit_width)
+        self.relu2 = qnn.QuantReLU(bit_width=self.act_bit_width)
+        self.fc1 = qnn.QuantLinear(64 * 9 * 4 + 1, 32, weight_bit_width=self.weight_bit_width)
+        self.relu3 = qnn.QuantReLU(bit_width=self.act_bit_width)
+        self.dropout = torch.nn.Dropout(0.1)
+        self.fc2 = qnn.QuantLinear(32, 3, weight_bit_width=self.weight_bit_width)
+        self.softmax = torch.nn.Softmax(dim=1)
+
+    def forward(self, x):
+        assert x.shape == (x.shape[0], 105), f"Expected input shape (batch_size, 105), but got {x.shape}"
+
+        x = self.quant_inp(x)
+        y0 = x[:, 0:1]
+        profile = x[:, 1:].view(-1, 1, 13, 8)
+
+        x = self.relu1(self.conv1(profile))
+        x = self.relu2(self.conv2(x))
+
+        x = x.view(x.size(0), -1)
+        x = torch.cat((y0, x), dim=1)
+
+        x = self.relu3(self.fc1(x))
+        x = self.dropout(x)
+        x = self.fc2(x)
+
+        return x
+
+
+@register("towards-model-2-brevitas-w5a10", input_type="y-profile", task_type="classification")
+class QuantizedTowardsModel2W5A10(QuantizedTowardsModel2):
+    weight_bit_width = 5
+    act_bit_width = 10
+
+
+@register("towards-model-2-brevitas-w4a8", input_type="y-profile", task_type="classification")
+class QuantizedTowardsModel2W4A8(QuantizedTowardsModel2):
+    weight_bit_width = 4
+    act_bit_width = 8
+
+
+@register("towards-model-2-brevitas-w2a6", input_type="y-profile", task_type="classification")
+class QuantizedTowardsModel2W2A6(QuantizedTowardsModel2):
+    weight_bit_width = 2
+    act_bit_width = 6
+
+
+@register("towards-model-2-brevitas-w2a4", input_type="y-profile", task_type="classification")
+class QuantizedTowardsModel2W2A4(QuantizedTowardsModel2):
+    weight_bit_width = 2
+    act_bit_width = 4
+
+
+@register("towards-model-3-brevitas-w5a10", input_type="y-profile-timing", task_type="classification")
+class QuantizedTowardsModel3W5A10(QuantizedTowardsModel3):
+    weight_bit_width = 5
+    act_bit_width = 10
+
+
+@register("towards-model-3-brevitas-w4a8", input_type="y-profile-timing", task_type="classification")
+class QuantizedTowardsModel3W4A8(QuantizedTowardsModel3):
+    weight_bit_width = 4
+    act_bit_width = 8
+
+
+@register("towards-model-3-brevitas-w2a6", input_type="y-profile-timing", task_type="classification")
+class QuantizedTowardsModel3W2A6(QuantizedTowardsModel3):
+    weight_bit_width = 2
+    act_bit_width = 6
+
+
+@register("towards-model-3-brevitas-w2a4", input_type="y-profile-timing", task_type="classification")
+class QuantizedTowardsModel3W2A4(QuantizedTowardsModel3):
+    weight_bit_width = 2
+    act_bit_width = 4
 
 
 @register("lgn-dense-1", input_type="y-size", task_type="classification")
