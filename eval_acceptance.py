@@ -451,7 +451,7 @@ def plot_acceptance(
             linestyle="--",
             z=z,
         )
-    if baseline_kind == "tf":
+    if baseline_kind in ("tf", "quantized"):
         plot_curve_with_wilson(
             ax=ax,
             pt_true_signed=pt_true_signed,
@@ -510,6 +510,7 @@ def plot_acceptance(
 def plot_acceptance_multiple_baselines(
     baseline_items: List[Tuple[str, np.ndarray, np.ndarray]],
     outpath: Path,
+    title: str = "Acceptance vs true $p_T$",
     z: float = 1.0,
 ):
     """
@@ -552,7 +553,7 @@ def plot_acceptance_multiple_baselines(
             z=z,
         )
 
-    ax.set_title("Acceptance vs true $p_T$")
+    ax.set_title(title)
     ax.set_xlabel(r"true $p_T$ [GeV]")
     ax.set_ylabel(r"acceptance as high-$p_T$ (class=2)")
     ax.set_ylim(0.0, 1.02)
@@ -632,6 +633,16 @@ def parse_kv_list(items: List[str]) -> Dict[str, str]:
     return out
 
 
+def parse_kv_pairs(items: List[str]) -> List[Tuple[str, str]]:
+    out: List[Tuple[str, str]] = []
+    for it in items:
+        if "=" not in it:
+            raise ValueError(f"Expected key=value, got: {it}")
+        k, v = it.split("=", 1)
+        out.append((k.strip(), v.strip()))
+    return out
+
+
 def parse_name_overrides(items: List[str]) -> Dict[str, str]:
     out: Dict[str, str] = {}
     for it in items:
@@ -657,9 +668,9 @@ def main():
 
     ap.add_argument(
         "--baseline-kind",
-        choices=["lgn", "tf"],
+        choices=["lgn", "tf", "quantized"],
         default="lgn",
-        help="Baseline type: 'lgn' has relaxed+discrete; 'tf' is single-forward (no relaxed/discrete).",
+        help="Baseline type: 'lgn' has relaxed+discrete; 'tf' and 'quantized' are single-forward.",
     )
     ap.add_argument("--baseline", nargs="+", required=True, help="List input_type=path entries.")
     ap.add_argument(
@@ -693,9 +704,40 @@ def main():
     name_overrides = parse_name_overrides(args.name)
     baseline_map = parse_kv_list(args.baseline)
 
+    if args.baseline_kind == "quantized" and args.combine_baselines:
+        baseline_items_by_input: Dict[str, List[Tuple[str, np.ndarray, np.ndarray]]] = {}
+        for input_type, path in parse_kv_pairs(args.baseline):
+            model, mname, it, true_pts, true_y0, preds, x_sample = eval_model_pred_classes(
+                model_path=path,
+                data_config=args.data_config,
+                device=device,
+                batch_size=args.batch_size,
+                max_batches=args.max_batches,
+                forward_mode="baseline",
+            )
+            if it != input_type:
+                print(f"[WARN] Baseline key '{input_type}' but model reports input_type '{it}'. Using '{it}'.")
+                input_type = it
+
+            fallback = Path(path).parent.name
+            label = label_for(path, fallback, name_overrides)
+            baseline_items_by_input.setdefault(input_type, []).append((label, true_pts, preds))
+
+        for input_type, baseline_items in baseline_items_by_input.items():
+            outpath = outdir / f"acceptance_quantized_{sanitize_filename(input_type)}.png"
+            plot_acceptance_multiple_baselines(
+                baseline_items=baseline_items,
+                outpath=outpath,
+                title=f"Acceptance vs true $p_T$ — {input_type}",
+                z=args.baseline_error_z,
+            )
+
+        print("[DONE] Wrote outputs to:", str(outdir))
+        return
+
     baseline_by_input: Dict[str, Dict] = {}
     for input_type, path in baseline_map.items():
-        if args.baseline_kind == "tf":
+        if args.baseline_kind in ("tf", "quantized"):
             model, mname, it, true_pts, true_y0, preds, x_sample = eval_model_pred_classes(
                 model_path=path,
                 data_config=args.data_config,
@@ -716,7 +758,7 @@ def main():
                 true_y0=true_y0,
                 preds_relaxed=preds,
                 preds_discrete=preds,
-                kind="tf",
+                kind=args.baseline_kind,
                 hw=hw_ballpark(model, x_sample, kind="tf"),
             )
         else:
@@ -764,6 +806,7 @@ def main():
         plot_acceptance_multiple_baselines(
             baseline_items=baseline_items,
             outpath=outpath,
+            title="Acceptance vs true $p_T$",
             z=args.baseline_error_z,
         )
 
