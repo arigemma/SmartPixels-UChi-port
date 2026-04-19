@@ -524,8 +524,21 @@ def plot_acceptance_multiple_baselines(
     fig, ax = plt.subplots(1, 1, figsize=(7.4, 4.4), constrained_layout=True)
 
     for i, (label, pt_true_signed, preds) in enumerate(baseline_items):
-        linestyle = "-" if i == 0 else "--"
-        marker = "o" if i == 0 else "s"
+
+        if "Baseline" in label:
+            color = "tab:blue"
+            linestyle = "-"
+            marker = "o"
+
+        elif "All" in label:
+            color = "black"
+            linestyle = "--"
+            marker = "s"
+
+        else:
+            color = None
+            linestyle = "-"
+            marker = "o"
 
         plot_curve_with_wilson(
             ax=ax,
@@ -535,6 +548,7 @@ def plot_acceptance_multiple_baselines(
             label=label,
             marker=marker,
             linestyle=linestyle,
+            color=color,
             z=z,
         )
 
@@ -551,9 +565,11 @@ def plot_acceptance_multiple_baselines(
 def plot_acceptance_baseline_only(
     input_type: str,
     pt_true_signed: np.ndarray,
-    baseline_preds: np.ndarray,
+    baseline_relaxed: np.ndarray,
+    baseline_discrete: np.ndarray,
     outpath: Path,
     baseline_label: str,
+    baseline_kind: str,
     z: float = 1.0,
 ):
     edges = np.array(
@@ -563,16 +579,39 @@ def plot_acceptance_baseline_only(
     )
 
     fig, ax = plt.subplots(1, 1, figsize=(6.8, 4.2), constrained_layout=True)
-    plot_curve_with_wilson(
-        ax=ax,
-        pt_true_signed=pt_true_signed,
-        preds=baseline_preds,
-        edges=edges,
-        label=baseline_label,
-        marker="o",
-        linestyle="-",
-        z=z,
-    )
+
+    if baseline_kind == "lgn":
+        plot_curve_with_wilson(
+            ax=ax,
+            pt_true_signed=pt_true_signed,
+            preds=baseline_relaxed,
+            edges=edges,
+            label=f"{baseline_label} (relaxed)",
+            marker="o",
+            linestyle="-",
+            z=z,
+        )
+        plot_curve_with_wilson(
+            ax=ax,
+            pt_true_signed=pt_true_signed,
+            preds=baseline_discrete,
+            edges=edges,
+            label=f"{baseline_label} (discrete)",
+            marker="*",
+            linestyle="--",
+            z=z,
+        )
+    else:
+        plot_curve_with_wilson(
+            ax=ax,
+            pt_true_signed=pt_true_signed,
+            preds=baseline_relaxed,
+            edges=edges,
+            label=baseline_label,
+            marker="o",
+            linestyle="-",
+            z=z,
+        )
 
     ax.set_title(f"Acceptance vs true $p_T$ — {input_type}")
     ax.set_xlabel(r"true $p_T$ [GeV]")
@@ -583,8 +622,6 @@ def plot_acceptance_baseline_only(
     ax.legend(loc="best", fontsize=8, framealpha=0.85)
 
     savefig(fig, outpath)
-
-
 def parse_kv_list(items: List[str]) -> Dict[str, str]:
     out: Dict[str, str] = {}
     for it in items:
@@ -791,12 +828,14 @@ def main():
         if not args.candidates:
             outpath = outdir / f"acceptance_{sanitize_filename(input_type)}.png"
             plot_acceptance_baseline_only(
-                input_type=input_type,
-                pt_true_signed=b["true_pts"],
-                baseline_preds=b["preds_relaxed"],
-                outpath=outpath,
-                baseline_label=baseline_label,
-                z=args.baseline_error_z,
+            input_type=input_type,
+            pt_true_signed=b["true_pts"],
+            baseline_relaxed=b["preds_relaxed"],
+            baseline_discrete=b["preds_discrete"],
+            outpath=outpath,
+            baseline_label=baseline_label,
+            baseline_kind=b["kind"],
+            z=args.baseline_error_z,
             )
 
             out_y0_effacc = outdir / f"y0_eff_acc_{sanitize_filename(input_type)}.png"

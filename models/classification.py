@@ -1,5 +1,5 @@
 import torch
-from torchlogix.layers import LogicConv2d, LogicDense, GroupSum, FixedBinarization, LearnableBinarization
+from torchlogix.layers import LogicConv2d, LogicDense, GroupSum, FixedBinarization, LearnableBinarization, OrPooling2d
 from .registry import register
 
 
@@ -35,16 +35,15 @@ class TowardsModel2(torch.nn.Module):
         x = torch.relu(self.fc1(x))
         x = self.fc2(x)
         return x
-        # return self.softmax(x)
     
 
 @register("towards-model-3", input_type="y-profile-timing", task_type="classification")
 class TowardsModel3(torch.nn.Module):
     def __init__(self):
         super(TowardsModel3, self).__init__()
-        self.conv1 = torch.nn.Conv2d(1, 16, kernel_size=3, stride=1)  # out shape (16, 11, 6)
-        self.conv2 = torch.nn.Conv2d(16, 64, kernel_size=3, stride=1)  # out shape (64, 9, 4)
-        self.fc1 = torch.nn.Linear(64 * 9 * 4 + 1, 32)  # Adjusted for the output size of conv layers
+        self.conv1 = torch.nn.Conv2d(1, 16, kernel_size=3, stride=1)  
+        self.conv2 = torch.nn.Conv2d(16, 64, kernel_size=3, stride=1)  
+        self.fc1 = torch.nn.Linear(64 * 9 * 4 + 1, 32)  
         self.dropout = torch.nn.Dropout(0.1)
         self.fc2 = torch.nn.Linear(32, 3)
         self.softmax = torch.nn.Softmax(dim=1)
@@ -52,21 +51,20 @@ class TowardsModel3(torch.nn.Module):
     def forward(self, x):
         assert x.shape == (x.shape[0], 105), f"Expected input shape (batch_size, 105), but got {x.shape}"
 
-        y0 = x[:, 0:1]  # Extract y0 (shape: (batch_size, 1))
-        profile = x[:, 1:].view(-1, 1, 13, 8)  # Reshape to (batch_size, 1, 13, 8
+        y0 = x[:, 0:1] 
+        profile = x[:, 1:].view(-1, 1, 13, 8)  
 
         x = torch.relu(self.conv1(profile))
         x = torch.relu(self.conv2(x))
         
-        x = x.view(x.size(0), -1)  # Flatten
-        x = torch.cat((y0, x), dim=1)  # Concatenate y0 with flattened conv output
+        x = x.view(x.size(0), -1)  
+        x = torch.cat((y0, x), dim=1)  
         
         x = torch.relu(self.fc1(x))
         x = self.dropout(x)
         x = self.fc2(x)
         
         return x
-        # return self.softmax(x)
 
 
 @register("lgn-dense-1", input_type="y-size", task_type="classification")
@@ -150,6 +148,1734 @@ class ConvLGN3(torch.nn.Module):
         # print(x)
 
         return self.group_sum(x)
+    
+
+
+
+############### CNN ALL TIME SLICES 
+
+
+@register("towards-model-3-20", input_type="y-profile-timing-20", task_type="classification")
+class TowardsModel3_20(torch.nn.Module):
+    def __init__(self):
+        super(TowardsModel3_20, self).__init__()
+
+        self.conv1 = torch.nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)
+        self.conv2 = torch.nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.conv3 = torch.nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
+
+        self.pool = torch.nn.MaxPool2d(kernel_size=2, stride=2)
+        self.dropout = torch.nn.Dropout(0.15)
+
+        # Input profile shape: (1, 13, 20)
+        # After conv1:            (32, 13, 20)
+        # After pool:             (32, 6, 10)
+        # After conv2:            (64, 6, 10)
+        # After conv3:            (128, 6, 10)
+        # After second pool:      (128, 3, 5)
+        self.fc1 = torch.nn.Linear(128 * 3 * 5 + 1, 256)
+        self.fc2 = torch.nn.Linear(256, 96)
+        self.fc3 = torch.nn.Linear(96, 3)
+
+    def forward(self, x):
+        assert x.shape == (x.shape[0], 261), f"Expected input shape (batch_size, 261), but got {x.shape}"
+
+        y0 = x[:, 0:1]
+        profile = x[:, 1:].view(-1, 1, 13, 20)
+
+        x = torch.relu(self.conv1(profile))
+        x = self.pool(x)
+
+        x = torch.relu(self.conv2(x))
+        x = torch.relu(self.conv3(x))
+        x = self.pool(x)
+
+        x = x.view(x.size(0), -1)
+        x = torch.cat((y0, x), dim=1)
+
+        x = torch.relu(self.fc1(x))
+        x = self.dropout(x)
+        x = torch.relu(self.fc2(x))
+        x = self.dropout(x)
+        x = self.fc3(x)
+
+        return x
+    
+
+
+
+@register("towards-model-3-20-raw", input_type="y-profile-timing-20-raw", task_type="classification")
+class TowardsModel3_20Raw(torch.nn.Module):
+    def __init__(self):
+        super(TowardsModel3_20Raw, self).__init__()
+
+        self.conv1 = torch.nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)
+        self.conv2 = torch.nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.conv3 = torch.nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
+
+        self.pool = torch.nn.MaxPool2d(kernel_size=2, stride=2)
+        self.dropout = torch.nn.Dropout(0.15)
+
+        # Input profile shape: (1, 13, 20)
+        # After conv1:            (32, 13, 20)
+        # After pool:             (32, 6, 10)
+        # After conv2:            (64, 6, 10)
+        # After conv3:            (128, 6, 10)
+        # After second pool:      (128, 3, 5)
+        self.fc1 = torch.nn.Linear(128 * 3 * 5, 256)
+        self.fc2 = torch.nn.Linear(256, 96)
+        self.fc3 = torch.nn.Linear(96, 3)
+
+    def forward(self, x):
+        assert x.shape == (x.shape[0], 260), f"Expected input shape (batch_size, 260), but got {x.shape}"
+
+        profile = x.view(-1, 1, 13, 20)
+
+        x = torch.relu(self.conv1(profile))
+        x = self.pool(x)
+
+        x = torch.relu(self.conv2(x))
+        x = torch.relu(self.conv3(x))
+        x = self.pool(x)
+
+        x = x.view(x.size(0), -1)
+
+        x = torch.relu(self.fc1(x))
+        x = self.dropout(x)
+        x = torch.relu(self.fc2(x))
+        x = self.dropout(x)
+        x = self.fc3(x)
+
+        return x
+
+
+################################ All 20 Slices test (different tau + one contains y0 one doesnt) Bigger models
+
+class _ConvLGNDeep100_20BigBase(torch.nn.Module):
+    n_bits = 100
+
+    def __init__(self, thresholds, tau=20.0, use_y0=True):
+        super().__init__()
+        device = "cuda"
+        self.n_bits = 100
+        self.use_y0 = use_y0
+        self.bin = FixedBinarization(thresholds=thresholds)
+        pk = {"weight_init": "residual"}
+        td = 3
+
+        # deeper + significantly wider
+        k1, k2, k3, k4, k5, k6 = 384, 768, 1024, 1536, 1536, 1024
+
+        self.conv1 = LogicConv2d(
+            in_dim=(13, 20), channels=self.n_bits, num_kernels=k1,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv2 = LogicConv2d(
+            in_dim=(13, 20), channels=k1, num_kernels=k2,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        self.or_pool1 = OrPooling2d(kernel_size=2, stride=2, padding=0)
+
+        self.conv3 = LogicConv2d(
+            in_dim=(6, 10), channels=k2, num_kernels=k3,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv4 = LogicConv2d(
+            in_dim=(6, 10), channels=k3, num_kernels=k4,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        self.or_pool2 = OrPooling2d(kernel_size=2, stride=2, padding=0)
+
+        self.conv5 = LogicConv2d(
+            in_dim=(3, 5), channels=k4, num_kernels=k5,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv6 = LogicConv2d(
+            in_dim=(3, 5), channels=k5, num_kernels=k6,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        conv_flat = k6 * 3 * 5
+        fc_in = self.n_bits + conv_flat if self.use_y0 else conv_flat
+
+        # all divisible by 3
+        self.fc1 = LogicDense(
+            in_dim=fc_in, out_dim=18000,
+            device=device, parametrization_kwargs=pk, lut_rank=2
+        )
+        self.fc2 = LogicDense(
+            in_dim=18000, out_dim=18000,
+            device=device, parametrization_kwargs=pk, lut_rank=2
+        )
+        self.fc3 = LogicDense(
+            in_dim=18000, out_dim=9000,
+            device=device, parametrization_kwargs=pk, lut_rank=2
+        )
+        self.fc4 = LogicDense(
+            in_dim=9000, out_dim=4500,
+            device=device, parametrization_kwargs=pk, lut_rank=2
+        )
+        self.fc5 = LogicDense(
+            in_dim=4500, out_dim=3000,
+            device=device, parametrization_kwargs=pk, lut_rank=2
+        )
+
+        self.group_sum = GroupSum(3, tau=tau, device=device)
+
+    def forward(self, x):
+        x = self.bin(x)
+
+        if self.use_y0:
+            y0 = x[:, 0:self.n_bits]
+            p = x[:, self.n_bits:].view(-1, self.n_bits, 13, 20)
+        else:
+            p = x.view(-1, self.n_bits, 13, 20)
+
+        z = self.conv1(p)
+        z = self.conv2(z)
+        z = self.or_pool1(z)
+
+        z = self.conv3(z)
+        z = self.conv4(z)
+        z = self.or_pool2(z)
+
+        z = self.conv5(z)
+        z = self.conv6(z)
+
+        z = z.view(z.size(0), -1)
+
+        if self.use_y0:
+            z = torch.cat((y0, z), dim=1)
+
+        z = self.fc5(self.fc4(self.fc3(self.fc2(self.fc1(z)))))
+        return self.group_sum(z)
+    
+
+@register("lgn-conv-6-100-orpool_tau10", input_type="y-profile-timing-20", task_type="classification")
+class ConvLGNDeep100_20Big_tau10(_ConvLGNDeep100_20BigBase):
+    n_bits = 100
+    def __init__(self, thresholds):
+        super().__init__(thresholds=thresholds, tau=10.0, use_y0=True)
+
+
+@register("lgn-conv-6-100-orpool_tau20", input_type="y-profile-timing-20", task_type="classification")
+class ConvLGNDeep100_20Big_tau20(_ConvLGNDeep100_20BigBase):
+    n_bits = 100
+    def __init__(self, thresholds):
+        super().__init__(thresholds=thresholds, tau=20.0, use_y0=True)
+
+
+@register("lgn-conv-6-100-orpool_tau40", input_type="y-profile-timing-20", task_type="classification")
+class ConvLGNDeep100_20Big_tau40(_ConvLGNDeep100_20BigBase):
+    n_bits = 100
+    def __init__(self, thresholds):
+        super().__init__(thresholds=thresholds, tau=40.0, use_y0=True)
+
+
+@register("lgn-conv-6-100-orpool_raw_tau10", input_type="y-profile-timing-20-raw", task_type="classification")
+class ConvLGNDeep100_20Big_raw_tau10(_ConvLGNDeep100_20BigBase):
+    n_bits = 100
+    def __init__(self, thresholds):
+        super().__init__(thresholds=thresholds, tau=10.0, use_y0=False)
+
+
+@register("lgn-conv-6-100-orpool_raw_tau20", input_type="y-profile-timing-20-raw", task_type="classification")
+class ConvLGNDeep100_20Big_raw_tau20(_ConvLGNDeep100_20BigBase):
+    n_bits = 100
+    def __init__(self, thresholds):
+        super().__init__(thresholds=thresholds, tau=20.0, use_y0=False)
+
+
+@register("lgn-conv-6-100-orpool_raw_tau40", input_type="y-profile-timing-20-raw", task_type="classification")
+class ConvLGNDeep100_20Big_raw_tau40(_ConvLGNDeep100_20BigBase):
+    n_bits = 100
+    def __init__(self, thresholds):
+        super().__init__(thresholds=thresholds, tau=40.0, use_y0=False)
+
+
+
+
+
+
+
+
+################################ All 20 Slices test (different tau + one contains y0 one doesnt)
+
+
+
+
+def _make_group_sum_tau(tau):
+    return GroupSum(3, tau=float(tau), device="cuda")
+
+
+class _ConvLGNDeep100_20Base(torch.nn.Module):
+    n_bits = 100
+
+    def __init__(self, thresholds, tau=20.0, use_y0=True):
+        super().__init__()
+        device = "cuda"
+        self.n_bits = 100
+        self.use_y0 = use_y0
+        self.bin = FixedBinarization(thresholds=thresholds)
+        pk = {"weight_init": "residual"}
+        td = 3
+
+        k1, k2, k3, k4 = 256, 512, 1024, 960
+
+        self.conv1 = LogicConv2d(
+            in_dim=(13, 20), channels=self.n_bits, num_kernels=k1,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv2 = LogicConv2d(
+            in_dim=(13, 20), channels=k1, num_kernels=k2,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        self.or_pool1 = OrPooling2d(kernel_size=2, stride=2, padding=0)
+
+        self.conv3 = LogicConv2d(
+            in_dim=(6, 10), channels=k2, num_kernels=k3,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv4 = LogicConv2d(
+            in_dim=(6, 10), channels=k3, num_kernels=k4,
+            receptive_field_size=3, tree_depth=td, stride=2, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        conv_flat = k4 * 3 * 5
+        fc_in = self.n_bits + conv_flat if self.use_y0 else conv_flat
+
+        self.fc1 = LogicDense(in_dim=fc_in, out_dim=3000*4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc2 = LogicDense(in_dim=3000*4, out_dim=3000*4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc3 = LogicDense(in_dim=3000*4, out_dim=3000*2, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc4 = LogicDense(in_dim=3000*2, out_dim=3000, device=device, parametrization_kwargs=pk, lut_rank=2)
+
+        self.group_sum = GroupSum(3, tau=tau, device=device)
+
+    def forward(self, x):
+        x = self.bin(x)
+
+        if self.use_y0:
+            y0 = x[:, 0:self.n_bits]
+            p = x[:, self.n_bits:].view(-1, self.n_bits, 13, 20)
+        else:
+            p = x.view(-1, self.n_bits, 13, 20)
+
+        z = self.conv1(p)
+        z = self.conv2(z)
+        z = self.or_pool1(z)
+        z = self.conv3(z)
+        z = self.conv4(z)
+
+        z = z.view(z.size(0), -1)
+
+        if self.use_y0:
+            z = torch.cat((y0, z), dim=1)
+
+        z = self.fc4(self.fc3(self.fc2(self.fc1(z))))
+        return self.group_sum(z)
+
+
+@register("lgn-conv-3-100-orpool_tau10", input_type="y-profile-timing-20", task_type="classification")
+class ConvLGNDeep100_20_tau10(_ConvLGNDeep100_20Base):
+    n_bits = 100
+    def __init__(self, thresholds):
+        super().__init__(thresholds=thresholds, tau=10.0, use_y0=True)
+
+
+@register("lgn-conv-3-100-orpool_tau20", input_type="y-profile-timing-20", task_type="classification")
+class ConvLGNDeep100_20_tau20(_ConvLGNDeep100_20Base):
+    n_bits = 100
+    def __init__(self, thresholds):
+        super().__init__(thresholds=thresholds, tau=20.0, use_y0=True)
+
+
+@register("lgn-conv-3-100-orpool_tau40", input_type="y-profile-timing-20", task_type="classification")
+class ConvLGNDeep100_20_tau40(_ConvLGNDeep100_20Base):
+    n_bits = 100
+    def __init__(self, thresholds):
+        super().__init__(thresholds=thresholds, tau=40.0, use_y0=True)
+
+
+@register("lgn-conv-3-100-orpool_raw_tau10", input_type="y-profile-timing-20-raw", task_type="classification")
+class ConvLGNDeep100_20_raw_tau10(_ConvLGNDeep100_20Base):
+    n_bits = 100
+    def __init__(self, thresholds):
+        super().__init__(thresholds=thresholds, tau=10.0, use_y0=False)
+
+
+@register("lgn-conv-3-100-orpool_raw_tau20", input_type="y-profile-timing-20-raw", task_type="classification")
+class ConvLGNDeep100_20_raw_tau20(_ConvLGNDeep100_20Base):
+    n_bits = 100
+    def __init__(self, thresholds):
+        super().__init__(thresholds=thresholds, tau=20.0, use_y0=False)
+
+
+@register("lgn-conv-3-100-orpool_raw_tau40", input_type="y-profile-timing-20-raw", task_type="classification")
+class ConvLGNDeep100_20_raw_tau40(_ConvLGNDeep100_20Base):
+    n_bits = 100
+    def __init__(self, thresholds):
+        super().__init__(thresholds=thresholds, tau=40.0, use_y0=False)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+######################################## BATCH 128 + TAU TESTS 
+
+
+@register("lgn-conv-3-100-orpool_128_2", input_type="y-profile-timing", task_type="classification")
+class ConvLGNDeep100_2_128_2(torch.nn.Module):
+    n_bits = 100
+
+    def __init__(self, thresholds):
+        super().__init__()
+        device = "cuda"
+        self.n_bits = 100
+        self.bin = FixedBinarization(thresholds=thresholds)
+        pk = {"weight_init": "residual"}
+        td = 3
+
+        k1, k2, k3, k4 = 256, 512, 1024, 960  # <-- k4 reduced to satisfy lut_rank=2
+
+        self.conv1 = LogicConv2d(
+            in_dim=(13, 8), channels=self.n_bits, num_kernels=k1,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv2 = LogicConv2d(
+            in_dim=(13, 8), channels=k1, num_kernels=k2,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        self.or_pool1 = OrPooling2d(kernel_size=2, stride=2, padding=0)
+
+        self.conv3 = LogicConv2d(
+            in_dim=(6, 4), channels=k2, num_kernels=k3,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv4 = LogicConv2d(
+            in_dim=(6, 4), channels=k3, num_kernels=k4,
+            receptive_field_size=3, tree_depth=td, stride=2, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        fc_in = self.n_bits + (k4 * 3 * 2)  # 100 + 960*6 = 5860
+
+        self.fc1 = LogicDense(in_dim=fc_in, out_dim=3000*4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc2 = LogicDense(in_dim=3000*4, out_dim=3000*4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc3 = LogicDense(in_dim=3000*4, out_dim=3000*2, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc4 = LogicDense(in_dim=3000*2, out_dim=3000, device=device, parametrization_kwargs=pk, lut_rank=2)
+
+        self.group_sum = GroupSum(3, tau=2.0, device=device)
+
+    def forward(self, x):
+        x = self.bin(x)
+        y0 = x[:, 0:self.n_bits]
+        p = x[:, self.n_bits:].view(-1, self.n_bits, 13, 8)
+
+        z = self.conv1(p)
+        z = self.conv2(z)
+        z = self.or_pool1(z)
+        z = self.conv3(z)
+        z = self.conv4(z)
+
+        z = z.view(z.size(0), -1)
+        z = torch.cat((y0, z), dim=1)
+        z = self.fc4(self.fc3(self.fc2(self.fc1(z))))
+        return self.group_sum(z)
+    
+
+
+
+@register("lgn-conv-3-100-orpool_128_5", input_type="y-profile-timing", task_type="classification")
+class ConvLGNDeep100_2_128_5(torch.nn.Module):
+    n_bits = 100
+
+    def __init__(self, thresholds):
+        super().__init__()
+        device = "cuda"
+        self.n_bits = 100
+        self.bin = FixedBinarization(thresholds=thresholds)
+        pk = {"weight_init": "residual"}
+        td = 3
+
+        k1, k2, k3, k4 = 256, 512, 1024, 960  # <-- k4 reduced to satisfy lut_rank=2
+
+        self.conv1 = LogicConv2d(
+            in_dim=(13, 8), channels=self.n_bits, num_kernels=k1,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv2 = LogicConv2d(
+            in_dim=(13, 8), channels=k1, num_kernels=k2,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        self.or_pool1 = OrPooling2d(kernel_size=2, stride=2, padding=0)
+
+        self.conv3 = LogicConv2d(
+            in_dim=(6, 4), channels=k2, num_kernels=k3,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv4 = LogicConv2d(
+            in_dim=(6, 4), channels=k3, num_kernels=k4,
+            receptive_field_size=3, tree_depth=td, stride=2, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        fc_in = self.n_bits + (k4 * 3 * 2)  # 100 + 960*6 = 5860
+
+        self.fc1 = LogicDense(in_dim=fc_in, out_dim=3000*4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc2 = LogicDense(in_dim=3000*4, out_dim=3000*4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc3 = LogicDense(in_dim=3000*4, out_dim=3000*2, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc4 = LogicDense(in_dim=3000*2, out_dim=3000, device=device, parametrization_kwargs=pk, lut_rank=2)
+
+        self.group_sum = GroupSum(3, tau=5.0, device=device)
+
+    def forward(self, x):
+        x = self.bin(x)
+        y0 = x[:, 0:self.n_bits]
+        p = x[:, self.n_bits:].view(-1, self.n_bits, 13, 8)
+
+        z = self.conv1(p)
+        z = self.conv2(z)
+        z = self.or_pool1(z)
+        z = self.conv3(z)
+        z = self.conv4(z)
+
+        z = z.view(z.size(0), -1)
+        z = torch.cat((y0, z), dim=1)
+        z = self.fc4(self.fc3(self.fc2(self.fc1(z))))
+        return self.group_sum(z)
+    
+
+@register("lgn-conv-3-100-orpool_128_10", input_type="y-profile-timing", task_type="classification")
+class ConvLGNDeep100_2_128_10(torch.nn.Module):
+    n_bits = 100
+
+    def __init__(self, thresholds):
+        super().__init__()
+        device = "cuda"
+        self.n_bits = 100
+        self.bin = FixedBinarization(thresholds=thresholds)
+        pk = {"weight_init": "residual"}
+        td = 3
+
+        k1, k2, k3, k4 = 256, 512, 1024, 960  
+
+        self.conv1 = LogicConv2d(
+            in_dim=(13, 8), channels=self.n_bits, num_kernels=k1,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv2 = LogicConv2d(
+            in_dim=(13, 8), channels=k1, num_kernels=k2,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        self.or_pool1 = OrPooling2d(kernel_size=2, stride=2, padding=0)
+
+        self.conv3 = LogicConv2d(
+            in_dim=(6, 4), channels=k2, num_kernels=k3,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv4 = LogicConv2d(
+            in_dim=(6, 4), channels=k3, num_kernels=k4,
+            receptive_field_size=3, tree_depth=td, stride=2, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        fc_in = self.n_bits + (k4 * 3 * 2)  # 100 + 960*6 = 5860
+
+        self.fc1 = LogicDense(in_dim=fc_in, out_dim=3000*4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc2 = LogicDense(in_dim=3000*4, out_dim=3000*4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc3 = LogicDense(in_dim=3000*4, out_dim=3000*2, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc4 = LogicDense(in_dim=3000*2, out_dim=3000, device=device, parametrization_kwargs=pk, lut_rank=2)
+
+        self.group_sum = GroupSum(3, tau=10.0, device=device)
+
+    def forward(self, x):
+        x = self.bin(x)
+        y0 = x[:, 0:self.n_bits]
+        p = x[:, self.n_bits:].view(-1, self.n_bits, 13, 8)
+
+        z = self.conv1(p)
+        z = self.conv2(z)
+        z = self.or_pool1(z)
+        z = self.conv3(z)
+        z = self.conv4(z)
+
+        z = z.view(z.size(0), -1)
+        z = torch.cat((y0, z), dim=1)
+        z = self.fc4(self.fc3(self.fc2(self.fc1(z))))
+        return self.group_sum(z)
+    
+
+@register("lgn-conv-3-100-orpool_128_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNDeep100_2_128_20(torch.nn.Module):
+    n_bits = 100
+
+    def __init__(self, thresholds):
+        super().__init__()
+        device = "cuda"
+        self.n_bits = 100
+        self.bin = FixedBinarization(thresholds=thresholds)
+        pk = {"weight_init": "residual"}
+        td = 3
+
+        k1, k2, k3, k4 = 256, 512, 1024, 960  
+
+        self.conv1 = LogicConv2d(
+            in_dim=(13, 8), channels=self.n_bits, num_kernels=k1,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv2 = LogicConv2d(
+            in_dim=(13, 8), channels=k1, num_kernels=k2,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        self.or_pool1 = OrPooling2d(kernel_size=2, stride=2, padding=0)
+
+        self.conv3 = LogicConv2d(
+            in_dim=(6, 4), channels=k2, num_kernels=k3,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv4 = LogicConv2d(
+            in_dim=(6, 4), channels=k3, num_kernels=k4,
+            receptive_field_size=3, tree_depth=td, stride=2, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        fc_in = self.n_bits + (k4 * 3 * 2)  
+
+        self.fc1 = LogicDense(in_dim=fc_in, out_dim=3000*4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc2 = LogicDense(in_dim=3000*4, out_dim=3000*4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc3 = LogicDense(in_dim=3000*4, out_dim=3000*2, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc4 = LogicDense(in_dim=3000*2, out_dim=3000, device=device, parametrization_kwargs=pk, lut_rank=2)
+
+        self.group_sum = GroupSum(3, tau=20.0, device=device)
+
+    def forward(self, x):
+        x = self.bin(x)
+        y0 = x[:, 0:self.n_bits]
+        p = x[:, self.n_bits:].view(-1, self.n_bits, 13, 8)
+
+        z = self.conv1(p)
+        z = self.conv2(z)
+        z = self.or_pool1(z)
+        z = self.conv3(z)
+        z = self.conv4(z)
+
+        z = z.view(z.size(0), -1)
+        z = torch.cat((y0, z), dim=1)
+        z = self.fc4(self.fc3(self.fc2(self.fc1(z))))
+        return self.group_sum(z)
+    
+
+@register("lgn-conv-3-100-orpool_128_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNDeep100_2_128_40(torch.nn.Module):
+    n_bits = 100
+
+    def __init__(self, thresholds):
+        super().__init__()
+        device = "cuda"
+        self.n_bits = 100
+        self.bin = FixedBinarization(thresholds=thresholds)
+        pk = {"weight_init": "residual"}
+        td = 3
+
+        k1, k2, k3, k4 = 256, 512, 1024, 960  # <-- k4 reduced to satisfy lut_rank=2
+
+        self.conv1 = LogicConv2d(
+            in_dim=(13, 8), channels=self.n_bits, num_kernels=k1,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv2 = LogicConv2d(
+            in_dim=(13, 8), channels=k1, num_kernels=k2,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        self.or_pool1 = OrPooling2d(kernel_size=2, stride=2, padding=0)
+
+        self.conv3 = LogicConv2d(
+            in_dim=(6, 4), channels=k2, num_kernels=k3,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv4 = LogicConv2d(
+            in_dim=(6, 4), channels=k3, num_kernels=k4,
+            receptive_field_size=3, tree_depth=td, stride=2, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        fc_in = self.n_bits + (k4 * 3 * 2)  # 100 + 960*6 = 5860
+
+        self.fc1 = LogicDense(in_dim=fc_in, out_dim=3000*4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc2 = LogicDense(in_dim=3000*4, out_dim=3000*4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc3 = LogicDense(in_dim=3000*4, out_dim=3000*2, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc4 = LogicDense(in_dim=3000*2, out_dim=3000, device=device, parametrization_kwargs=pk, lut_rank=2)
+
+        self.group_sum = GroupSum(3, tau=40.0, device=device)
+
+    def forward(self, x):
+        x = self.bin(x)
+        y0 = x[:, 0:self.n_bits]
+        p = x[:, self.n_bits:].view(-1, self.n_bits, 13, 8)
+
+        z = self.conv1(p)
+        z = self.conv2(z)
+        z = self.or_pool1(z)
+        z = self.conv3(z)
+        z = self.conv4(z)
+
+        z = z.view(z.size(0), -1)
+        z = torch.cat((y0, z), dim=1)
+        z = self.fc4(self.fc3(self.fc2(self.fc1(z))))
+        return self.group_sum(z)
+    
+
+
+
+
+@register("lgn-dense-2-dense-100_128_-lessFeat_20", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_9F_Wide_128__20(torch.nn.Module):
+    n_bits = 100
+    k = 2000  
+
+    def __init__(self, thresholds):
+        super().__init__()
+        device = "cuda"
+        pk = {"weight_init": "residual"}
+
+        self.bin = FixedBinarization(thresholds=thresholds)
+
+        in_dim = 9 * self.n_bits  # 450
+
+
+        h1 = 6 * self.k   
+        h2 = 6 * self.k   
+        h3 = 6 * self.k   
+        h4 = 4 * self.k   
+        h5 = 4 * self.k   
+        h6 = 4 * self.k  
+        out_dim = 3 * self.k  
+
+        self.fc1 = LogicDense(in_dim=in_dim, out_dim=h1, device=device, parametrization_kwargs=pk)
+        self.fc2 = LogicDense(in_dim=h1,    out_dim=h2, device=device, parametrization_kwargs=pk)
+        self.fc3 = LogicDense(in_dim=h2,    out_dim=h3, device=device, parametrization_kwargs=pk)
+        self.fc4 = LogicDense(in_dim=h3,    out_dim=h4, device=device, parametrization_kwargs=pk)
+        self.fc5 = LogicDense(in_dim=h4,    out_dim=h5, device=device, parametrization_kwargs=pk)
+        self.fc6 = LogicDense(in_dim=h5,    out_dim=h6, device=device, parametrization_kwargs=pk)
+        self.fc7 = LogicDense(in_dim=h6,    out_dim=out_dim, device=device, parametrization_kwargs=pk)
+
+        self.group_sum = GroupSum(3, tau=20.0, device=device)
+
+    def forward(self, x):
+        # x: [B, 9]
+        x = self.bin(x)  # expected: [B, 9*n_bits] = [B, 450]
+        z = self.fc7(self.fc6(self.fc5(self.fc4(self.fc3(self.fc2(self.fc1(x)))))))
+        return self.group_sum(z)
+    
+@register("lgn-dense-2-dense-100_128_-lessFeat_40", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_9F_Wide_128__40(torch.nn.Module):
+    n_bits = 100
+    k = 2000  
+
+    def __init__(self, thresholds):
+        super().__init__()
+        device = "cuda"
+        pk = {"weight_init": "residual"}
+
+        self.bin = FixedBinarization(thresholds=thresholds)
+
+        in_dim = 9 * self.n_bits  
+
+        h1 = 6 * self.k   
+        h2 = 6 * self.k   
+        h3 = 6 * self.k   
+        h4 = 4 * self.k   
+        h5 = 4 * self.k   
+        h6 = 4 * self.k  
+        out_dim = 3 * self.k  
+
+        self.fc1 = LogicDense(in_dim=in_dim, out_dim=h1, device=device, parametrization_kwargs=pk)
+        self.fc2 = LogicDense(in_dim=h1,    out_dim=h2, device=device, parametrization_kwargs=pk)
+        self.fc3 = LogicDense(in_dim=h2,    out_dim=h3, device=device, parametrization_kwargs=pk)
+        self.fc4 = LogicDense(in_dim=h3,    out_dim=h4, device=device, parametrization_kwargs=pk)
+        self.fc5 = LogicDense(in_dim=h4,    out_dim=h5, device=device, parametrization_kwargs=pk)
+        self.fc6 = LogicDense(in_dim=h5,    out_dim=h6, device=device, parametrization_kwargs=pk)
+        self.fc7 = LogicDense(in_dim=h6,    out_dim=out_dim, device=device, parametrization_kwargs=pk)
+
+        self.group_sum = GroupSum(3, tau=40.0, device=device)
+
+    def forward(self, x):
+        x = self.bin(x)  
+        z = self.fc7(self.fc6(self.fc5(self.fc4(self.fc3(self.fc2(self.fc1(x)))))))
+        return self.group_sum(z)
+    
+
+
+
+
+
+@register("lgn-dense-2-dense-100_128_-lessFeat_10", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_9F_Wide_128__10(torch.nn.Module):
+    n_bits = 100
+    k = 2000  
+
+    def __init__(self, thresholds):
+        super().__init__()
+        device = "cuda"
+        pk = {"weight_init": "residual"}
+
+        self.bin = FixedBinarization(thresholds=thresholds)
+
+        in_dim = 9 * self.n_bits  # 450
+
+
+        h1 = 6 * self.k   
+        h2 = 6 * self.k   
+        h3 = 6 * self.k   
+        h4 = 4 * self.k   
+        h5 = 4 * self.k   
+        h6 = 4 * self.k  
+        out_dim = 3 * self.k  
+
+        self.fc1 = LogicDense(in_dim=in_dim, out_dim=h1, device=device, parametrization_kwargs=pk)
+        self.fc2 = LogicDense(in_dim=h1,    out_dim=h2, device=device, parametrization_kwargs=pk)
+        self.fc3 = LogicDense(in_dim=h2,    out_dim=h3, device=device, parametrization_kwargs=pk)
+        self.fc4 = LogicDense(in_dim=h3,    out_dim=h4, device=device, parametrization_kwargs=pk)
+        self.fc5 = LogicDense(in_dim=h4,    out_dim=h5, device=device, parametrization_kwargs=pk)
+        self.fc6 = LogicDense(in_dim=h5,    out_dim=h6, device=device, parametrization_kwargs=pk)
+        self.fc7 = LogicDense(in_dim=h6,    out_dim=out_dim, device=device, parametrization_kwargs=pk)
+
+        self.group_sum = GroupSum(3, tau=10.0, device=device)
+
+    def forward(self, x):
+        # x: [B, 9]
+        x = self.bin(x)  # expected: [B, 9*n_bits] = [B, 450]
+        z = self.fc7(self.fc6(self.fc5(self.fc4(self.fc3(self.fc2(self.fc1(x)))))))
+        return self.group_sum(z)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
+###############################TAU TESTS
+
+
+@register("lgn-conv-3-100-orpool_2", input_type="y-profile-timing", task_type="classification")
+class ConvLGNDeep100_2_2(torch.nn.Module):
+    n_bits = 100
+
+    def __init__(self, thresholds):
+        super().__init__()
+        device = "cuda"
+        self.n_bits = 100
+        self.bin = FixedBinarization(thresholds=thresholds)
+        pk = {"weight_init": "residual"}
+        td = 3
+
+        k1, k2, k3, k4 = 256, 512, 1024, 960  # <-- k4 reduced to satisfy lut_rank=2
+
+        self.conv1 = LogicConv2d(
+            in_dim=(13, 8), channels=self.n_bits, num_kernels=k1,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv2 = LogicConv2d(
+            in_dim=(13, 8), channels=k1, num_kernels=k2,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        self.or_pool1 = OrPooling2d(kernel_size=2, stride=2, padding=0)
+
+        self.conv3 = LogicConv2d(
+            in_dim=(6, 4), channels=k2, num_kernels=k3,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv4 = LogicConv2d(
+            in_dim=(6, 4), channels=k3, num_kernels=k4,
+            receptive_field_size=3, tree_depth=td, stride=2, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        fc_in = self.n_bits + (k4 * 3 * 2)  # 100 + 960*6 = 5860
+
+        self.fc1 = LogicDense(in_dim=fc_in, out_dim=3000*4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc2 = LogicDense(in_dim=3000*4, out_dim=3000*4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc3 = LogicDense(in_dim=3000*4, out_dim=3000*2, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc4 = LogicDense(in_dim=3000*2, out_dim=3000, device=device, parametrization_kwargs=pk, lut_rank=2)
+
+        self.group_sum = GroupSum(3, tau=2.0, device=device)
+
+    def forward(self, x):
+        x = self.bin(x)
+        y0 = x[:, 0:self.n_bits]
+        p = x[:, self.n_bits:].view(-1, self.n_bits, 13, 8)
+
+        z = self.conv1(p)
+        z = self.conv2(z)
+        z = self.or_pool1(z)
+        z = self.conv3(z)
+        z = self.conv4(z)
+
+        z = z.view(z.size(0), -1)
+        z = torch.cat((y0, z), dim=1)
+        z = self.fc4(self.fc3(self.fc2(self.fc1(z))))
+        return self.group_sum(z)
+    
+
+@register("lgn-conv-3-100-orpool_5", input_type="y-profile-timing", task_type="classification")
+class ConvLGNDeep100_5(torch.nn.Module):
+    n_bits = 100
+
+    def __init__(self, thresholds):
+        super().__init__()
+        device = "cuda"
+        self.n_bits = 100
+        self.bin = FixedBinarization(thresholds=thresholds)
+        pk = {"weight_init": "residual"}
+        td = 3
+
+        k1, k2, k3, k4 = 256, 512, 1024, 960  # <-- k4 reduced to satisfy lut_rank=2
+
+        self.conv1 = LogicConv2d(
+            in_dim=(13, 8), channels=self.n_bits, num_kernels=k1,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv2 = LogicConv2d(
+            in_dim=(13, 8), channels=k1, num_kernels=k2,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        self.or_pool1 = OrPooling2d(kernel_size=2, stride=2, padding=0)
+
+        self.conv3 = LogicConv2d(
+            in_dim=(6, 4), channels=k2, num_kernels=k3,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv4 = LogicConv2d(
+            in_dim=(6, 4), channels=k3, num_kernels=k4,
+            receptive_field_size=3, tree_depth=td, stride=2, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        fc_in = self.n_bits + (k4 * 3 * 2)  # 100 + 960*6 = 5860
+
+        self.fc1 = LogicDense(in_dim=fc_in, out_dim=3000*4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc2 = LogicDense(in_dim=3000*4, out_dim=3000*4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc3 = LogicDense(in_dim=3000*4, out_dim=3000*2, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc4 = LogicDense(in_dim=3000*2, out_dim=3000, device=device, parametrization_kwargs=pk, lut_rank=2)
+
+        self.group_sum = GroupSum(3, tau=5.0, device=device)
+
+    def forward(self, x):
+        x = self.bin(x)
+        y0 = x[:, 0:self.n_bits]
+        p = x[:, self.n_bits:].view(-1, self.n_bits, 13, 8)
+
+        z = self.conv1(p)
+        z = self.conv2(z)
+        z = self.or_pool1(z)
+        z = self.conv3(z)
+        z = self.conv4(z)
+
+        z = z.view(z.size(0), -1)
+        z = torch.cat((y0, z), dim=1)
+        z = self.fc4(self.fc3(self.fc2(self.fc1(z))))
+        return self.group_sum(z)
+    
+
+
+@register("lgn-conv-3-100-orpool_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNDeep100_2_20(torch.nn.Module):
+    n_bits = 100
+
+    def __init__(self, thresholds):
+        super().__init__()
+        device = "cuda"
+        self.n_bits = 100
+        self.bin = FixedBinarization(thresholds=thresholds)
+        pk = {"weight_init": "residual"}
+        td = 3
+
+        k1, k2, k3, k4 = 256, 512, 1024, 960  # <-- k4 reduced to satisfy lut_rank=2
+
+        self.conv1 = LogicConv2d(
+            in_dim=(13, 8), channels=self.n_bits, num_kernels=k1,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv2 = LogicConv2d(
+            in_dim=(13, 8), channels=k1, num_kernels=k2,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        self.or_pool1 = OrPooling2d(kernel_size=2, stride=2, padding=0)
+
+        self.conv3 = LogicConv2d(
+            in_dim=(6, 4), channels=k2, num_kernels=k3,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv4 = LogicConv2d(
+            in_dim=(6, 4), channels=k3, num_kernels=k4,
+            receptive_field_size=3, tree_depth=td, stride=2, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        fc_in = self.n_bits + (k4 * 3 * 2)  # 100 + 960*6 = 5860
+
+        self.fc1 = LogicDense(in_dim=fc_in, out_dim=3000*4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc2 = LogicDense(in_dim=3000*4, out_dim=3000*4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc3 = LogicDense(in_dim=3000*4, out_dim=3000*2, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc4 = LogicDense(in_dim=3000*2, out_dim=3000, device=device, parametrization_kwargs=pk, lut_rank=2)
+
+        self.group_sum = GroupSum(3, tau=20.0, device=device)
+
+    def forward(self, x):
+        x = self.bin(x)
+        y0 = x[:, 0:self.n_bits]
+        p = x[:, self.n_bits:].view(-1, self.n_bits, 13, 8)
+
+        z = self.conv1(p)
+        z = self.conv2(z)
+        z = self.or_pool1(z)
+        z = self.conv3(z)
+        z = self.conv4(z)
+
+        z = z.view(z.size(0), -1)
+        z = torch.cat((y0, z), dim=1)
+        z = self.fc4(self.fc3(self.fc2(self.fc1(z))))
+        return self.group_sum(z)
+
+@register("lgn-dense-2-dense-100-lessFeat_2", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_9F_Wide_2(torch.nn.Module):
+    n_bits = 100
+    k = 2000  
+
+    def __init__(self, thresholds):
+        super().__init__()
+        device = "cuda"
+        pk = {"weight_init": "residual"}
+
+        self.bin = FixedBinarization(thresholds=thresholds)
+
+        in_dim = 9 * self.n_bits  # 450
+
+
+        h1 = 6 * self.k   
+        h2 = 6 * self.k   
+        h3 = 6 * self.k   
+        h4 = 4 * self.k   
+        h5 = 4 * self.k   
+        h6 = 4 * self.k  
+        out_dim = 3 * self.k  
+
+        self.fc1 = LogicDense(in_dim=in_dim, out_dim=h1, device=device, parametrization_kwargs=pk)
+        self.fc2 = LogicDense(in_dim=h1,    out_dim=h2, device=device, parametrization_kwargs=pk)
+        self.fc3 = LogicDense(in_dim=h2,    out_dim=h3, device=device, parametrization_kwargs=pk)
+        self.fc4 = LogicDense(in_dim=h3,    out_dim=h4, device=device, parametrization_kwargs=pk)
+        self.fc5 = LogicDense(in_dim=h4,    out_dim=h5, device=device, parametrization_kwargs=pk)
+        self.fc6 = LogicDense(in_dim=h5,    out_dim=h6, device=device, parametrization_kwargs=pk)
+        self.fc7 = LogicDense(in_dim=h6,    out_dim=out_dim, device=device, parametrization_kwargs=pk)
+
+        self.group_sum = GroupSum(3, tau=2.0, device=device)
+
+    def forward(self, x):
+        # x: [B, 9]
+        x = self.bin(x)  # expected: [B, 9*n_bits] = [B, 450]
+        z = self.fc7(self.fc6(self.fc5(self.fc4(self.fc3(self.fc2(self.fc1(x)))))))
+        return self.group_sum(z)
+    
+@register("lgn-dense-2-dense-100-lessFeat_5", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_9F_Wide_5(torch.nn.Module):
+    n_bits = 100
+    k = 2000  
+
+    def __init__(self, thresholds):
+        super().__init__()
+        device = "cuda"
+        pk = {"weight_init": "residual"}
+
+        self.bin = FixedBinarization(thresholds=thresholds)
+
+        in_dim = 9 * self.n_bits  # 450
+
+
+        h1 = 6 * self.k   
+        h2 = 6 * self.k   
+        h3 = 6 * self.k   
+        h4 = 4 * self.k   
+        h5 = 4 * self.k   
+        h6 = 4 * self.k  
+        out_dim = 3 * self.k  
+
+        self.fc1 = LogicDense(in_dim=in_dim, out_dim=h1, device=device, parametrization_kwargs=pk)
+        self.fc2 = LogicDense(in_dim=h1,    out_dim=h2, device=device, parametrization_kwargs=pk)
+        self.fc3 = LogicDense(in_dim=h2,    out_dim=h3, device=device, parametrization_kwargs=pk)
+        self.fc4 = LogicDense(in_dim=h3,    out_dim=h4, device=device, parametrization_kwargs=pk)
+        self.fc5 = LogicDense(in_dim=h4,    out_dim=h5, device=device, parametrization_kwargs=pk)
+        self.fc6 = LogicDense(in_dim=h5,    out_dim=h6, device=device, parametrization_kwargs=pk)
+        self.fc7 = LogicDense(in_dim=h6,    out_dim=out_dim, device=device, parametrization_kwargs=pk)
+
+        self.group_sum = GroupSum(3, tau=5.0, device=device)
+
+    def forward(self, x):
+        # x: [B, 9]
+        x = self.bin(x)  # expected: [B, 9*n_bits] = [B, 450]
+        z = self.fc7(self.fc6(self.fc5(self.fc4(self.fc3(self.fc2(self.fc1(x)))))))
+        return self.group_sum(z)
+    
+
+@register("lgn-dense-2-dense-100-lessFeat_20", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_9F_Wide_20(torch.nn.Module):
+    n_bits = 100
+    k = 2000  
+
+    def __init__(self, thresholds):
+        super().__init__()
+        device = "cuda"
+        pk = {"weight_init": "residual"}
+
+        self.bin = FixedBinarization(thresholds=thresholds)
+
+        in_dim = 9 * self.n_bits  # 450
+
+
+        h1 = 6 * self.k   
+        h2 = 6 * self.k   
+        h3 = 6 * self.k   
+        h4 = 4 * self.k   
+        h5 = 4 * self.k   
+        h6 = 4 * self.k  
+        out_dim = 3 * self.k  
+
+        self.fc1 = LogicDense(in_dim=in_dim, out_dim=h1, device=device, parametrization_kwargs=pk)
+        self.fc2 = LogicDense(in_dim=h1,    out_dim=h2, device=device, parametrization_kwargs=pk)
+        self.fc3 = LogicDense(in_dim=h2,    out_dim=h3, device=device, parametrization_kwargs=pk)
+        self.fc4 = LogicDense(in_dim=h3,    out_dim=h4, device=device, parametrization_kwargs=pk)
+        self.fc5 = LogicDense(in_dim=h4,    out_dim=h5, device=device, parametrization_kwargs=pk)
+        self.fc6 = LogicDense(in_dim=h5,    out_dim=h6, device=device, parametrization_kwargs=pk)
+        self.fc7 = LogicDense(in_dim=h6,    out_dim=out_dim, device=device, parametrization_kwargs=pk)
+
+        self.group_sum = GroupSum(3, tau=20.0, device=device)
+
+    def forward(self, x):
+        # x: [B, 9]
+        x = self.bin(x)  # expected: [B, 9*n_bits] = [B, 450]
+        z = self.fc7(self.fc6(self.fc5(self.fc4(self.fc3(self.fc2(self.fc1(x)))))))
+        return self.group_sum(z)
+
+######################## new 3s
+
+@register("lgn-conv-3-100-orpool", input_type="y-profile-timing", task_type="classification")
+class ConvLGNDeep100_2(torch.nn.Module):
+    n_bits = 100
+
+    def __init__(self, thresholds):
+        super().__init__()
+        device = "cuda"
+        self.n_bits = 100
+        self.bin = FixedBinarization(thresholds=thresholds)
+        pk = {"weight_init": "residual"}
+        td = 3
+
+        k1, k2, k3, k4 = 256, 512, 1024, 960  # <-- k4 reduced to satisfy lut_rank=2
+
+        self.conv1 = LogicConv2d(
+            in_dim=(13, 8), channels=self.n_bits, num_kernels=k1,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv2 = LogicConv2d(
+            in_dim=(13, 8), channels=k1, num_kernels=k2,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        self.or_pool1 = OrPooling2d(kernel_size=2, stride=2, padding=0)
+
+        self.conv3 = LogicConv2d(
+            in_dim=(6, 4), channels=k2, num_kernels=k3,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv4 = LogicConv2d(
+            in_dim=(6, 4), channels=k3, num_kernels=k4,
+            receptive_field_size=3, tree_depth=td, stride=2, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        fc_in = self.n_bits + (k4 * 3 * 2)  # 100 + 960*6 = 5860
+
+        self.fc1 = LogicDense(in_dim=fc_in, out_dim=3000*4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc2 = LogicDense(in_dim=3000*4, out_dim=3000*4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc3 = LogicDense(in_dim=3000*4, out_dim=3000*2, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc4 = LogicDense(in_dim=3000*2, out_dim=3000, device=device, parametrization_kwargs=pk, lut_rank=2)
+
+        self.group_sum = GroupSum(3, tau=10.0, device=device)
+
+    def forward(self, x):
+        x = self.bin(x)
+        y0 = x[:, 0:self.n_bits]
+        p = x[:, self.n_bits:].view(-1, self.n_bits, 13, 8)
+
+        z = self.conv1(p)
+        z = self.conv2(z)
+        z = self.or_pool1(z)
+        z = self.conv3(z)
+        z = self.conv4(z)
+
+        z = z.view(z.size(0), -1)
+        z = torch.cat((y0, z), dim=1)
+        z = self.fc4(self.fc3(self.fc2(self.fc1(z))))
+        return self.group_sum(z)
+
+
+@register("lgn-conv-3-100-orpool_cg", input_type="y-profile-timing", task_type="classification")
+class ConvLGNDeep100_2cg(torch.nn.Module):
+    n_bits = 100
+
+    def __init__(self, thresholds):
+        super().__init__()
+        device = "cuda"
+        self.n_bits = 100
+        self.bin = FixedBinarization(thresholds=thresholds)
+        pk = {"weight_init": "residual"}
+        td = 3
+
+        cg = {"channel_group_size": 4}
+
+        k1, k2, k3, k4 = 256, 512, 1024, 960  # <-- k4 reduced to satisfy lut_rank=2
+
+        self.conv1 = LogicConv2d(
+            in_dim=(13, 8), channels=self.n_bits, num_kernels=k1,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk, connections_kwargs=cg,
+        )
+        self.conv2 = LogicConv2d(
+            in_dim=(13, 8), channels=k1, num_kernels=k2,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk, connections_kwargs=cg,
+        )
+
+        self.or_pool1 = OrPooling2d(kernel_size=2, stride=2, padding=0)
+
+        self.conv3 = LogicConv2d(
+            in_dim=(6, 4), channels=k2, num_kernels=k3,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk, connections_kwargs=cg,
+        )
+        self.conv4 = LogicConv2d(
+            in_dim=(6, 4), channels=k3, num_kernels=k4,
+            receptive_field_size=3, tree_depth=td, stride=2, padding=1,
+            device=device, parametrization_kwargs=pk, connections_kwargs=cg,
+        )
+
+        fc_in = self.n_bits + (k4 * 3 * 2)  # 5860
+
+        self.fc1 = LogicDense(in_dim=fc_in, out_dim=3000*4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc2 = LogicDense(in_dim=3000*4, out_dim=3000*4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc3 = LogicDense(in_dim=3000*4, out_dim=3000*2, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc4 = LogicDense(in_dim=3000*2, out_dim=3000, device=device, parametrization_kwargs=pk, lut_rank=2)
+
+        self.group_sum = GroupSum(3, tau=10.0, device=device)
+
+    def forward(self, x):
+        x = self.bin(x)
+        y0 = x[:, 0:self.n_bits]
+        p = x[:, self.n_bits:].view(-1, self.n_bits, 13, 8)
+
+        z = self.conv1(p)
+        z = self.conv2(z)
+        z = self.or_pool1(z)
+        z = self.conv3(z)
+        z = self.conv4(z)
+
+        z = z.view(z.size(0), -1)
+        z = torch.cat((y0, z), dim=1)
+        z = self.fc4(self.fc3(self.fc2(self.fc1(z))))
+        return self.group_sum(z)
+
+
+
+####################### Model 2 with less input CONV + DENSE #######################
+@register("lgn-dense-2-conv-100-lessFeat", input_type="y-profile", task_type="classification")
+class DenseLGN2_100_DeepConv2_DeepFC5_k1000(torch.nn.Module):
+    n_bits = 100
+    k = 1500
+
+    def __init__(self, thresholds):
+        super().__init__()
+        device = "cuda"
+        pk = {"weight_init": "residual"}
+
+        self.bin = FixedBinarization(thresholds=thresholds)
+
+        # CHANGE: 14 -> 9
+        self.conv1 = LogicConv2d(
+            in_dim=(9, 1),
+            channels=self.n_bits,
+            num_kernels=64,
+            receptive_field_size=(3, 1),
+            tree_depth=3,
+            stride=1,
+            padding=0,
+            device=device,
+            parametrization_kwargs=pk,
+        )
+
+        # CHANGE: 12 -> 7 (because 9 -> 7 after conv1)
+        self.conv2 = LogicConv2d(
+            in_dim=(7, 1),
+            channels=64,
+            num_kernels=128,
+            receptive_field_size=(3, 1),
+            tree_depth=3,
+            stride=1,
+            padding=0,
+            device=device,
+            parametrization_kwargs=pk,
+        )
+
+        # CHANGE: 128*10*1 -> 128*5*1 (because 9 -> 7 -> 5)
+        conv_out = 128 * 5 * 1
+
+        self.fc1 = LogicDense(in_dim=conv_out, out_dim=6 * self.k, device=device, parametrization_kwargs=pk)
+        self.fc2 = LogicDense(in_dim=6 * self.k, out_dim=6 * self.k, device=device, parametrization_kwargs=pk)
+        self.fc3 = LogicDense(in_dim=6 * self.k, out_dim=3 * self.k, device=device, parametrization_kwargs=pk)
+        self.fc4 = LogicDense(in_dim=3 * self.k, out_dim=3 * self.k, device=device, parametrization_kwargs=pk)
+        self.fc5 = LogicDense(in_dim=3 * self.k, out_dim=3 * self.k, device=device, parametrization_kwargs=pk)
+
+        self.group_sum = GroupSum(3, tau=10.0, device=device)
+
+    def forward(self, x):
+        x = self.bin(x)
+        b = x.shape[0]
+
+        # CHANGE: 14 -> 9
+        p = x.view(b, self.n_bits, 9, 1)
+
+        z = self.conv2(self.conv1(p))
+        z = z.view(z.size(0), -1)
+        z = self.fc5(self.fc4(self.fc3(self.fc2(self.fc1(z)))))
+        return self.group_sum(z)
+
+@register("lgn-dense-2-dense-100-lessFeat", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_9F_Wide(torch.nn.Module):
+    n_bits = 100
+    k = 2000  
+
+    def __init__(self, thresholds):
+        super().__init__()
+        device = "cuda"
+        pk = {"weight_init": "residual"}
+
+        self.bin = FixedBinarization(thresholds=thresholds)
+
+        in_dim = 9 * self.n_bits  # 450
+
+
+        h1 = 6 * self.k   
+        h2 = 6 * self.k   
+        h3 = 6 * self.k   
+        h4 = 4 * self.k   
+        h5 = 4 * self.k   
+        h6 = 4 * self.k  
+        out_dim = 3 * self.k  
+
+        self.fc1 = LogicDense(in_dim=in_dim, out_dim=h1, device=device, parametrization_kwargs=pk)
+        self.fc2 = LogicDense(in_dim=h1,    out_dim=h2, device=device, parametrization_kwargs=pk)
+        self.fc3 = LogicDense(in_dim=h2,    out_dim=h3, device=device, parametrization_kwargs=pk)
+        self.fc4 = LogicDense(in_dim=h3,    out_dim=h4, device=device, parametrization_kwargs=pk)
+        self.fc5 = LogicDense(in_dim=h4,    out_dim=h5, device=device, parametrization_kwargs=pk)
+        self.fc6 = LogicDense(in_dim=h5,    out_dim=h6, device=device, parametrization_kwargs=pk)
+        self.fc7 = LogicDense(in_dim=h6,    out_dim=out_dim, device=device, parametrization_kwargs=pk)
+
+        self.group_sum = GroupSum(3, tau=10.0, device=device)
+
+    def forward(self, x):
+        # x: [B, 9]
+        x = self.bin(x)  # expected: [B, 9*n_bits] = [B, 450]
+        z = self.fc7(self.fc6(self.fc5(self.fc4(self.fc3(self.fc2(self.fc1(x)))))))
+        return self.group_sum(z)
+
+
+### MODELS REDUCED BIT FOR 3, INCREASED SIZE FOR 2 ###
+
+
+
+@register("lgn-conv-3-10-deepconv4-deepfc6_tau10_fb_vwidth", input_type="y-profile-timing", task_type="classification")
+class ConvLGNDeep10_23_vwidth(torch.nn.Module):
+    n_bits = 10
+
+    def __init__(self, thresholds):
+        super().__init__()
+        device = "cuda"
+        self.n_bits = 10
+        self.bin = FixedBinarization(thresholds=thresholds)
+
+        pk = {"weight_init": "residual"}
+
+        self.conv1 = LogicConv2d(
+            in_dim=(13, 8),
+            channels=self.n_bits,
+            num_kernels=64,
+            receptive_field_size=3,
+            tree_depth=4,
+            stride=1,
+            padding=1,
+            device=device,
+            parametrization_kwargs=pk,
+        )
+        self.conv2 = LogicConv2d(
+            in_dim=(13, 8),
+            channels=64,
+            num_kernels=128,
+            receptive_field_size=3,
+            tree_depth=4,
+            stride=1,
+            padding=1,
+            device=device,
+            parametrization_kwargs=pk,
+        )
+
+        self.conv3 = LogicConv2d(
+            in_dim=(13, 8),
+            channels=128,
+            num_kernels=128,
+            receptive_field_size=3,
+            tree_depth=4,
+            stride=1,
+            padding=1,
+            device=device,
+            parametrization_kwargs=pk,
+        )
+        self.conv4 = LogicConv2d(
+            in_dim=(13, 8),
+            channels=128,
+            num_kernels=128,
+            receptive_field_size=3,
+            tree_depth=4,
+            stride=2,
+            padding=1,
+            device=device,
+            parametrization_kwargs=pk,
+        )
+
+        fc_in = self.n_bits + (128 * 7 * 4)
+
+        self.fc1 = LogicDense(in_dim=fc_in, out_dim=9000, device=device, parametrization_kwargs=pk)
+        self.fc2 = LogicDense(in_dim=9000, out_dim=9000, device=device, parametrization_kwargs=pk)
+        self.fc3 = LogicDense(in_dim=9000, out_dim=6000, device=device, parametrization_kwargs=pk)
+        self.fc4 = LogicDense(in_dim=6000, out_dim=6000, device=device, parametrization_kwargs=pk)
+        self.fc5 = LogicDense(in_dim=6000, out_dim=3000, device=device, parametrization_kwargs=pk)
+        self.fc6 = LogicDense(in_dim=3000, out_dim=3000, device=device, parametrization_kwargs=pk)
+
+        self.group_sum = GroupSum(3, tau=10.0, device=device)
+
+    def forward(self, x):
+        x = self.bin(x)
+
+        y0 = x[:, 0:self.n_bits]
+        p = x[:, self.n_bits:].view(-1, self.n_bits, 13, 8)
+
+        z = self.conv4(self.conv3(self.conv2(self.conv1(p))))
+        z = z.view(z.size(0), -1)              
+        z = torch.cat((y0, z), dim=1)          
+        z = self.fc6(self.fc5(self.fc4(self.fc3(self.fc2(self.fc1(z))))))
+
+        return self.group_sum(z)
+
+@register("lgn-conv-3-10-deepconv4-deepfc6_tau10_fb_swidth", input_type="y-profile-timing", task_type="classification")
+class ConvLGNDeep10_23_swidth(torch.nn.Module):
+    n_bits = 10
+
+    def __init__(self, thresholds):
+        super().__init__()
+        device = "cuda"
+        self.n_bits = 10
+        self.bin = FixedBinarization(thresholds=thresholds)
+
+        pk = {"weight_init": "residual"}
+
+        self.conv1 = LogicConv2d(
+            in_dim=(13, 8),
+            channels=self.n_bits,
+            num_kernels=64,
+            receptive_field_size=3,
+            tree_depth=4,
+            stride=1,
+            padding=1,
+            device=device,
+            parametrization_kwargs=pk,
+        )
+        self.conv2 = LogicConv2d(
+            in_dim=(13, 8),
+            channels=64,
+            num_kernels=128,
+            receptive_field_size=3,
+            tree_depth=4,
+            stride=1,
+            padding=1,
+            device=device,
+            parametrization_kwargs=pk,
+        )
+
+        self.conv3 = LogicConv2d(
+            in_dim=(13, 8),
+            channels=128,
+            num_kernels=128,
+            receptive_field_size=3,
+            tree_depth=4,
+            stride=1,
+            padding=1,
+            device=device,
+            parametrization_kwargs=pk,
+        )
+        self.conv4 = LogicConv2d(
+            in_dim=(13, 8),
+            channels=128,
+            num_kernels=128,
+            receptive_field_size=3,
+            tree_depth=4,
+            stride=2,
+            padding=1,
+            device=device,
+            parametrization_kwargs=pk,
+        )
+
+        fc_in = self.n_bits + (128 * 7 * 4)
+
+        self.fc1 = LogicDense(in_dim=fc_in, out_dim=3000, device=device, parametrization_kwargs=pk)
+        self.fc2 = LogicDense(in_dim=3000, out_dim=3000, device=device, parametrization_kwargs=pk)
+        self.fc3 = LogicDense(in_dim=3000, out_dim=3000, device=device, parametrization_kwargs=pk)
+        self.fc4 = LogicDense(in_dim=3000, out_dim=3000, device=device, parametrization_kwargs=pk)
+        self.fc5 = LogicDense(in_dim=3000, out_dim=3000, device=device, parametrization_kwargs=pk)
+        self.fc6 = LogicDense(in_dim=3000, out_dim=3000, device=device, parametrization_kwargs=pk)
+
+        self.group_sum = GroupSum(3, tau=10.0, device=device)
+
+    def forward(self, x):
+        x = self.bin(x)
+
+        y0 = x[:, 0:self.n_bits]
+        p = x[:, self.n_bits:].view(-1, self.n_bits, 13, 8)
+
+        z = self.conv4(self.conv3(self.conv2(self.conv1(p))))
+        z = z.view(z.size(0), -1)              
+        z = torch.cat((y0, z), dim=1)          
+        z = self.fc6(self.fc5(self.fc4(self.fc3(self.fc2(self.fc1(z))))))
+
+        return self.group_sum(z)
+
+
+
+
+# @register("lgn-dense-2-50-deepconv2-deepfc5_k1000_tau10", input_type="y-profile", task_type="classification")
+# class DenseLGN2_100_DeepConv2_DeepFC5_k1000(torch.nn.Module):
+#     n_bits = 50
+#     k = 1000             
+
+#     def __init__(self, thresholds):
+#         super().__init__()
+#         print(f"Using {self.n_bits} bits for binarization in DenseLGN2_100_DeepConv2_DeepFC5_k512")
+#         device = "cuda"
+
+#         pk = {"weight_init": "residual"}
+
+#         self.bin = FixedBinarization(thresholds=thresholds)
+
+#         self.conv1 = LogicConv2d(
+#             in_dim=(14, 1),
+#             channels=self.n_bits,
+#             num_kernels=64,
+#             receptive_field_size=(3, 1),
+#             tree_depth=2,
+#             stride=1,
+#             padding=0,
+#             device=device,
+#             parametrization_kwargs=pk,
+#         )
+
+#         self.conv2 = LogicConv2d(
+#             in_dim=(12, 1),
+#             channels=64,
+#             num_kernels=128,
+#             receptive_field_size=(3, 1),
+#             tree_depth=2,
+#             stride=1,
+#             padding=0,
+#             device=device,
+#             parametrization_kwargs=pk,
+#         )
+
+#         conv_out = 128 * 10 * 1  
+
+#         self.fc1 = LogicDense(in_dim=conv_out, out_dim=6 * self.k, device=device, parametrization_kwargs=pk)
+#         self.fc2 = LogicDense(in_dim=6 * self.k, out_dim=6 * self.k, device=device, parametrization_kwargs=pk)
+#         self.fc3 = LogicDense(in_dim=6 * self.k, out_dim=3 * self.k, device=device, parametrization_kwargs=pk)
+#         self.fc4 = LogicDense(in_dim=3 * self.k, out_dim=3 * self.k, device=device, parametrization_kwargs=pk)
+#         self.fc5 = LogicDense(in_dim=3 * self.k, out_dim=3 * self.k, device=device, parametrization_kwargs=pk)
+
+#         self.group_sum = GroupSum(3, tau=10.0, device=device)
+
+#     def forward(self, x):
+#         x = self.bin(x)  
+
+#         b = x.shape[0]
+#         p = x.view(b, self.n_bits, 14, 1)
+
+#         z = self.conv2(self.conv1(p))
+#         z = z.view(z.size(0), -1)
+
+#         z = self.fc5(self.fc4(self.fc3(self.fc2(self.fc1(z)))))
+#         return self.group_sum(z)
+
+
+
+# @register("lgn-dense-2-50-deepconv2-densebetween-deepfc5_k1000_tau10", input_type="y-profile", task_type="classification")
+# class DenseLGN2_50_DeepConv2_DenseBetween_DeepFC5_k1000(torch.nn.Module):
+#     n_bits = 50
+#     k = 1000
+
+#     def __init__(self, thresholds):
+#         super().__init__()
+#         device = "cuda"
+#         pk = {"weight_init": "residual"}
+
+#         self.bin = FixedBinarization(thresholds=thresholds)
+
+#         self.conv1 = LogicConv2d(
+#             in_dim=(14, 1),
+#             channels=self.n_bits,
+#             num_kernels=64,
+#             receptive_field_size=(3, 1),
+#             tree_depth=2,
+#             stride=1,
+#             padding=0,
+#             device=device,
+#             parametrization_kwargs=pk,
+#         )
+
+#         # conv1 output: (b, 64, 12, 1) => 64*12*1 = 768
+#         self.mid_fc = LogicDense(in_dim=64 * 12 * 1, out_dim=64 * 12 * 1, device=device, parametrization_kwargs=pk)
+
+#         self.conv2 = LogicConv2d(
+#             in_dim=(12, 1),
+#             channels=64,
+#             num_kernels=128,
+#             receptive_field_size=(3, 1),
+#             tree_depth=2,
+#             stride=1,
+#             padding=0,
+#             device=device,
+#             parametrization_kwargs=pk,
+#         )
+
+#         # conv2 output: (b, 128, 10, 1) => 128*10*1 = 1280
+#         conv_out = 128 * 10 * 1
+
+#         self.fc1 = LogicDense(in_dim=conv_out, out_dim=6 * self.k, device=device, parametrization_kwargs=pk)
+#         self.fc2 = LogicDense(in_dim=6 * self.k, out_dim=6 * self.k, device=device, parametrization_kwargs=pk)
+#         self.fc3 = LogicDense(in_dim=6 * self.k, out_dim=3 * self.k, device=device, parametrization_kwargs=pk)
+#         self.fc4 = LogicDense(in_dim=3 * self.k, out_dim=3 * self.k, device=device, parametrization_kwargs=pk)
+#         self.fc5 = LogicDense(in_dim=3 * self.k, out_dim=3 * self.k, device=device, parametrization_kwargs=pk)
+
+#         self.group_sum = GroupSum(3, tau=10.0, device=device)
+
+#     def forward(self, x):
+#         x = self.bin(x)
+
+#         b = x.shape[0]
+#         p = x.view(b, self.n_bits, 14, 1)
+
+#         z = self.conv1(p)                 # (b, 64, 12, 1)
+#         z = z.view(b, -1)                 # (b, 768)
+#         z = self.mid_fc(z)                # (b, 768)
+#         z = z.view(b, 64, 12, 1)          # back to conv2 input
+
+#         z = self.conv2(z)                 # (b, 128, 10, 1)
+#         z = z.view(b, -1)                 # (b, 1280)
+
+#         z = self.fc5(self.fc4(self.fc3(self.fc2(self.fc1(z)))))
+#         return self.group_sum(z)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -171,7 +1897,7 @@ class ConvLGNDeep200_23(torch.nn.Module):
             channels=self.n_bits,
             num_kernels=64,
             receptive_field_size=3,
-            tree_depth=2,
+            tree_depth=3,
             stride=1,
             padding=1,
             device=device,
@@ -182,7 +1908,7 @@ class ConvLGNDeep200_23(torch.nn.Module):
             channels=64,
             num_kernels=128,
             receptive_field_size=3,
-            tree_depth=2,
+            tree_depth=3,
             stride=1,
             padding=1,
             device=device,
@@ -193,7 +1919,7 @@ class ConvLGNDeep200_23(torch.nn.Module):
             channels=128,
             num_kernels=128,
             receptive_field_size=3,
-            tree_depth=2,
+            tree_depth=3,
             stride=1,
             padding=1,
             device=device,
@@ -205,7 +1931,7 @@ class ConvLGNDeep200_23(torch.nn.Module):
             channels=128,
             num_kernels=128,
             receptive_field_size=3,
-            tree_depth=2,
+            tree_depth=3,
             stride=2,
             padding=1,
             device=device,
@@ -459,6 +2185,18 @@ class DenseLGN2Y0BranchHuge200DeepConv2Fuse3FB(torch.nn.Module):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 ### Previously Tested Models (subsample) ###
 
 
@@ -560,64 +2298,6 @@ class DenseLGN2Deep8_100(_DenseLGN2DeepBase):
     k = 1024
     depth = 8
 
-
-
-## Others
-@register("lgn-conv-3-lb-200-tau5_fb", input_type="y-profile-timing", task_type="classification")
-class ConvLGN3LB200Tau5FB(torch.nn.Module):
-    n_bits = 200
-
-    def __init__(self, thresholds):
-        super().__init__()
-        device = "cuda"
-        self.n_bits = 200
-        self.bin = FixedBinarization(thresholds=thresholds)
-        self.conv1 = LogicConv2d(in_dim=(13, 8), channels=self.n_bits, num_kernels=64, receptive_field_size=3, tree_depth=2, device=device)
-        self.conv2 = LogicConv2d(in_dim=(11, 6), channels=64, num_kernels=128, receptive_field_size=3, tree_depth=2, device=device)
-        fc_in = _conv3_fc_in(self.n_bits, 128, 9, 4)
-        self.fc1 = LogicDense(in_dim=fc_in, out_dim=3000, device=device)
-        self.fc2 = LogicDense(in_dim=3000, out_dim=3000, device=device)
-        self.fc3 = LogicDense(in_dim=3000, out_dim=3000, device=device)
-        self.group_sum = GroupSum(3, tau=5.0, device=device)
-
-    def forward(self, x):
-        x = self.bin(x)
-        y0 = x[:, 0:self.n_bits]
-        p = x[:, self.n_bits:].view(-1, self.n_bits, 13, 8)
-        z = self.conv2(self.conv1(p))
-        z = z.view(z.size(0), -1)
-        z = torch.cat((y0, z), dim=1)
-        z = self.fc3(self.fc2(self.fc1(z)))
-        return self.group_sum(z)
-
-## Added device as argument to try RTL
-@register("lgn-conv-3-deepfc-200_fb", input_type="y-profile-timing", task_type="classification")
-class ConvLGN3DeepFC200FB(torch.nn.Module):
-    n_bits = 200
-    def __init__(self, thresholds, device="cpu"):
-        super().__init__()
-        self.n_bits = 200
-        self.bin = FixedBinarization(thresholds=thresholds)
-        self.conv1 = LogicConv2d(in_dim=(13, 8), channels=self.n_bits, num_kernels=64,
-                                 receptive_field_size=3, tree_depth=2, device=device)
-        self.conv2 = LogicConv2d(in_dim=(11, 6), channels=64, num_kernels=128,
-                                 receptive_field_size=3, tree_depth=2, device=device)
-        fc_in = _conv3_fc_in(self.n_bits, 128, 9, 4)
-        self.fc1 = LogicDense(in_dim=fc_in, out_dim=3000, device=device)
-        self.fc2 = LogicDense(in_dim=3000, out_dim=3000, device=device)
-        self.fc3 = LogicDense(in_dim=3000, out_dim=3000, device=device)
-        self.fc4 = LogicDense(in_dim=3000, out_dim=3000, device=device)
-        self.group_sum = GroupSum(3, tau=10.0, device=device)
-
-    def forward(self, x):
-        x = self.bin(x)
-        y0 = x[:, 0:self.n_bits]
-        p = x[:, self.n_bits:].view(-1, self.n_bits, 13, 8)
-        z = self.conv2(self.conv1(p))
-        z = z.view(z.size(0), -1)
-        z = torch.cat((y0, z), dim=1)
-        z = self.fc4(self.fc3(self.fc2(self.fc1(z))))
-        return self.group_sum(z)
 
 
 
@@ -1877,6 +3557,27 @@ class ConvLGN3DeepFC200FBr(torch.nn.Module):
         z = torch.cat((y0, z), dim=1)
         z = self.fc4(self.fc3(self.fc2(self.fc1(z))))
         return self.group_sum(z)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

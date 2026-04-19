@@ -95,16 +95,13 @@ def get_transform(
         scaling_enabled = False
 
     def transform(raw_x, raw_y) -> torch.Tensor:
-        # --- preprocess x ---
         x = SymLogTransform()(raw_x)
         x = scale_x(x)
         x = x.reshape(N_TIME, N_Y, N_X)
 
-        # --- preprocess y ---
         y_scaled = scale_y(raw_y)
-        y0 = y_scaled[7]  # eigth feature
+        y0 = y_scaled[7]
 
-        # --- build features ---
         if input_type == "full":
             features = x
 
@@ -112,7 +109,6 @@ def get_transform(
             features = x[LAST_FRAME]
 
         elif input_type == "y-size":
-            # use unscaled raw_x to count nonzero entries
             raw_x_reshaped = raw_x.reshape(N_TIME, N_Y, N_X)
             y_profile = raw_x_reshaped[LAST_FRAME].mean(axis=-1)
             cluster_size = (y_profile > 0).sum()
@@ -123,9 +119,19 @@ def get_transform(
             features = np.concatenate(([y0], y_profile))
 
         elif input_type == "y-profile-timing":
-            y_profile = _y_profile_over_time(x)
-            slices = y_profile[:N_SLICES].T  # (13, 8)
-            features = np.concatenate(([y0], slices.flatten()))  # (1 + 13*8,)
+            y_profile = _y_profile_over_time(x)          # (20, 13)
+            slices = y_profile[:8].T                     # (13, 8)
+            features = np.concatenate(([y0], slices.flatten()))
+
+        elif input_type == "y-profile-timing-20":
+            y_profile = _y_profile_over_time(x)          # (20, 13)
+            slices = y_profile[:20].T                    # (13, 20)
+            features = np.concatenate(([y0], slices.flatten()))   # (1 + 13*20,)
+
+        elif input_type == "y-profile-timing-20-raw":
+            y_profile = _y_profile_over_time(x)          # (20, 13)
+            slices = y_profile[:20].T                    # (13, 20)
+            features = slices.flatten()                  # (13*20,)
 
         else:
             raise ValueError(f"Unknown input_type: {input_type}")

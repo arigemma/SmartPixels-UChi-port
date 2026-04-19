@@ -242,7 +242,7 @@ def main(args):
         "loss": criterion,
         "acc": lambda preds, y: (preds.argmax(-1) == y.argmax(-1)).to(torch.float32).mean(),
         "balanced_acc": lambda preds, y: torch.stack([(preds.argmax(-1)[y.argmax(-1) == c] == c).to(torch.float32).mean() for c in range(y.shape[-1])]).mean(),
-        "roc_auc": get_roc_auc,
+        # "roc_auc": get_roc_auc,
     }
 
     if args.compile_model:

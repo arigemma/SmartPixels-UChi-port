@@ -110,6 +110,7 @@ def _plot_metric(
     plt.title(title)
     plt.xlabel("Step")
     plt.ylabel(ylabel)
+    plt.ylim(0.45, 0.85)
     plt.grid(True, alpha=0.3)
     plt.legend()
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -209,20 +210,36 @@ def main():
         return out
 
     plots = [
-        ("Balanced Accuracy (Discrete)", TAGS["balanced_acc_discrete"], "balanced_acc", outdir / "balanced_acc_discrete.png"),
-        ("Balanced Accuracy (Relaxed)",  TAGS["balanced_acc_relaxed"],  "balanced_acc", outdir / "balanced_acc_relaxed.png"),
-        ("ROC AUC (Discrete)",           TAGS["roc_auc_discrete"],      "roc_auc",       outdir / "roc_auc_discrete.png"),
-        ("ROC AUC (Relaxed)",            TAGS["roc_auc_relaxed"],       "roc_auc",       outdir / "roc_auc_relaxed.png"),
+        ("Balanced Accuracy", "balanced_acc", [
+            ("Relaxed",  TAGS["balanced_acc_relaxed"]),
+            ("Discrete", TAGS["balanced_acc_discrete"]),
+        ], outdir / "balanced_acc_relaxed_vs_discrete.png"),
+        ("ROC AUC", "roc_auc", [
+            ("Relaxed",  TAGS["roc_auc_relaxed"]),
+            ("Discrete", TAGS["roc_auc_discrete"]),
+        ], outdir / "roc_auc_relaxed_vs_discrete.png"),
     ]
 
-    for title, tag, ylabel, path in plots:
-        data = collect(tag)
-        if not data:
-            print(f"WARNING: tag not found in any run: {tag}")
+    def collect_for_suffix(tag: str, suffix: str) -> Dict[str, List[Tuple[int, float]]]:
+        """
+        Relabel each run as '<runlabel> <suffix>' so relaxed/discrete show as separate legend entries.
+        """
+        out: Dict[str, List[Tuple[int, float]]] = {}
+        for label, tagmap in per_run_series.items():
+            if tag in tagmap:
+                out[f"{label} {suffix}"] = tagmap[tag]
+        return out
+
+    for title, ylabel, tag_pairs, path in plots:
+        combined: Dict[str, List[Tuple[int, float]]] = {}
+        for suffix, tag in tag_pairs:
+            combined.update(collect_for_suffix(tag, suffix))
+        if not combined:
+            print(f"WARNING: no data found for {title}")
             continue
         _plot_metric(
-            runs_data=data,
-            title=title,
+            runs_data=combined,
+            title=title + " (Relaxed vs Discrete)",
             ylabel=ylabel,
             out_path=path,
             max_step=args.max_step,

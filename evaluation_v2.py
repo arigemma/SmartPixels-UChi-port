@@ -176,7 +176,7 @@ def plot_acceptance_vs_pt(pt_true_signed: np.ndarray, pred_dict: dict[str, np.nd
             idx = (pt_true_signed >= edges[i_bin]) & (pt_true_signed < edges[i_bin + 1])
             n = int(idx.sum())
             if n == 0:
-                acceptances = np.nan
+                acceptance = np.nan
             else:
                 acceptance = float((preds[idx] == 2).sum()) / n
             print(f"Bin {i_bin}: true pt in [{edges[i_bin]:.2f}, {edges[i_bin + 1]:.2f}), acceptance: {acceptance:.4f} ({(preds[idx] == 2).sum()}/{n})")
