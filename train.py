@@ -206,9 +206,7 @@ def main(args):
         balance_classes=args.balance_classes,
         input_type=input_type,
         target_type=task_type,
-        drop_dominant_features=True,
-        dominant_thr=1.0, #set to 1 not to filter
-        dominant_num_batches=1, #set to 1 not to filter
+        drop_dominant_features=False,
         )
 
     if args.plot_data:
@@ -274,9 +272,8 @@ def main(args):
     }
 
     step, running_loss, running_n, stop = 0, 0.0, 0, False
-    for epoch in range(10):
-        if stop:
-            break
+    epoch = 0
+    while not stop and (args.epochs == 0 or epoch < args.epochs):
         train_loader.dataset.shuffle_indices()  # Shuffle the dataset at the beginning of each epoch
         pbar = tqdm(train_loader, desc=f"Training (Epoch {epoch})", unit="batch", leave=True)
         for inputs, labels in pbar:
@@ -322,7 +319,7 @@ def main(args):
                     # print(f"New best model found at step {step+1} with validation loss {val_loss:.4f}. Saving model...")
                     save_model(model, args.model, f"{args.output}/best_model.pth")
                 # print(f"Step {step+1}/{len(train_loader)}, Validation Loss: {val_loss:.4f}")
-                if early_stopping.step(metrics["loss"]):
+                if not args.disable_early_stopping and early_stopping.step(metrics["loss"]):
                     stop = True
                     print("Early stopping triggered.")
                     break
@@ -331,6 +328,7 @@ def main(args):
                     print(f"Reached the maximum number of steps: {args.steps}. Stopping training.")
                     break
                 model.train()
+        epoch += 1
 
     save_model(model, args.model, f"{args.output}/final_model.pth")
 
@@ -382,6 +380,9 @@ if __name__ == "__main__":
         "--steps", type=int, default=None, help="Number of training steps. If not set, uses full dataset."
     )
     parser.add_argument(
+        "--epochs", type=int, default=10, help="Number of epochs. Set to 0 to train until stopped."
+    )
+    parser.add_argument(
         "--balance-classes",  action='store_true', help="Balance the dataset classes during training (only for classification tasks)."
     )
     parser.add_argument(
@@ -393,6 +394,10 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--filter", action = 'store_true', help="Choose to filter mostly non-varying fetures."
+    )
+    parser.add_argument(
+        "--disable-early-stopping", "--no-early-stop", action="store_true",
+        help="Disable validation-loss early stopping."
     )
 
     args = parser.parse_args()

@@ -1128,6 +1128,227 @@ class DenseOnlyLGN_9F_Wide_128__10(torch.nn.Module):
         return self.group_sum(z)
 
 
+class _DenseOnlyLGN14F_Wide_128(torch.nn.Module):
+    n_bits = 100
+    k = 2000
+    n_inputs = 14
+
+    def __init__(self, thresholds, tau):
+        super().__init__()
+        device = "cuda"
+        pk = {"weight_init": "residual"}
+
+        self.bin = FixedBinarization(thresholds=thresholds)
+
+        in_dim = self.n_inputs * self.n_bits
+
+        h1 = 6 * self.k
+        h2 = 6 * self.k
+        h3 = 6 * self.k
+        h4 = 4 * self.k
+        h5 = 4 * self.k
+        h6 = 4 * self.k
+        out_dim = 3 * self.k
+
+        self.fc1 = LogicDense(in_dim=in_dim, out_dim=h1, device=device, parametrization_kwargs=pk)
+        self.fc2 = LogicDense(in_dim=h1,    out_dim=h2, device=device, parametrization_kwargs=pk)
+        self.fc3 = LogicDense(in_dim=h2,    out_dim=h3, device=device, parametrization_kwargs=pk)
+        self.fc4 = LogicDense(in_dim=h3,    out_dim=h4, device=device, parametrization_kwargs=pk)
+        self.fc5 = LogicDense(in_dim=h4,    out_dim=h5, device=device, parametrization_kwargs=pk)
+        self.fc6 = LogicDense(in_dim=h5,    out_dim=h6, device=device, parametrization_kwargs=pk)
+        self.fc7 = LogicDense(in_dim=h6,    out_dim=out_dim, device=device, parametrization_kwargs=pk)
+
+        self.group_sum = GroupSum(3, tau=tau, device=device)
+
+    def forward(self, x):
+        assert x.shape == (x.shape[0], self.n_inputs), f"Expected input shape (batch_size, {self.n_inputs}), but got {x.shape}"
+        x = self.bin(x)
+        z = self.fc7(self.fc6(self.fc5(self.fc4(self.fc3(self.fc2(self.fc1(x)))))))
+        return self.group_sum(z)
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_5", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Wide_128__5(_DenseOnlyLGN14F_Wide_128):
+    def __init__(self, thresholds):
+        super().__init__(thresholds=thresholds, tau=5.0)
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_10", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Wide_128__10(_DenseOnlyLGN14F_Wide_128):
+    def __init__(self, thresholds):
+        super().__init__(thresholds=thresholds, tau=10.0)
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_20", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Wide_128__20(_DenseOnlyLGN14F_Wide_128):
+    def __init__(self, thresholds):
+        super().__init__(thresholds=thresholds, tau=20.0)
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_30", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Wide_128__30(_DenseOnlyLGN14F_Wide_128):
+    def __init__(self, thresholds):
+        super().__init__(thresholds=thresholds, tau=30.0)
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_40", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Wide_128__40(_DenseOnlyLGN14F_Wide_128):
+    def __init__(self, thresholds):
+        super().__init__(thresholds=thresholds, tau=40.0)
+
+
+class _DenseOnlyLGN14F_Model2FullSized(torch.nn.Module):
+    n_bits = 100
+    n_inputs = 14
+    tau = 20.0
+    hidden_dims = (3072, 3072, 3072)
+
+    def __init__(self, thresholds):
+        super().__init__()
+        device = "cuda"
+        pk = {"weight_init": "residual"}
+
+        self.bin = FixedBinarization(thresholds=thresholds)
+        self.layers = torch.nn.ModuleList()
+
+        prev_dim = self.n_inputs * self.n_bits
+        for hidden_dim in self.hidden_dims:
+            self.layers.append(
+                LogicDense(
+                    in_dim=prev_dim,
+                    out_dim=hidden_dim,
+                    device=device,
+                    parametrization_kwargs=pk,
+                )
+            )
+            prev_dim = hidden_dim
+
+        self.group_sum = GroupSum(3, tau=float(self.tau), device=device)
+
+    def forward(self, x):
+        assert x.shape == (x.shape[0], self.n_inputs), f"Expected input shape (batch_size, {self.n_inputs}), but got {x.shape}"
+        z = self.bin(x)
+        for layer in self.layers:
+            z = layer(z)
+        return self.group_sum(z)
+
+
+class _DenseOnlyLGN14F_Model2FullS01DSNewLike(_DenseOnlyLGN14F_Model2FullSized):
+    hidden_dims = (3072, 3072, 3072)
+
+
+class _DenseOnlyLGN14F_Model2FullS02P163M(_DenseOnlyLGN14F_Model2FullSized):
+    hidden_dims = (6300, 6300, 6300, 4200, 4200, 4200, 3150)
+
+
+class _DenseOnlyLGN14F_Model2FullS03P298M(_DenseOnlyLGN14F_Model2FullSized):
+    hidden_dims = (8600, 8600, 8600, 5700, 5700, 5700, 4302)
+
+
+class _DenseOnlyLGN14F_Model2FullS04P434M(_DenseOnlyLGN14F_Model2FullSized):
+    hidden_dims = (10400, 10400, 10400, 6900, 6900, 6900, 5202)
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s01_dsNewLike_5", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS01DSNewLike__5(_DenseOnlyLGN14F_Model2FullS01DSNewLike):
+    tau = 5.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s01_dsNewLike_10", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS01DSNewLike__10(_DenseOnlyLGN14F_Model2FullS01DSNewLike):
+    tau = 10.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s01_dsNewLike_20", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS01DSNewLike__20(_DenseOnlyLGN14F_Model2FullS01DSNewLike):
+    tau = 20.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s01_dsNewLike_30", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS01DSNewLike__30(_DenseOnlyLGN14F_Model2FullS01DSNewLike):
+    tau = 30.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s01_dsNewLike_40", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS01DSNewLike__40(_DenseOnlyLGN14F_Model2FullS01DSNewLike):
+    tau = 40.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s02_p163M_5", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS02P163M__5(_DenseOnlyLGN14F_Model2FullS02P163M):
+    tau = 5.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s02_p163M_10", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS02P163M__10(_DenseOnlyLGN14F_Model2FullS02P163M):
+    tau = 10.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s02_p163M_20", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS02P163M__20(_DenseOnlyLGN14F_Model2FullS02P163M):
+    tau = 20.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s02_p163M_30", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS02P163M__30(_DenseOnlyLGN14F_Model2FullS02P163M):
+    tau = 30.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s02_p163M_40", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS02P163M__40(_DenseOnlyLGN14F_Model2FullS02P163M):
+    tau = 40.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s03_p298M_5", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS03P298M__5(_DenseOnlyLGN14F_Model2FullS03P298M):
+    tau = 5.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s03_p298M_10", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS03P298M__10(_DenseOnlyLGN14F_Model2FullS03P298M):
+    tau = 10.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s03_p298M_20", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS03P298M__20(_DenseOnlyLGN14F_Model2FullS03P298M):
+    tau = 20.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s03_p298M_30", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS03P298M__30(_DenseOnlyLGN14F_Model2FullS03P298M):
+    tau = 30.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s03_p298M_40", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS03P298M__40(_DenseOnlyLGN14F_Model2FullS03P298M):
+    tau = 40.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s04_p434M_5", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS04P434M__5(_DenseOnlyLGN14F_Model2FullS04P434M):
+    tau = 5.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s04_p434M_10", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS04P434M__10(_DenseOnlyLGN14F_Model2FullS04P434M):
+    tau = 10.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s04_p434M_20", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS04P434M__20(_DenseOnlyLGN14F_Model2FullS04P434M):
+    tau = 20.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s04_p434M_30", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS04P434M__30(_DenseOnlyLGN14F_Model2FullS04P434M):
+    tau = 30.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s04_p434M_40", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS04P434M__40(_DenseOnlyLGN14F_Model2FullS04P434M):
+    tau = 40.0
+
+
 
 
 
