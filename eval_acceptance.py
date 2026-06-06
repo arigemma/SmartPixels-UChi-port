@@ -58,6 +58,45 @@ def score_model(sig_eff: float, bkg_rej: float) -> float:
     return sig_eff * bkg_rej
 
 
+def balanced_accuracy(
+    pt_true_signed: np.ndarray,
+    preds: np.ndarray,
+    pt_boundary: float = 0.2,
+) -> float:
+    true_cls = true_class_from_signed_pt(pt_true_signed, pt_boundary=pt_boundary)
+
+    recalls = [
+        float((preds[true_cls == c] == c).mean())
+        for c in range(3)
+        if (true_cls == c).any()
+    ]
+    return float(np.mean(recalls)) if recalls else float("nan")
+
+
+def label_with_balanced_accuracy(
+    name: str,
+    pt_true_signed: np.ndarray,
+    preds: np.ndarray,
+) -> str:
+    bal = balanced_accuracy(pt_true_signed, preds)
+    return f"{name} (bal={bal:.3f})"
+
+
+def print_balanced_accuracy(name: str, bal: float) -> None:
+    print(f"[METRIC] {name} balanced_acc={bal:.6f}")
+
+
+def print_balanced_accuracy_summary(rows: List[Tuple[str, str, str, float]]) -> None:
+    if not rows:
+        print("\nBalanced accuracy summary: no evaluated models.")
+        return
+
+    print("\nBalanced accuracy summary:")
+    print("label\tinput_type\tbalanced_acc\tpath")
+    for label, input_type, path, bal in rows:
+        print(f"{label}\t{input_type}\t{bal:.6f}\t{path}")
+
+
 def load_model(path: str, device: torch.device) -> torch.nn.Module:
     return registry.load_registered_model(path, map_location=device)
 
@@ -436,7 +475,7 @@ def plot_acceptance(
             pt_true_signed=pt_true_signed,
             preds=preds_rel,
             edges=edges,
-            label=f"{label_prefix} (relaxed)",
+            label=label_with_balanced_accuracy(f"{label_prefix} (relaxed)", pt_true_signed, preds_rel),
             marker="o",
             linestyle="-",
             z=z,
@@ -446,7 +485,7 @@ def plot_acceptance(
             pt_true_signed=pt_true_signed,
             preds=preds_dis,
             edges=edges,
-            label=f"{label_prefix} (discrete)",
+            label=label_with_balanced_accuracy(f"{label_prefix} (discrete)", pt_true_signed, preds_dis),
             marker="*",
             linestyle="--",
             z=z,
@@ -457,7 +496,7 @@ def plot_acceptance(
             pt_true_signed=pt_true_signed,
             preds=baseline_relaxed,
             edges=edges,
-            label=baseline_label,
+            label=label_with_balanced_accuracy(baseline_label, pt_true_signed, baseline_relaxed),
             marker="o",
             linestyle="-",
             z=z,
@@ -470,7 +509,7 @@ def plot_acceptance(
         pt_true_signed=pt_true_signed,
         preds=best_relaxed,
         edges=edges,
-        label=best_relaxed_label,
+        label=label_with_balanced_accuracy(best_relaxed_label, pt_true_signed, best_relaxed),
         marker="o",
         linestyle="-",
         z=z,
@@ -481,7 +520,7 @@ def plot_acceptance(
         pt_true_signed=pt_true_signed,
         preds=best_discrete,
         edges=edges,
-        label=best_discrete_label,
+        label=label_with_balanced_accuracy(best_discrete_label, pt_true_signed, best_discrete),
         marker="*",
         linestyle="--",
         z=z,
@@ -546,7 +585,7 @@ def plot_acceptance_multiple_baselines(
             pt_true_signed=pt_true_signed,
             preds=preds,
             edges=edges,
-            label=label,
+            label=label_with_balanced_accuracy(label, pt_true_signed, preds),
             marker=marker,
             linestyle=linestyle,
             color=color,
@@ -587,7 +626,7 @@ def plot_acceptance_baseline_only(
             pt_true_signed=pt_true_signed,
             preds=baseline_relaxed,
             edges=edges,
-            label=f"{baseline_label} (relaxed)",
+            label=label_with_balanced_accuracy(f"{baseline_label} (relaxed)", pt_true_signed, baseline_relaxed),
             marker="o",
             linestyle="-",
             z=z,
@@ -597,7 +636,7 @@ def plot_acceptance_baseline_only(
             pt_true_signed=pt_true_signed,
             preds=baseline_discrete,
             edges=edges,
-            label=f"{baseline_label} (discrete)",
+            label=label_with_balanced_accuracy(f"{baseline_label} (discrete)", pt_true_signed, baseline_discrete),
             marker="*",
             linestyle="--",
             z=z,
@@ -608,7 +647,7 @@ def plot_acceptance_baseline_only(
             pt_true_signed=pt_true_signed,
             preds=baseline_relaxed,
             edges=edges,
-            label=baseline_label,
+            label=label_with_balanced_accuracy(baseline_label, pt_true_signed, baseline_relaxed),
             marker="o",
             linestyle="-",
             z=z,
@@ -657,6 +696,13 @@ def label_for(path: str, fallback: str, name_overrides: Dict[str, str]) -> str:
     return name_overrides.get(path, fallback)
 
 
+def checkpoint_label(path: str) -> str:
+    p = Path(path)
+    if p.parent.parent.name:
+        return f"{p.parent.parent.name}/{p.parent.name}"
+    return p.parent.name
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-config", required=True)
@@ -672,7 +718,12 @@ def main():
         default="lgn",
         help="Baseline type: 'lgn' has relaxed+discrete; 'tf' and 'quantized' are single-forward.",
     )
-    ap.add_argument("--baseline", nargs="+", required=True, help="List input_type=path entries.")
+    ap.add_argument(
+        "--baseline",
+        nargs="+",
+        default=[],
+        help="List input_type=path entries. Optional when only --candidates are being evaluated.",
+    )
     ap.add_argument(
         "--candidates",
         nargs="+",
@@ -696,6 +747,11 @@ def main():
     action="store_true",
     help="If set and no candidates are given, plot all baselines on one acceptance plot.",
     )
+    ap.add_argument(
+        "--stream-metrics",
+        action="store_true",
+        help="Print each balanced accuracy as soon as it is computed. The final summary is always printed.",
+    )
 
     args = ap.parse_args()
     device = get_device(args.device)
@@ -703,6 +759,23 @@ def main():
 
     name_overrides = parse_name_overrides(args.name)
     baseline_map = parse_kv_list(args.baseline)
+    metric_rows: List[Tuple[str, str, str, float]] = []
+
+    if not baseline_map and not args.candidates:
+        raise SystemExit("No models specified. Provide --baseline and/or --candidates.")
+
+    def record_balanced_accuracy(
+        label: str,
+        input_type: str,
+        path: str,
+        pt_true_signed: np.ndarray,
+        preds: np.ndarray,
+    ) -> float:
+        bal = balanced_accuracy(pt_true_signed, preds)
+        metric_rows.append((label, input_type, path, bal))
+        if args.stream_metrics:
+            print_balanced_accuracy(label, bal)
+        return bal
 
     if args.baseline_kind == "quantized" and args.combine_baselines:
         baseline_items_by_input: Dict[str, List[Tuple[str, np.ndarray, np.ndarray]]] = {}
@@ -721,6 +794,7 @@ def main():
 
             fallback = Path(path).parent.name
             label = label_for(path, fallback, name_overrides)
+            record_balanced_accuracy(label, input_type, path, true_pts, preds)
             baseline_items_by_input.setdefault(input_type, []).append((label, true_pts, preds))
 
         for input_type, baseline_items in baseline_items_by_input.items():
@@ -732,6 +806,7 @@ def main():
                 z=args.baseline_error_z,
             )
 
+        print_balanced_accuracy_summary(metric_rows)
         print("[DONE] Wrote outputs to:", str(outdir))
         return
 
@@ -749,6 +824,10 @@ def main():
             if it != input_type:
                 print(f"[WARN] Baseline key '{input_type}' but model reports input_type '{it}'. Using '{it}'.")
                 input_type = it
+
+            fallback = Path(path).parent.name
+            label = label_for(path, fallback, name_overrides)
+            record_balanced_accuracy(label, input_type, path, true_pts, preds)
 
             baseline_by_input[input_type] = dict(
                 path=path,
@@ -783,6 +862,11 @@ def main():
                 print(f"[WARN] Baseline key '{input_type}' but model reports input_type '{it_r}'. Using '{it_r}'.")
                 input_type = it_r
 
+            fallback = Path(path).parent.name
+            label = label_for(path, fallback, name_overrides)
+            record_balanced_accuracy(f"{label} (relaxed)", input_type, path, true_pts_r, preds_r)
+            record_balanced_accuracy(f"{label} (discrete)", input_type, path, true_pts_d, preds_d)
+
             baseline_by_input[input_type] = dict(
                 path=path,
                 model=model_r,
@@ -810,6 +894,7 @@ def main():
             z=args.baseline_error_z,
         )
 
+        print_balanced_accuracy_summary(metric_rows)
         print("[DONE] Wrote outputs to:", str(outdir))
         return
 
@@ -828,6 +913,13 @@ def main():
             )
             se_r, br_r = sig_eff_and_bkg_rej(true_pts_r, preds_r, pt_boundary=args.pt_boundary)
             sc_r = score_model(se_r, br_r)
+            bal_r = record_balanced_accuracy(
+                f"{checkpoint_label(cand_path)} (relaxed)",
+                it,
+                cand_path,
+                true_pts_r,
+                preds_r,
+            )
             cur = best_relaxed.get(it)
             if (cur is None) or (sc_r > cur["score"]):
                 best_relaxed[it] = dict(
@@ -838,6 +930,7 @@ def main():
                     true_y0=true_y0_r,
                     preds=preds_r,
                     score=sc_r,
+                    balanced_acc=bal_r,
                     hw=hw_ballpark(model_r, x_sample_r, kind="lgn"),
                 )
 
@@ -851,6 +944,13 @@ def main():
             )
             se_d, br_d = sig_eff_and_bkg_rej(true_pts_d, preds_d, pt_boundary=args.pt_boundary)
             sc_d = score_model(se_d, br_d)
+            bal_d = record_balanced_accuracy(
+                f"{checkpoint_label(cand_path)} (discrete)",
+                it,
+                cand_path,
+                true_pts_d,
+                preds_d,
+            )
             cur = best_discrete.get(it)
             if (cur is None) or (sc_d > cur["score"]):
                 best_discrete[it] = dict(
@@ -861,6 +961,7 @@ def main():
                     true_y0=true_y0_d,
                     preds=preds_d,
                     score=sc_d,
+                    balanced_acc=bal_d,
                     hw=hw_ballpark(model_d, x_sample_d, kind="lgn"),
                 )
 
@@ -940,6 +1041,7 @@ def main():
             outpath=out_y0_hist,
         )
 
+    print_balanced_accuracy_summary(metric_rows)
     print("[DONE] Wrote outputs to:", str(outdir))
 
 
