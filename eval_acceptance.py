@@ -731,6 +731,12 @@ def main():
         help="List of LGN model .pth paths. Leave empty for baseline-only plotting.",
     )
     ap.add_argument(
+        "--candidate-forward",
+        choices=["both", "relaxed", "discrete"],
+        default="both",
+        help="Which LGN forward mode(s) to evaluate for --candidates.",
+    )
+    ap.add_argument(
         "--name",
         nargs="*",
         default=[],
@@ -903,67 +909,69 @@ def main():
 
     if args.candidates:
         for cand_path in args.candidates:
-            model_r, mname, it, true_pts_r, true_y0_r, preds_r, x_sample_r = eval_model_pred_classes(
-                model_path=cand_path,
-                data_config=args.data_config,
-                device=device,
-                batch_size=args.batch_size,
-                max_batches=args.max_batches,
-                forward_mode="relaxed",
-            )
-            se_r, br_r = sig_eff_and_bkg_rej(true_pts_r, preds_r, pt_boundary=args.pt_boundary)
-            sc_r = score_model(se_r, br_r)
-            bal_r = record_balanced_accuracy(
-                f"{checkpoint_label(cand_path)} (relaxed)",
-                it,
-                cand_path,
-                true_pts_r,
-                preds_r,
-            )
-            cur = best_relaxed.get(it)
-            if (cur is None) or (sc_r > cur["score"]):
-                best_relaxed[it] = dict(
-                    path=cand_path,
-                    model=model_r,
-                    x_sample=x_sample_r,
-                    true_pts=true_pts_r,
-                    true_y0=true_y0_r,
-                    preds=preds_r,
-                    score=sc_r,
-                    balanced_acc=bal_r,
-                    hw=hw_ballpark(model_r, x_sample_r, kind="lgn"),
+            if args.candidate_forward in ("both", "relaxed"):
+                model_r, mname, it, true_pts_r, true_y0_r, preds_r, x_sample_r = eval_model_pred_classes(
+                    model_path=cand_path,
+                    data_config=args.data_config,
+                    device=device,
+                    batch_size=args.batch_size,
+                    max_batches=args.max_batches,
+                    forward_mode="relaxed",
                 )
+                se_r, br_r = sig_eff_and_bkg_rej(true_pts_r, preds_r, pt_boundary=args.pt_boundary)
+                sc_r = score_model(se_r, br_r)
+                bal_r = record_balanced_accuracy(
+                    f"{checkpoint_label(cand_path)} (relaxed)",
+                    it,
+                    cand_path,
+                    true_pts_r,
+                    preds_r,
+                )
+                cur = best_relaxed.get(it)
+                if (cur is None) or (sc_r > cur["score"]):
+                    best_relaxed[it] = dict(
+                        path=cand_path,
+                        model=model_r,
+                        x_sample=x_sample_r,
+                        true_pts=true_pts_r,
+                        true_y0=true_y0_r,
+                        preds=preds_r,
+                        score=sc_r,
+                        balanced_acc=bal_r,
+                        hw=hw_ballpark(model_r, x_sample_r, kind="lgn"),
+                    )
 
-            model_d, mname, it, true_pts_d, true_y0_d, preds_d, x_sample_d = eval_model_pred_classes(
-                model_path=cand_path,
-                data_config=args.data_config,
-                device=device,
-                batch_size=args.batch_size,
-                max_batches=args.max_batches,
-                forward_mode="discrete",
-            )
-            se_d, br_d = sig_eff_and_bkg_rej(true_pts_d, preds_d, pt_boundary=args.pt_boundary)
-            sc_d = score_model(se_d, br_d)
-            bal_d = record_balanced_accuracy(
-                f"{checkpoint_label(cand_path)} (discrete)",
-                it,
-                cand_path,
-                true_pts_d,
-                preds_d,
-            )
-            cur = best_discrete.get(it)
-            if (cur is None) or (sc_d > cur["score"]):
-                best_discrete[it] = dict(
-                    path=cand_path,
-                    model=model_d,
-                    x_sample=x_sample_d,
-                    true_pts=true_pts_d,
-                    true_y0=true_y0_d,
-                    preds=preds_d,
-                    score=sc_d,
-                    balanced_acc=bal_d,
-                    hw=hw_ballpark(model_d, x_sample_d, kind="lgn"),
+            if args.candidate_forward in ("both", "discrete"):
+                model_d, mname, it, true_pts_d, true_y0_d, preds_d, x_sample_d = eval_model_pred_classes(
+                    model_path=cand_path,
+                    data_config=args.data_config,
+                    device=device,
+                    batch_size=args.batch_size,
+                    max_batches=args.max_batches,
+                    forward_mode="discrete",
                 )
+                se_d, br_d = sig_eff_and_bkg_rej(true_pts_d, preds_d, pt_boundary=args.pt_boundary)
+                sc_d = score_model(se_d, br_d)
+                bal_d = record_balanced_accuracy(
+                    f"{checkpoint_label(cand_path)} (discrete)",
+                    it,
+                    cand_path,
+                    true_pts_d,
+                    preds_d,
+                )
+                cur = best_discrete.get(it)
+                if (cur is None) or (sc_d > cur["score"]):
+                    best_discrete[it] = dict(
+                        path=cand_path,
+                        model=model_d,
+                        x_sample=x_sample_d,
+                        true_pts=true_pts_d,
+                        true_y0=true_y0_d,
+                        preds=preds_d,
+                        score=sc_d,
+                        balanced_acc=bal_d,
+                        hw=hw_ballpark(model_d, x_sample_d, kind="lgn"),
+                    )
 
     for input_type, b in baseline_by_input.items():
         baseline_fallback = f"Baseline ({Path(b['path']).parent.name})"
