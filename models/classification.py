@@ -1150,13 +1150,13 @@ class _DenseOnlyLGN14F_Wide_128(torch.nn.Module):
         h6 = 4 * self.k
         out_dim = 3 * self.k
 
-        self.fc1 = LogicDense(in_dim=in_dim, out_dim=h1, device=device, parametrization_kwargs=pk)
-        self.fc2 = LogicDense(in_dim=h1,    out_dim=h2, device=device, parametrization_kwargs=pk)
-        self.fc3 = LogicDense(in_dim=h2,    out_dim=h3, device=device, parametrization_kwargs=pk)
-        self.fc4 = LogicDense(in_dim=h3,    out_dim=h4, device=device, parametrization_kwargs=pk)
-        self.fc5 = LogicDense(in_dim=h4,    out_dim=h5, device=device, parametrization_kwargs=pk)
-        self.fc6 = LogicDense(in_dim=h5,    out_dim=h6, device=device, parametrization_kwargs=pk)
-        self.fc7 = LogicDense(in_dim=h6,    out_dim=out_dim, device=device, parametrization_kwargs=pk)
+        self.fc1 = LogicDense(in_dim=in_dim, out_dim=h1, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc2 = LogicDense(in_dim=h1, out_dim=h2, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc3 = LogicDense(in_dim=h2, out_dim=h3, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc4 = LogicDense(in_dim=h3, out_dim=h4, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc5 = LogicDense(in_dim=h4, out_dim=h5, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc6 = LogicDense(in_dim=h5, out_dim=h6, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc7 = LogicDense(in_dim=h6, out_dim=out_dim, device=device, parametrization_kwargs=pk, lut_rank=2)
 
         self.group_sum = GroupSum(3, tau=tau, device=device)
 
@@ -1208,6 +1208,9 @@ class _DenseOnlyLGN14F_Model2FullSized(torch.nn.Module):
         device = "cuda"
         pk = {"weight_init": "residual"}
 
+        if self.hidden_dims[-1] % 3 != 0:
+            raise ValueError("The final LGN layer width must be divisible by 3.")
+
         self.bin = FixedBinarization(thresholds=thresholds)
         self.layers = torch.nn.ModuleList()
 
@@ -1219,6 +1222,7 @@ class _DenseOnlyLGN14F_Model2FullSized(torch.nn.Module):
                     out_dim=hidden_dim,
                     device=device,
                     parametrization_kwargs=pk,
+                    lut_rank=2,
                 )
             )
             prev_dim = hidden_dim
@@ -1247,6 +1251,30 @@ class _DenseOnlyLGN14F_Model2FullS03P298M(_DenseOnlyLGN14F_Model2FullSized):
 
 class _DenseOnlyLGN14F_Model2FullS04P434M(_DenseOnlyLGN14F_Model2FullSized):
     hidden_dims = (10400, 10400, 10400, 6900, 6900, 6900, 5202)
+
+
+class _DenseOnlyLGN14F_Model2FullS06P760M(_DenseOnlyLGN14F_Model2FullSized):
+    hidden_dims = (13800, 13800, 13800, 9200, 9200, 9200, 6900)
+
+
+class _DenseOnlyLGN14F_Model2FullS07P968M(_DenseOnlyLGN14F_Model2FullSized):
+    hidden_dims = (15600, 15600, 15600, 10400, 10400, 10400, 7800)
+
+
+class _DenseOnlyLGN14F_Model2FullS08P1202M(_DenseOnlyLGN14F_Model2FullSized):
+    hidden_dims = (17400, 17400, 17400, 11600, 11600, 11600, 8700)
+
+
+class _DenseOnlyLGN14F_Model2FullS09P1460M(_DenseOnlyLGN14F_Model2FullSized):
+    hidden_dims = (19200, 19200, 19200, 12800, 12800, 12800, 9600)
+
+
+class _DenseOnlyLGN14F_Model2FullS10P1744M(_DenseOnlyLGN14F_Model2FullSized):
+    hidden_dims = (21000, 21000, 21000, 14000, 14000, 14000, 10500)
+
+
+class _DenseOnlyLGN14F_Model2FullS11P2054M(_DenseOnlyLGN14F_Model2FullSized):
+    hidden_dims = (22800, 22800, 22800, 15200, 15200, 15200, 11400)
 
 
 @register("lgn-dense-2-dense-100_128_-model2lgnFull_s01_dsNewLike_5", input_type="y-profile", task_type="classification")
@@ -1346,6 +1374,96 @@ class DenseOnlyLGN_14F_Model2FullS04P434M__30(_DenseOnlyLGN14F_Model2FullS04P434
 
 @register("lgn-dense-2-dense-100_128_-model2lgnFull_s04_p434M_40", input_type="y-profile", task_type="classification")
 class DenseOnlyLGN_14F_Model2FullS04P434M__40(_DenseOnlyLGN14F_Model2FullS04P434M):
+    tau = 40.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s06_p760M_10", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS06P760M__10(_DenseOnlyLGN14F_Model2FullS06P760M):
+    tau = 10.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s06_p760M_20", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS06P760M__20(_DenseOnlyLGN14F_Model2FullS06P760M):
+    tau = 20.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s06_p760M_40", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS06P760M__40(_DenseOnlyLGN14F_Model2FullS06P760M):
+    tau = 40.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s07_p968M_10", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS07P968M__10(_DenseOnlyLGN14F_Model2FullS07P968M):
+    tau = 10.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s07_p968M_20", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS07P968M__20(_DenseOnlyLGN14F_Model2FullS07P968M):
+    tau = 20.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s07_p968M_40", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS07P968M__40(_DenseOnlyLGN14F_Model2FullS07P968M):
+    tau = 40.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s08_p1202M_10", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS08P1202M__10(_DenseOnlyLGN14F_Model2FullS08P1202M):
+    tau = 10.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s08_p1202M_20", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS08P1202M__20(_DenseOnlyLGN14F_Model2FullS08P1202M):
+    tau = 20.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s08_p1202M_40", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS08P1202M__40(_DenseOnlyLGN14F_Model2FullS08P1202M):
+    tau = 40.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s09_p1460M_10", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS09P1460M__10(_DenseOnlyLGN14F_Model2FullS09P1460M):
+    tau = 10.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s09_p1460M_20", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS09P1460M__20(_DenseOnlyLGN14F_Model2FullS09P1460M):
+    tau = 20.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s09_p1460M_40", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS09P1460M__40(_DenseOnlyLGN14F_Model2FullS09P1460M):
+    tau = 40.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s10_p1744M_10", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS10P1744M__10(_DenseOnlyLGN14F_Model2FullS10P1744M):
+    tau = 10.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s10_p1744M_20", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS10P1744M__20(_DenseOnlyLGN14F_Model2FullS10P1744M):
+    tau = 20.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s10_p1744M_40", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS10P1744M__40(_DenseOnlyLGN14F_Model2FullS10P1744M):
+    tau = 40.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s11_p2054M_10", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS11P2054M__10(_DenseOnlyLGN14F_Model2FullS11P2054M):
+    tau = 10.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s11_p2054M_20", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS11P2054M__20(_DenseOnlyLGN14F_Model2FullS11P2054M):
+    tau = 20.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFull_s11_p2054M_40", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullS11P2054M__40(_DenseOnlyLGN14F_Model2FullS11P2054M):
     tau = 40.0
 
 
