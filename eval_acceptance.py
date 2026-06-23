@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 
@@ -95,6 +96,17 @@ def print_balanced_accuracy_summary(rows: List[Tuple[str, str, str, float]]) -> 
     print("label\tinput_type\tbalanced_acc\tpath")
     for label, input_type, path, bal in rows:
         print(f"{label}\t{input_type}\t{bal:.6f}\t{path}")
+
+
+def write_balanced_accuracy_summary(outdir: Path, rows: List[Tuple[str, str, str, float]]) -> None:
+    outdir.mkdir(parents=True, exist_ok=True)
+    outpath = outdir / "balanced_accuracy_summary.tsv"
+    with outpath.open("w", newline="") as f:
+        writer = csv.writer(f, delimiter="\t")
+        writer.writerow(["label", "input_type", "balanced_acc", "path"])
+        for label, input_type, path, bal in rows:
+            writer.writerow([label, input_type, f"{bal:.6f}", path])
+    print("[DONE] Wrote balanced accuracy table to:", str(outpath))
 
 
 def load_model(path: str, device: torch.device) -> torch.nn.Module:
@@ -813,6 +825,7 @@ def main():
             )
 
         print_balanced_accuracy_summary(metric_rows)
+        write_balanced_accuracy_summary(outdir, metric_rows)
         print("[DONE] Wrote outputs to:", str(outdir))
         return
 
@@ -901,11 +914,13 @@ def main():
         )
 
         print_balanced_accuracy_summary(metric_rows)
+        write_balanced_accuracy_summary(outdir, metric_rows)
         print("[DONE] Wrote outputs to:", str(outdir))
         return
 
     best_relaxed: Dict[str, Dict] = {}
     best_discrete: Dict[str, Dict] = {}
+    candidate_items_by_input: Dict[str, List[Tuple[str, np.ndarray, np.ndarray]]] = {}
 
     if args.candidates:
         for cand_path in args.candidates:
@@ -920,13 +935,15 @@ def main():
                 )
                 se_r, br_r = sig_eff_and_bkg_rej(true_pts_r, preds_r, pt_boundary=args.pt_boundary)
                 sc_r = score_model(se_r, br_r)
+                label_r = f"{checkpoint_label(cand_path)} (relaxed)"
                 bal_r = record_balanced_accuracy(
-                    f"{checkpoint_label(cand_path)} (relaxed)",
+                    label_r,
                     it,
                     cand_path,
                     true_pts_r,
                     preds_r,
                 )
+                candidate_items_by_input.setdefault(it, []).append((label_r, true_pts_r, preds_r))
                 cur = best_relaxed.get(it)
                 if (cur is None) or (sc_r > cur["score"]):
                     best_relaxed[it] = dict(
@@ -952,13 +969,15 @@ def main():
                 )
                 se_d, br_d = sig_eff_and_bkg_rej(true_pts_d, preds_d, pt_boundary=args.pt_boundary)
                 sc_d = score_model(se_d, br_d)
+                label_d = f"{checkpoint_label(cand_path)} (discrete)"
                 bal_d = record_balanced_accuracy(
-                    f"{checkpoint_label(cand_path)} (discrete)",
+                    label_d,
                     it,
                     cand_path,
                     true_pts_d,
                     preds_d,
                 )
+                candidate_items_by_input.setdefault(it, []).append((label_d, true_pts_d, preds_d))
                 cur = best_discrete.get(it)
                 if (cur is None) or (sc_d > cur["score"]):
                     best_discrete[it] = dict(
@@ -972,6 +991,16 @@ def main():
                         balanced_acc=bal_d,
                         hw=hw_ballpark(model_d, x_sample_d, kind="lgn"),
                     )
+
+    if args.candidates and not baseline_by_input:
+        for input_type, candidate_items in candidate_items_by_input.items():
+            outpath = outdir / f"acceptance_candidates_{sanitize_filename(input_type)}.png"
+            plot_acceptance_multiple_baselines(
+                baseline_items=candidate_items,
+                outpath=outpath,
+                title=f"Acceptance vs true $p_T$ — {input_type}",
+                z=args.baseline_error_z,
+            )
 
     for input_type, b in baseline_by_input.items():
         baseline_fallback = f"Baseline ({Path(b['path']).parent.name})"
@@ -1050,6 +1079,7 @@ def main():
         )
 
     print_balanced_accuracy_summary(metric_rows)
+    write_balanced_accuracy_summary(outdir, metric_rows)
     print("[DONE] Wrote outputs to:", str(outdir))
 
 
