@@ -6,9 +6,9 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16G
-#SBATCH --array=0-17
+#SBATCH --array=0-11
 
-TAUS=(10 20 40)
+TAUS=(60 80)
 SIZE_LABELS=(
   "s06_p760M"
   "s07_p968M"
