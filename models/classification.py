@@ -1005,6 +1005,178 @@ class ConvLGNDeep100_2_128_40(torch.nn.Module):
     
 
 
+class _ConvLGNModel3FullSized(torch.nn.Module):
+    n_bits = 100
+    tau = 20.0
+    k1 = 256
+    k2 = 512
+    k3 = 1024
+    k4 = 960
+    fc_base = 3000
+
+    def __init__(self, thresholds):
+        super().__init__()
+        device = "cuda"
+        self.bin = FixedBinarization(thresholds=thresholds)
+        pk = {"weight_init": "residual"}
+        td = 3
+
+        if self.fc_base % 3 != 0:
+            raise ValueError("The final LGN layer width must be divisible by 3.")
+
+        self.conv1 = LogicConv2d(
+            in_dim=(13, 8), channels=self.n_bits, num_kernels=self.k1,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv2 = LogicConv2d(
+            in_dim=(13, 8), channels=self.k1, num_kernels=self.k2,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        self.or_pool1 = OrPooling2d(kernel_size=2, stride=2, padding=0)
+
+        self.conv3 = LogicConv2d(
+            in_dim=(6, 4), channels=self.k2, num_kernels=self.k3,
+            receptive_field_size=3, tree_depth=td, stride=1, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+        self.conv4 = LogicConv2d(
+            in_dim=(6, 4), channels=self.k3, num_kernels=self.k4,
+            receptive_field_size=3, tree_depth=td, stride=2, padding=1,
+            device=device, parametrization_kwargs=pk,
+        )
+
+        fc_in = self.n_bits + (self.k4 * 3 * 2)
+        h1 = self.fc_base * 4
+        h2 = self.fc_base * 2
+
+        self.fc1 = LogicDense(in_dim=fc_in, out_dim=h1, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc2 = LogicDense(in_dim=h1, out_dim=h1, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc3 = LogicDense(in_dim=h1, out_dim=h2, device=device, parametrization_kwargs=pk, lut_rank=2)
+        self.fc4 = LogicDense(in_dim=h2, out_dim=self.fc_base, device=device, parametrization_kwargs=pk, lut_rank=2)
+
+        self.group_sum = GroupSum(3, tau=float(self.tau), device=device)
+
+    def forward(self, x):
+        assert x.shape == (x.shape[0], 105), f"Expected input shape (batch_size, 105), but got {x.shape}"
+        x = self.bin(x)
+        y0 = x[:, 0:self.n_bits]
+        p = x[:, self.n_bits:].view(-1, self.n_bits, 13, 8)
+
+        z = self.conv1(p)
+        z = self.conv2(z)
+        z = self.or_pool1(z)
+        z = self.conv3(z)
+        z = self.conv4(z)
+
+        z = z.view(z.size(0), -1)
+        z = torch.cat((y0, z), dim=1)
+        z = self.fc4(self.fc3(self.fc2(self.fc1(z))))
+        return self.group_sum(z)
+
+
+class _ConvLGNModel3FullS01P319M(_ConvLGNModel3FullSized):
+    k1, k2, k3, k4 = 256, 512, 1024, 960
+    fc_base = 3000
+
+
+class _ConvLGNModel3FullS02P465M(_ConvLGNModel3FullSized):
+    k1, k2, k3, k4 = 320, 640, 1280, 1200
+    fc_base = 3600
+
+
+class _ConvLGNModel3FullS03P639M(_ConvLGNModel3FullSized):
+    k1, k2, k3, k4 = 384, 768, 1536, 1440
+    fc_base = 4200
+
+
+class _ConvLGNModel3FullS04P840M(_ConvLGNModel3FullSized):
+    k1, k2, k3, k4 = 448, 896, 1792, 1680
+    fc_base = 4800
+
+
+class _ConvLGNModel3FullS05P1069M(_ConvLGNModel3FullSized):
+    k1, k2, k3, k4 = 512, 1024, 2048, 1920
+    fc_base = 5400
+
+
+@register("lgn-conv-3-100-orpool-model3Full_s01_p319M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FullS01P319M__20(_ConvLGNModel3FullS01P319M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Full_s01_p319M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FullS01P319M__40(_ConvLGNModel3FullS01P319M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Full_s01_p319M_60", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FullS01P319M__60(_ConvLGNModel3FullS01P319M):
+    tau = 60.0
+
+
+@register("lgn-conv-3-100-orpool-model3Full_s02_p465M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FullS02P465M__20(_ConvLGNModel3FullS02P465M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Full_s02_p465M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FullS02P465M__40(_ConvLGNModel3FullS02P465M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Full_s02_p465M_60", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FullS02P465M__60(_ConvLGNModel3FullS02P465M):
+    tau = 60.0
+
+
+@register("lgn-conv-3-100-orpool-model3Full_s03_p639M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FullS03P639M__20(_ConvLGNModel3FullS03P639M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Full_s03_p639M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FullS03P639M__40(_ConvLGNModel3FullS03P639M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Full_s03_p639M_60", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FullS03P639M__60(_ConvLGNModel3FullS03P639M):
+    tau = 60.0
+
+
+@register("lgn-conv-3-100-orpool-model3Full_s04_p840M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FullS04P840M__20(_ConvLGNModel3FullS04P840M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Full_s04_p840M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FullS04P840M__40(_ConvLGNModel3FullS04P840M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Full_s04_p840M_60", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FullS04P840M__60(_ConvLGNModel3FullS04P840M):
+    tau = 60.0
+
+
+@register("lgn-conv-3-100-orpool-model3Full_s05_p1069M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FullS05P1069M__20(_ConvLGNModel3FullS05P1069M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Full_s05_p1069M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FullS05P1069M__40(_ConvLGNModel3FullS05P1069M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Full_s05_p1069M_60", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FullS05P1069M__60(_ConvLGNModel3FullS05P1069M):
+    tau = 60.0
+
+
 
 
 @register("lgn-dense-2-dense-100_128_-lessFeat_20", input_type="y-profile", task_type="classification")

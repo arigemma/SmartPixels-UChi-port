@@ -1,29 +1,27 @@
 #!/bin/bash
-#SBATCH --job-name=model2lgnFull
-#SBATCH --output=logs/model2lgnFull_%A_%a.out
-#SBATCH --error=logs/model2lgnFull_%A_%a.err
+#SBATCH --job-name=model3lgnConv
+#SBATCH --output=logs/model3lgnConv_%A_%a.out
+#SBATCH --error=logs/model3lgnConv_%A_%a.err
 #SBATCH --time=5:59:59
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16G
-#SBATCH --array=0-17
+#SBATCH --array=0-14
 
-TAUS=(40 60 80)
+TAUS=(20 40 60)
 SIZE_LABELS=(
-  "s12_p2388M"
-  "s13_p2747M"
-  "s14_p3132M"
-  "s15_p3542M"
-  "s16_p3977M"
-  "s17_p4437M"
+  "s01_p319M"
+  "s02_p465M"
+  "s03_p639M"
+  "s04_p840M"
+  "s05_p1069M"
 )
 MODEL_PREFIXES=(
-  "lgn-dense-2-dense-100_128_-model2lgnFull_s12_p2388M"
-  "lgn-dense-2-dense-100_128_-model2lgnFull_s13_p2747M"
-  "lgn-dense-2-dense-100_128_-model2lgnFull_s14_p3132M"
-  "lgn-dense-2-dense-100_128_-model2lgnFull_s15_p3542M"
-  "lgn-dense-2-dense-100_128_-model2lgnFull_s16_p3977M"
-  "lgn-dense-2-dense-100_128_-model2lgnFull_s17_p4437M"
+  "lgn-conv-3-100-orpool-model3Full_s01_p319M"
+  "lgn-conv-3-100-orpool-model3Full_s02_p465M"
+  "lgn-conv-3-100-orpool-model3Full_s03_p639M"
+  "lgn-conv-3-100-orpool-model3Full_s04_p840M"
+  "lgn-conv-3-100-orpool-model3Full_s05_p1069M"
 )
 
 TAU_INDEX=$((SLURM_ARRAY_TASK_ID % ${#TAUS[@]}))
@@ -32,7 +30,7 @@ SIZE_INDEX=$((SLURM_ARRAY_TASK_ID / ${#TAUS[@]}))
 TAU="${TAUS[$TAU_INDEX]}"
 SIZE_LABEL="${SIZE_LABELS[$SIZE_INDEX]}"
 MODEL="${MODEL_PREFIXES[$SIZE_INDEX]}_${TAU}"
-OUTPUT_BASE="results/SLURM/2026_06_22_model2lgnFull_expanded"
+OUTPUT_BASE="results/SLURM/2026_06_25_model3lgnConv_expanded"
 OUTPUT_DIR="${OUTPUT_BASE}/${SIZE_LABEL}/tau_${TAU}"
 
 mkdir -p logs "$OUTPUT_DIR"
