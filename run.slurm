@@ -6,24 +6,24 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16G
-#SBATCH --array=0-11
+#SBATCH --array=0-17
 
-TAUS=(60 80)
+TAUS=(40 60 80)
 SIZE_LABELS=(
-  "s06_p760M"
-  "s07_p968M"
-  "s08_p1202M"
-  "s09_p1460M"
-  "s10_p1744M"
-  "s11_p2054M"
+  "s12_p2388M"
+  "s13_p2747M"
+  "s14_p3132M"
+  "s15_p3542M"
+  "s16_p3977M"
+  "s17_p4437M"
 )
 MODEL_PREFIXES=(
-  "lgn-dense-2-dense-100_128_-model2lgnFull_s06_p760M"
-  "lgn-dense-2-dense-100_128_-model2lgnFull_s07_p968M"
-  "lgn-dense-2-dense-100_128_-model2lgnFull_s08_p1202M"
-  "lgn-dense-2-dense-100_128_-model2lgnFull_s09_p1460M"
-  "lgn-dense-2-dense-100_128_-model2lgnFull_s10_p1744M"
-  "lgn-dense-2-dense-100_128_-model2lgnFull_s11_p2054M"
+  "lgn-dense-2-dense-100_128_-model2lgnFull_s12_p2388M"
+  "lgn-dense-2-dense-100_128_-model2lgnFull_s13_p2747M"
+  "lgn-dense-2-dense-100_128_-model2lgnFull_s14_p3132M"
+  "lgn-dense-2-dense-100_128_-model2lgnFull_s15_p3542M"
+  "lgn-dense-2-dense-100_128_-model2lgnFull_s16_p3977M"
+  "lgn-dense-2-dense-100_128_-model2lgnFull_s17_p4437M"
 )
 
 TAU_INDEX=$((SLURM_ARRAY_TASK_ID % ${#TAUS[@]}))
