@@ -1177,6 +1177,122 @@ class ConvLGNModel3FullS05P1069M__60(_ConvLGNModel3FullS05P1069M):
     tau = 60.0
 
 
+class _ConvLGNModel3DeepSized(_ConvLGNModel3FullS01P319M):
+    extra_dense_layers = 1
+
+    def __init__(self, thresholds):
+        super().__init__(thresholds)
+        device = "cuda"
+        pk = {"weight_init": "residual"}
+        h1 = self.fc_base * 4
+        self.extra_fcs = torch.nn.ModuleList(
+            LogicDense(
+                in_dim=h1,
+                out_dim=h1,
+                device=device,
+                parametrization_kwargs=pk,
+                lut_rank=2,
+            )
+            for _ in range(self.extra_dense_layers)
+        )
+
+    def forward(self, x):
+        assert x.shape == (x.shape[0], 105), f"Expected input shape (batch_size, 105), but got {x.shape}"
+        x = self.bin(x)
+        y0 = x[:, 0:self.n_bits]
+        p = x[:, self.n_bits:].view(-1, self.n_bits, 13, 8)
+
+        z = self.conv1(p)
+        z = self.conv2(z)
+        z = self.or_pool1(z)
+        z = self.conv3(z)
+        z = self.conv4(z)
+
+        z = z.view(z.size(0), -1)
+        z = torch.cat((y0, z), dim=1)
+        z = self.fc1(z)
+        for fc in self.extra_fcs:
+            z = fc(z)
+        z = self.fc4(self.fc3(self.fc2(z)))
+        return self.group_sum(z)
+
+
+class _ConvLGNModel3DeepS02P463M(_ConvLGNModel3DeepSized):
+    extra_dense_layers = 1
+
+
+class _ConvLGNModel3DeepS03P607M(_ConvLGNModel3DeepSized):
+    extra_dense_layers = 2
+
+
+class _ConvLGNModel3DeepS04P751M(_ConvLGNModel3DeepSized):
+    extra_dense_layers = 3
+
+
+class _ConvLGNModel3DeepS05P895M(_ConvLGNModel3DeepSized):
+    extra_dense_layers = 4
+
+
+@register("lgn-conv-3-100-orpool-model3Deep_s02_p463M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3DeepS02P463M__20(_ConvLGNModel3DeepS02P463M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Deep_s02_p463M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3DeepS02P463M__40(_ConvLGNModel3DeepS02P463M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Deep_s02_p463M_60", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3DeepS02P463M__60(_ConvLGNModel3DeepS02P463M):
+    tau = 60.0
+
+
+@register("lgn-conv-3-100-orpool-model3Deep_s03_p607M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3DeepS03P607M__20(_ConvLGNModel3DeepS03P607M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Deep_s03_p607M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3DeepS03P607M__40(_ConvLGNModel3DeepS03P607M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Deep_s03_p607M_60", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3DeepS03P607M__60(_ConvLGNModel3DeepS03P607M):
+    tau = 60.0
+
+
+@register("lgn-conv-3-100-orpool-model3Deep_s04_p751M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3DeepS04P751M__20(_ConvLGNModel3DeepS04P751M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Deep_s04_p751M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3DeepS04P751M__40(_ConvLGNModel3DeepS04P751M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Deep_s04_p751M_60", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3DeepS04P751M__60(_ConvLGNModel3DeepS04P751M):
+    tau = 60.0
+
+
+@register("lgn-conv-3-100-orpool-model3Deep_s05_p895M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3DeepS05P895M__20(_ConvLGNModel3DeepS05P895M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Deep_s05_p895M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3DeepS05P895M__40(_ConvLGNModel3DeepS05P895M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Deep_s05_p895M_60", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3DeepS05P895M__60(_ConvLGNModel3DeepS05P895M):
+    tau = 60.0
+
+
 
 
 @register("lgn-dense-2-dense-100_128_-lessFeat_20", input_type="y-profile", task_type="classification")
