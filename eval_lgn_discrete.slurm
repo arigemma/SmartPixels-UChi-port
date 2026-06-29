@@ -1,19 +1,18 @@
 #!/bin/bash
-#SBATCH --job-name=model2lgnEval
-#SBATCH --output=logs/model2lgnEval_%j.out
-#SBATCH --error=logs/model2lgnEval_%j.err
+#SBATCH --job-name=model3DeepBalAcc
+#SBATCH --output=logs/model3DeepBalAcc_%j.out
+#SBATCH --error=logs/model3DeepBalAcc_%j.err
 #SBATCH --time=2:00:00
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=24G
+#SBATCH --mem=48G
+#SBATCH --export=ALL,PYTHONUNBUFFERED=1
 
 RESULT_ROOTS=(
-  "results/SLURM/2026_06_01_model2lgnFull"
-  "results/SLURM/2026_06_01_model2lgnFull_expanded"
-  "results/SLURM/2026_06_22_model2lgnFull_expanded"
+  "results/SLURM/2026_06_27_model3lgnConv_deeper"
 )
 
-OUTDIR="results/evaluation/2026_06_23_model2lgnFull_all_discrete"
+OUTDIR="results/evaluation/2026_06_28_model3Deep_discrete_balacc"
 
 mkdir -p logs "$OUTDIR"
 
@@ -34,13 +33,17 @@ if [[ "${#CANDIDATES[@]}" -eq 0 ]]; then
   exit 1
 fi
 
-echo "Evaluating ${#CANDIDATES[@]} LGN checkpoints in discrete mode."
+if [[ "${#CANDIDATES[@]}" -ne 12 ]]; then
+  echo "[WARN] Expected 12 model3Deep checkpoints, found ${#CANDIDATES[@]}."
+fi
+
+echo "Evaluating ${#CANDIDATES[@]} model3Deep checkpoints in discrete mode."
 printf '  %s\n' "${CANDIDATES[@]}"
 
 python eval_acceptance.py \
   --data-config config/10783560/v3.yml \
   --device cuda \
-  --batch-size 1024 \
+  --batch-size 256 \
   --candidate-forward discrete \
   --stream-metrics \
   --outdir "$OUTDIR" \
