@@ -16,24 +16,47 @@ if [[ -n "$RESOURCE_JOB_ID" ]]; then
     echo "Invalid resource job ID: ${RESOURCE_JOB_ID}" >&2
     exit 2
   fi
-  SBATCH_DEPENDENCY=(--dependency="afterok:${RESOURCE_JOB_ID}")
-  echo "Bit-flip jobs will wait for resource job ${RESOURCE_JOB_ID}"
-else
-  MISSING=()
-  for MODEL in "${MODELS[@]}"; do
-    CHECKPOINT="${RESOURCE_ROOT}/${MODEL}/final_model.pth"
-    if [[ ! -f "$CHECKPOINT" ]]; then
-      MISSING+=("$CHECKPOINT")
-    fi
-  done
-  if (( ${#MISSING[@]} > 0 )); then
-    echo "Cannot submit bit-flip jobs: clean checkpoints are missing:" >&2
-    printf '  %s\n' "${MISSING[@]}" >&2
-    echo >&2
-    echo "Wait for the resource array to finish, or pass its Slurm job ID:" >&2
-    echo "  bash lgnStudies/bitFlipStudy/submit.sh RESOURCE_JOB_ID" >&2
-    exit 2
+fi
+
+MISSING=()
+for MODEL in "${MODELS[@]}"; do
+  CHECKPOINT="${RESOURCE_ROOT}/${MODEL}/final_model.pth"
+  if [[ ! -f "$CHECKPOINT" ]]; then
+    MISSING+=("$CHECKPOINT")
   fi
+done
+
+RESOURCE_IS_ACTIVE=false
+if [[ -n "$RESOURCE_JOB_ID" ]]; then
+  RESOURCE_QUEUE_STATE="$(squeue -h -j "$RESOURCE_JOB_ID" -o '%T' 2>/dev/null || true)"
+  if [[ -n "$RESOURCE_QUEUE_STATE" ]]; then
+    RESOURCE_IS_ACTIVE=true
+  fi
+fi
+
+if [[ "$RESOURCE_IS_ACTIVE" == true ]]; then
+  SBATCH_DEPENDENCY=(--dependency="afterok:${RESOURCE_JOB_ID}")
+  echo "Bit-flip jobs will wait for active resource job ${RESOURCE_JOB_ID}"
+elif (( ${#MISSING[@]} == 0 )); then
+  if [[ -n "$RESOURCE_JOB_ID" ]]; then
+    echo "Resource job ${RESOURCE_JOB_ID} is no longer active; all checkpoints exist."
+  fi
+  echo "Submitting bit-flip jobs without a resource dependency."
+else
+  if [[ -n "$RESOURCE_JOB_ID" ]]; then
+    echo "Resource job ${RESOURCE_JOB_ID} is no longer active, but checkpoints are missing:" >&2
+  else
+    echo "Cannot submit bit-flip jobs: clean checkpoints are missing:" >&2
+  fi
+  printf '  %s\n' "${MISSING[@]}" >&2
+  echo >&2
+  if [[ -n "$RESOURCE_JOB_ID" ]]; then
+    echo "Inspect the resource array:" >&2
+    echo "  sacct -j ${RESOURCE_JOB_ID} --format=JobID,State,ExitCode" >&2
+  else
+    echo "Wait for the resource array, or pass its active Slurm job ID." >&2
+  fi
+  exit 2
 fi
 
 ARRAY_JOB_ID="$(
