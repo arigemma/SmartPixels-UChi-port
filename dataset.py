@@ -134,6 +134,9 @@ class SmartPixelsDataset(Dataset):
 
 
     def shuffle_indices(self):
+        # Rebuild the index instead of appending another copy of the dataset at
+        # every epoch.
+        self.index = []
         file_indices = list(self.index_dict.keys())
         random.shuffle(file_indices)
 
