@@ -37,3 +37,6 @@ elimination, inverter folding, and dead-code elimination. The GroupSum
 adder-tree estimate is fixed throughout training and is included in the
 primary x-axis. Fixed binarization/input ADC and routing are intentionally
 excluded.
+
+The random bit-flip robustness study is documented in
+[`bitFlipStudy/README.md`](bitFlipStudy/README.md).
