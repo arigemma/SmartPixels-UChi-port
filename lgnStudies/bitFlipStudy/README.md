@@ -12,18 +12,26 @@ activations. This study does not model configuration-memory corruption.
 
 ## Cluster workflow
 
-First complete the parent resource study, because its three clean
-`final_model.pth` checkpoints are the controlled starting points:
+The bit-flip jobs require the three clean `final_model.pth` checkpoints from
+the resource study. For a fresh campaign, submit both studies with their Slurm
+dependencies in one command:
 
 ```bash
-sbatch lgnStudies/run.slurm
+bash lgnStudies/submit_training_studies.sh
 ```
 
-Then submit the three-model fault-aware array and its dependent combined plot:
+This submits the resource array, a bit-flip array with
+`afterok:<resource-job-id>`, and a combined-plot job with
+`afterok:<bit-flip-job-id>`.
+
+If the resource array is already running, pass its job ID:
 
 ```bash
-bash lgnStudies/bitFlipStudy/submit.sh
+bash lgnStudies/bitFlipStudy/submit.sh RESOURCE_JOB_ID
 ```
+
+If the resource jobs have already completed successfully, omit the job ID.
+The helper verifies that all three clean checkpoints exist before submitting.
 
 Each model is fine-tuned for 500 steps with `p_train=0.001`, retaining the LGN
 batch size 1024, learning rate 0.01, class-weighted cross-entropy, and

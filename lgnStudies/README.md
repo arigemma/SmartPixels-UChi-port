@@ -10,6 +10,12 @@ Submit all three tau-40, y-profile models from the repository root:
 sbatch lgnStudies/run.slurm
 ```
 
+To submit this resource study and the dependent bit-flip study together, use:
+
+```bash
+bash lgnStudies/submit_training_studies.sh
+```
+
 The array runs `s06_p760M_tau40`, `s08_p1202M_tau40`, and
 `s09_p1460M_tau40`. The training settings retain the LGN configuration used by
 the prior sweep: batch size 1024, learning rate 0.01, class-weighted
