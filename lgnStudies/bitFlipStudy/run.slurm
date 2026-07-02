@@ -10,6 +10,8 @@
 #SBATCH --array=0-2
 #SBATCH --export=ALL,PYTHONUNBUFFERED=1
 
+set -euo pipefail
+
 MODELS=(
   "s06_p760M_tau40"
   "s08_p1202M_tau40"
@@ -24,7 +26,7 @@ REGISTRY_NAMES=(
 MODEL="${MODELS[$SLURM_ARRAY_TASK_ID]}"
 REGISTRY_NAME="${REGISTRY_NAMES[$SLURM_ARRAY_TASK_ID]}"
 RESOURCE_ROOT="results/SLURM/2026_07_02_model2_resource_precision"
-OUTPUT_ROOT="results/SLURM/2026_07_02_model2_bit_flip_robustness"
+OUTPUT_ROOT="results/SLURM/2026_07_02_model2_bit_flip_inference_exact_count"
 CLEAN_MODEL="${RESOURCE_ROOT}/${MODEL}/final_model.pth"
 OUTPUT_DIR="${OUTPUT_ROOT}/${MODEL}"
 
@@ -38,10 +40,9 @@ python lgnStudies/bitFlipStudy/study.py \
   -c config/10783560/v3.yml \
   --device cuda \
   -bs 1024 \
-  -lr 0.01 \
-  --robust-steps 500 \
-  --train-flip-probability 0.001 \
-  --compile-model \
+  --flip-counts 0 1 2 4 8 16 32 64 128 256 512 1024 \
+  --repeats 5 \
+  --seed 42 \
   --model-alias "$MODEL" \
   --registry-name "$REGISTRY_NAME" \
   --clean-model "$CLEAN_MODEL" \

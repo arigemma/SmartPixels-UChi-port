@@ -8,5 +8,4 @@
 #SBATCH --export=ALL,PYTHONUNBUFFERED=1
 
 python lgnStudies/bitFlipStudy/combine_results.py \
-  --root results/SLURM/2026_07_02_model2_bit_flip_robustness \
-  --train-flip-probability 0.001
+  --root results/SLURM/2026_07_02_model2_bit_flip_inference_exact_count

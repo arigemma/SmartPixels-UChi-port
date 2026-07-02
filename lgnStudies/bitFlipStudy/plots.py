@@ -1,4 +1,4 @@
-"""Paper-ready plots for model-2 random bit-flip robustness."""
+"""Publication plots for exact-count model-2 bit-flip experiments."""
 
 from __future__ import annotations
 
@@ -14,191 +14,225 @@ from matplotlib.ticker import FuncFormatter
 import numpy as np
 
 
-VARIANT_LABELS = {
-    "clean": "Standard training",
-    "robust": "Fault-aware fine-tuning",
-}
-VARIANT_STYLES = {
-    "clean": dict(color="#3b6fb6", marker="o"),
-    "robust": dict(color="#d1495b", marker="s"),
+MODEL_COLORS = ("#3366a6", "#d05a3a", "#2f8a62")
+T_CRITICAL_95 = {
+    1: 12.706,
+    2: 4.303,
+    3: 3.182,
+    4: 2.776,
+    5: 2.571,
+    6: 2.447,
+    7: 2.365,
+    8: 2.306,
+    9: 2.262,
+    10: 2.228,
+    11: 2.201,
+    12: 2.179,
+    13: 2.160,
+    14: 2.145,
+    15: 2.131,
+    16: 2.120,
+    17: 2.110,
+    18: 2.101,
+    19: 2.093,
+    20: 2.086,
+    21: 2.080,
+    22: 2.074,
+    23: 2.069,
+    24: 2.064,
+    25: 2.060,
+    26: 2.056,
+    27: 2.052,
+    28: 2.048,
+    29: 2.045,
 }
 
 
-def _aggregate(rows: Iterable[dict]) -> dict[str, dict[str, np.ndarray]]:
-    grouped: dict[str, dict[float, list[float]]] = defaultdict(
-        lambda: defaultdict(list)
+def _confidence_half_width(values: np.ndarray) -> float:
+    """Two-sided 95% Student-t interval for independent fault realizations."""
+    if len(values) < 2:
+        return 0.0
+    degrees_of_freedom = len(values) - 1
+    critical = T_CRITICAL_95.get(degrees_of_freedom, 1.96)
+    return float(critical * values.std(ddof=1) / np.sqrt(len(values)))
+
+
+def _aggregate(rows: Iterable[dict]) -> dict[str, np.ndarray]:
+    grouped: dict[int, dict[str, list[float]]] = defaultdict(
+        lambda: {"balanced_accuracy": [], "prediction_change_fraction": []}
     )
+    percentages: dict[int, float] = {}
     for row in rows:
-        grouped[str(row["variant"])][float(row["inference_flip_probability"])].append(
-            float(row["balanced_accuracy"])
+        count = int(row["flip_count_per_event"])
+        grouped[count]["balanced_accuracy"].append(float(row["balanced_accuracy"]))
+        grouped[count]["prediction_change_fraction"].append(
+            float(row["prediction_change_fraction"])
         )
+        percentages[count] = float(row["equivalent_fault_percentage"])
 
-    result = {}
-    for variant, by_probability in grouped.items():
-        probabilities = np.asarray(sorted(by_probability), dtype=float)
-        samples = [np.asarray(by_probability[p], dtype=float) for p in probabilities]
-        result[variant] = {
-            "probability": probabilities,
-            "mean": np.asarray([values.mean() for values in samples]),
-            "std": np.asarray(
-                [values.std(ddof=1) if len(values) > 1 else 0.0 for values in samples]
-            ),
-        }
-    return result
+    counts = np.asarray(sorted(grouped), dtype=float)
+    output: dict[str, np.ndarray] = {
+        "count": counts,
+        "percentage": np.asarray(
+            [percentages[int(count)] for count in counts], dtype=float
+        ),
+    }
+    for metric in ("balanced_accuracy", "prediction_change_fraction"):
+        samples = [
+            np.asarray(grouped[int(count)][metric], dtype=float)
+            for count in counts
+        ]
+        output[f"{metric}_mean"] = np.asarray(
+            [values.mean() for values in samples]
+        )
+        output[f"{metric}_ci95"] = np.asarray(
+            [_confidence_half_width(values) for values in samples]
+        )
+    return output
 
 
-def _probability_formatter(value: float, _position: int) -> str:
-    if np.isclose(value, 0.0):
+def _count_formatter(value: float, _position: int) -> str:
+    return f"{value:g}"
+
+
+def _percentage_formatter(value: float, _position: int) -> str:
+    if np.isclose(value, 0):
         return "0"
-    return f"{value:.0e}"
+    return f"{value:.2g}"
 
 
-def _configure_probability_axis(
-    axis, probabilities: np.ndarray, sparse_ticks: bool = False
-) -> None:
-    positive = probabilities[probabilities > 0]
-    linear_threshold = positive.min() / 2 if len(positive) else 1e-7
-    axis.set_xscale("symlog", linthresh=linear_threshold, linscale=0.8)
-    ticks = probabilities
-    if sparse_ticks:
-        power_ticks = np.asarray(
-            [
-                value
-                for value in probabilities
-                if value == 0
-                or np.isclose(np.log10(value), round(np.log10(value)))
-            ]
-        )
-        positive_powers = power_ticks[power_ticks > 0]
-        if len(positive_powers) > 4:
-            positive_powers = np.concatenate(
-                (positive_powers[::2], positive_powers[-1:])
-            )
-            positive_powers = np.unique(positive_powers)
-        ticks = np.concatenate(([0.0], positive_powers))
-    axis.set_xticks(ticks)
-    axis.xaxis.set_major_formatter(FuncFormatter(_probability_formatter))
+def _configure_x_axis(axis, x: np.ndarray, x_mode: str) -> None:
+    positive = x[x > 0]
+    if x_mode == "count":
+        axis.set_xscale("symlog", base=2, linthresh=0.5, linscale=0.75)
+        axis.xaxis.set_major_formatter(FuncFormatter(_count_formatter))
+        axis.set_xlabel("Random transient bit flips per event, K")
+    elif x_mode == "percentage":
+        threshold = positive.min() / 2 if len(positive) else 1e-6
+        axis.set_xscale("symlog", base=10, linthresh=threshold, linscale=0.75)
+        axis.xaxis.set_major_formatter(FuncFormatter(_percentage_formatter))
+        axis.set_xlabel("Flipped activation sites per event [%]")
+    else:
+        raise ValueError(f"Unknown x-axis mode: {x_mode}")
+    axis.set_xticks(x)
     axis.tick_params(axis="x", labelsize=8)
     axis.grid(True, which="both", alpha=0.25)
 
 
-def _plot_curve(axis, variant: str, values: dict, train_probability: float) -> None:
-    style = VARIANT_STYLES[variant]
-    label = VARIANT_LABELS[variant]
-    if variant == "robust":
-        exponent = np.log10(train_probability) if train_probability > 0 else None
-        if exponent is not None and np.isclose(exponent, round(exponent)):
-            label += rf" ($p_{{train}}=10^{{{int(round(exponent))}}}$)"
-        else:
-            label += rf" ($p_{{train}}={train_probability:.0e}$)"
-    x = values["probability"]
-    y = 100 * values["mean"]
-    std = 100 * values["std"]
-    axis.plot(x, y, linewidth=2.0, markersize=5.5, label=label, **style)
-    if np.any(std > 0):
+def _plot_metric(
+    axis,
+    x: np.ndarray,
+    mean: np.ndarray,
+    ci95: np.ndarray,
+    color: str,
+    label: str | None = None,
+) -> None:
+    mean_percent = 100 * mean
+    ci_percent = 100 * ci95
+    axis.plot(
+        x,
+        mean_percent,
+        color=color,
+        marker="o",
+        markersize=5,
+        linewidth=1.8,
+        label=label,
+    )
+    if np.any(ci_percent > 0):
         axis.fill_between(
-            x, y - std, y + std, color=style["color"], alpha=0.18, linewidth=0
+            x,
+            mean_percent - ci_percent,
+            mean_percent + ci_percent,
+            color=color,
+            alpha=0.2,
+            linewidth=0,
         )
 
 
 def plot_single_model(
     rows: list[dict],
     model_alias: str,
-    train_probability: float,
     output_stem: Path,
+    x_mode: str = "count",
 ) -> None:
-    aggregated = _aggregate(rows)
-    if not {"clean", "robust"}.issubset(aggregated):
-        return
+    values = _aggregate(rows)
+    x = values[x_mode]
 
-    clean = aggregated["clean"]
-    robust = aggregated["robust"]
-    common = np.intersect1d(clean["probability"], robust["probability"])
-    if not len(common):
-        return
-
-    clean_lookup = dict(zip(clean["probability"], clean["mean"]))
-    robust_lookup = dict(zip(robust["probability"], robust["mean"]))
-    gain = 100 * np.asarray(
-        [robust_lookup[p] - clean_lookup[p] for p in common], dtype=float
-    )
-
-    fig, (top, bottom) = plt.subplots(
+    fig, (accuracy_axis, change_axis) = plt.subplots(
         2,
         1,
-        figsize=(8.0, 6.8),
+        figsize=(7.4, 6.5),
         sharex=True,
-        gridspec_kw={"height_ratios": (3.2, 1.25)},
+        gridspec_kw={"height_ratios": (2.5, 1.5)},
         constrained_layout=True,
     )
-    _plot_curve(top, "clean", clean, train_probability)
-    _plot_curve(top, "robust", robust, train_probability)
-    top.axhline(
-        100 / 3,
-        color="0.45",
-        linestyle=":",
-        linewidth=1.2,
-        label="Random-class baseline",
+    _plot_metric(
+        accuracy_axis,
+        x,
+        values["balanced_accuracy_mean"],
+        values["balanced_accuracy_ci95"],
+        MODEL_COLORS[0],
     )
-    top.set_ylabel("Balanced accuracy [%]")
-    top.set_title(
-        f"{model_alias}: robustness to random activation bit flips"
+    accuracy_axis.set_ylabel("Balanced accuracy [%]")
+    accuracy_axis.set_title(
+        f"{model_alias}: inference robustness to transient bit flips\n"
+        "Mean and 95% CI over random fault realizations"
     )
-    top.legend(loc="best", frameon=True)
-    top.grid(True, which="both", alpha=0.25)
+    accuracy_axis.grid(True, which="both", alpha=0.25)
 
-    bottom.axhline(0, color="0.4", linewidth=1.0)
-    bottom.plot(common, gain, color="#6a4c93", marker="D", linewidth=1.8)
-    bottom.fill_between(common, 0, gain, color="#6a4c93", alpha=0.14)
-    bottom.set_ylabel("Robustness\ngain [pp]")
-    bottom.set_xlabel("Independent bit-flip probability per activation")
-    _configure_probability_axis(bottom, common)
+    _plot_metric(
+        change_axis,
+        x,
+        values["prediction_change_fraction_mean"],
+        values["prediction_change_fraction_ci95"],
+        MODEL_COLORS[1],
+    )
+    change_axis.set_ylabel("Predictions changed\nfrom K=0 [%]")
+    _configure_x_axis(change_axis, x, x_mode)
 
     for suffix in (".png", ".pdf"):
-        fig.savefig(output_stem.with_suffix(suffix), dpi=200)
+        fig.savefig(output_stem.with_suffix(suffix), dpi=300)
     plt.close(fig)
 
 
 def plot_combined_models(
     rows_by_model: dict[str, list[dict]],
-    train_probability: float,
     output_stem: Path,
+    x_mode: str = "count",
 ) -> None:
     models = list(rows_by_model)
     if not models:
         raise ValueError("No model results supplied.")
 
     fig, axes = plt.subplots(
-        1, len(models), figsize=(5.0 * len(models), 4.6), sharey=True,
+        1,
+        len(models),
+        figsize=(4.7 * len(models), 4.5),
+        sharey=True,
         constrained_layout=True,
     )
     if len(models) == 1:
         axes = [axes]
 
-    legend_handles = legend_labels = None
     for index, (axis, model_alias) in enumerate(zip(axes, models)):
-        aggregated = _aggregate(rows_by_model[model_alias])
-        if not {"clean", "robust"}.issubset(aggregated):
-            raise ValueError(f"Incomplete clean/robust results for {model_alias}.")
-        _plot_curve(axis, "clean", aggregated["clean"], train_probability)
-        _plot_curve(axis, "robust", aggregated["robust"], train_probability)
-        axis.axhline(100 / 3, color="0.45", linestyle=":", linewidth=1.2)
-        probabilities = aggregated["clean"]["probability"]
-        _configure_probability_axis(axis, probabilities, sparse_ticks=True)
+        values = _aggregate(rows_by_model[model_alias])
+        x = values[x_mode]
+        _plot_metric(
+            axis,
+            x,
+            values["balanced_accuracy_mean"],
+            values["balanced_accuracy_ci95"],
+            MODEL_COLORS[index % len(MODEL_COLORS)],
+        )
         axis.set_title(model_alias)
-        axis.set_xlabel("Bit-flip probability")
+        _configure_x_axis(axis, x, x_mode)
         if index == 0:
             axis.set_ylabel("Balanced accuracy [%]")
-            legend_handles, legend_labels = axis.get_legend_handles_labels()
 
-    if legend_handles:
-        fig.legend(
-            legend_handles,
-            legend_labels,
-            loc="outside upper center",
-            ncol=2,
-            frameon=True,
-        )
+    fig.suptitle(
+        "Model-2 LGN robustness to exact-count transient bit flips\n"
+        "(mean and 95% CI over random fault realizations)"
+    )
     for suffix in (".png", ".pdf"):
-        fig.savefig(output_stem.with_suffix(suffix), dpi=200)
+        fig.savefig(output_stem.with_suffix(suffix), dpi=300)
     plt.close(fig)

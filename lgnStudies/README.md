@@ -50,5 +50,5 @@ For the publication plot using actual post-synthesis Vivado LUT counts, follow
 [`SYNTHESIS.md`](SYNTHESIS.md). The immediate analytical plot is retained as a
 cluster-side diagnostic.
 
-The random bit-flip robustness study is documented in
+The exact-count, inference-only bit-flip robustness study is documented in
 [`bitFlipStudy/README.md`](bitFlipStudy/README.md).
