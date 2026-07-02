@@ -27,6 +27,7 @@ from models.registry import REGISTRY
 from utils import CreateFolder, get_device
 
 from lgnStudies.resource_accounting import estimate_model_resources
+from lgnStudies.synthesis_interface import export_dense_lgn_stage
 
 
 MODEL_ALIASES = {
@@ -197,6 +198,16 @@ def record_stage(
     }
     rows.append(row)
     write_rows(output / "resource_precision.csv", rows)
+    export_name = f"{model_alias}_step{step:06d}"
+    export_dense_lgn_stage(
+        model,
+        output / "synthesis_export",
+        export_name,
+        model_alias=model_alias,
+        registry_name=registry_name,
+        training_step=step,
+        balanced_accuracy=metrics["balanced_accuracy"],
+    )
     plot_trajectory(rows, output / "resource_vs_balanced_accuracy.png")
     plot_trajectory(
         rows,

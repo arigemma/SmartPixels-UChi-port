@@ -43,3 +43,8 @@ Per-model outputs include:
 
 The dependent CPU job writes
 `bit_flip_robustness_all_models.png` and `.pdf` in the common result root.
+
+Actual FPGA synthesis is not required for this plot: its x-axis is the
+injected bit-flip probability and its y-axis is full-test balanced accuracy.
+Synthesize the clean and fault-aware final models only if a separate hardware
+resource-overhead comparison is desired.

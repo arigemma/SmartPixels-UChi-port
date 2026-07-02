@@ -22,6 +22,8 @@ Each output directory is updated after every stage and contains:
   component without the fixed GroupSum offset;
 - `resource_precision.csv`: exact metrics and the complete resource breakdown;
 - `study_metadata.json`: class, dataset, and resource definitions;
+- `synthesis_export/`: full-module staged checkpoints ready for transfer to
+  `synthesis-SmartPixels`;
 - `final_model.pth`: final or gracefully interrupted model.
 
 Balanced accuracy is the mean of the three recalls from the discrete
@@ -37,6 +39,10 @@ elimination, inverter folding, and dead-code elimination. The GroupSum
 adder-tree estimate is fixed throughout training and is included in the
 primary x-axis. Fixed binarization/input ADC and routing are intentionally
 excluded.
+
+For the publication plot using actual post-synthesis Vivado LUT counts, follow
+[`SYNTHESIS.md`](SYNTHESIS.md). The immediate analytical plot is retained as a
+cluster-side diagnostic.
 
 The random bit-flip robustness study is documented in
 [`bitFlipStudy/README.md`](bitFlipStudy/README.md).
