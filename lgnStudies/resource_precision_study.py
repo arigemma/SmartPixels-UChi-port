@@ -9,6 +9,7 @@ import json
 import random
 import signal
 import sys
+import time
 from pathlib import Path
 
 if __package__ in (None, ""):
@@ -86,7 +87,21 @@ def get_class_weights(data_loader) -> torch.Tensor:
 
 
 def save_model(model, path: Path) -> None:
-    torch.save(model, path)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    torch.save(model, temporary)
+    temporary.replace(path)
+
+
+def training_requirements_met(
+    step: int,
+    minimum_steps: int,
+    elapsed_seconds: float,
+    minimum_training_hours: float,
+) -> bool:
+    return (
+        step >= minimum_steps
+        and elapsed_seconds >= minimum_training_hours * 3600
+    )
 
 
 def exact_balanced_accuracy(model, loader, device: torch.device) -> dict:
@@ -259,13 +274,36 @@ def main() -> None:
     parser.add_argument("--learning-rate", "-lr", type=float, default=0.01)
     parser.add_argument("--weight-decay", type=float, default=0.0)
     parser.add_argument("--steps", type=int, default=2_000)
-    parser.add_argument("--eval-freq", type=int, default=200)
+    parser.add_argument(
+        "--minimum-training-hours",
+        type=float,
+        default=0.0,
+        help=(
+            "Continue training until both this accumulated optimizer-loop "
+            "duration and --steps have been reached. Full-test evaluations "
+            "and synthesis exports are excluded from this duration."
+        ),
+    )
+    parser.add_argument("--eval-freq", type=int, default=1_000)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--compile-model", action="store_true")
     args = parser.parse_args()
 
-    if args.steps < 1 or args.eval_freq < 1:
-        parser.error("--steps and --eval-freq must be positive.")
+    if (
+        args.steps < 1
+        or args.eval_freq < 1
+        or args.minimum_training_hours < 0
+    ):
+        parser.error(
+            "--steps and --eval-freq must be positive, and "
+            "--minimum-training-hours must be non-negative."
+        )
+
+    output = Path(args.output)
+    completion_path = output / "training_complete.json"
+    incomplete_path = output / "training_incomplete.json"
+    completion_path.unlink(missing_ok=True)
+    incomplete_path.unlink(missing_ok=True)
 
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -304,7 +342,6 @@ def main() -> None:
         print("Compiling the model...", flush=True)
         model.compile(dynamic=True)
 
-    output = Path(args.output)
     rows: list[dict] = []
     stop_requested = False
 
@@ -322,13 +359,25 @@ def main() -> None:
 
     step = 0
     epoch = 0
+    training_started = time.monotonic()
+    active_training_seconds = 0.0
+
+    def requirements_met() -> bool:
+        return training_requirements_met(
+            step,
+            args.steps,
+            active_training_seconds,
+            args.minimum_training_hours,
+        )
+
     model.train()
-    while step < args.steps and not stop_requested:
+    while not requirements_met() and not stop_requested:
         train_loader.dataset.shuffle_indices()
         progress = tqdm(train_loader, desc=f"Training epoch {epoch}", unit="batch")
         for inputs, labels in progress:
-            if step >= args.steps or stop_requested:
+            if requirements_met() or stop_requested:
                 break
+            batch_started = time.monotonic()
             step += 1
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
@@ -336,10 +385,15 @@ def main() -> None:
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
+            active_training_seconds += time.monotonic() - batch_started
             if step % 20 == 0:
-                progress.set_postfix(step=step, loss=f"{loss.item():.4f}")
+                progress.set_postfix(
+                    step=step,
+                    loss=f"{loss.item():.4f}",
+                    hours=f"{active_training_seconds / 3600:.2f}",
+                )
 
-            if step % args.eval_freq == 0 or step == args.steps:
+            if step % args.eval_freq == 0:
                 record_stage(
                     model,
                     args.model,
@@ -353,12 +407,42 @@ def main() -> None:
                 model.train()
         epoch += 1
 
-    if rows[-1]["step"] != step and not stop_requested:
+    complete = requirements_met() and not stop_requested
+    if rows[-1]["step"] != step and complete:
         record_stage(
             model, args.model, registry_name, step, test_loader, device, output, rows
         )
-    save_model(model, output / "final_model.pth")
-    print(f"[DONE] Outputs written to {output}", flush=True)
+
+    elapsed_hours = active_training_seconds / 3600
+    training_loop_wall_hours = (time.monotonic() - training_started) / 3600
+    status = {
+        "complete": complete,
+        "model_alias": args.model,
+        "registry_name": registry_name,
+        "minimum_steps": args.steps,
+        "completed_steps": step,
+        "minimum_training_hours": args.minimum_training_hours,
+        "elapsed_training_hours": elapsed_hours,
+        "training_loop_wall_hours": training_loop_wall_hours,
+        "final_recorded_step": int(rows[-1]["step"]),
+        "final_balanced_accuracy": float(rows[-1]["balanced_accuracy"]),
+        "stop_requested": stop_requested,
+    }
+    if complete:
+        save_model(model, output / "final_model.pth")
+        completion_path.write_text(json.dumps(status, indent=2) + "\n")
+        print(
+            f"[DONE] step={step} training_hours={elapsed_hours:.3f} "
+            f"balanced_acc={rows[-1]['balanced_accuracy']:.6f} output={output}",
+            flush=True,
+        )
+    else:
+        save_model(model, output / "interrupted_model.pth")
+        incomplete_path.write_text(json.dumps(status, indent=2) + "\n")
+        raise SystemExit(
+            "Training stopped before all completion requirements were met; "
+            "wrote interrupted_model.pth and did not publish final_model.pth."
+        )
 
 
 if __name__ == "__main__":

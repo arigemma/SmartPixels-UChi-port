@@ -19,7 +19,10 @@ bash lgnStudies/submit_training_studies.sh
 The array runs `s06_p760M_tau40`, `s08_p1202M_tau40`, and
 `s09_p1460M_tau40`. The training settings retain the LGN configuration used by
 the prior sweep: batch size 1024, learning rate 0.01, class-weighted
-cross-entropy, and `--compile-model`.
+cross-entropy, and `--compile-model`. A checkpoint is complete only after both
+2,000 optimizer steps and five accumulated hours in the optimizer loop.
+Full-test evaluation and synthesis-export time do not count toward those five
+hours. Passing 2,000 steps early does not stop training.
 
 Each output directory is updated after every stage and contains:
 
@@ -30,7 +33,14 @@ Each output directory is updated after every stage and contains:
 - `study_metadata.json`: class, dataset, and resource definitions;
 - `synthesis_export/`: full-module staged checkpoints ready for transfer to
   `synthesis-SmartPixels`;
-- `final_model.pth`: final or gracefully interrupted model.
+- `final_model.pth`: checkpoint published only after all training requirements;
+- `training_complete.json`: proof that the minimum steps and five-hour
+  requirement were both met.
+
+Interrupted runs write `interrupted_model.pth` and
+`training_incomplete.json`; they do not publish a valid new
+`final_model.pth`. The dependent bit-flip campaign validates completion
+metadata before loading any checkpoint.
 
 Balanced accuracy is the mean of the three recalls from the discrete
 (`model.eval()`) LGN. Counts are accumulated over the entire test split in

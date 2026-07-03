@@ -16,7 +16,7 @@ MODELS=(
 )
 
 MODEL="${MODELS[$SLURM_ARRAY_TASK_ID]}"
-OUTPUT_DIR="results/SLURM/2026_07_02_model2_resource_precision/${MODEL}"
+OUTPUT_DIR="results/SLURM/2026_07_03_model2_resource_precision_5h/${MODEL}"
 
 mkdir -p logs "$OUTPUT_DIR"
 
@@ -30,7 +30,8 @@ python lgnStudies/resource_precision_study.py \
   -bs 1024 \
   -lr 0.01 \
   --steps 2000 \
-  --eval-freq 200 \
+  --minimum-training-hours 5.0 \
+  --eval-freq 2000 \
   --compile-model \
   --model "$MODEL" \
   -o "$OUTPUT_DIR"

@@ -124,16 +124,17 @@ For a completely fresh resource and bit-flip campaign:
 bash lgnStudies/submit_training_studies.sh
 ```
 
-The clean checkpoints were trained by the resource study with the model-2
-learning rate, batch size, and `--compile-model`. This inference study does
-not train or compile a replacement model; it calls the existing model's
-`bin`, `layers`, and `group_sum` modules directly so faults can be inserted at
-the defined stage boundaries.
+The clean checkpoints are accepted only when `training_complete.json` proves
+that the resource job reached both 2,000 optimizer steps and five training
+hours without a stop request. Evaluation/export time is excluded from the
+five-hour counter. Old, interrupted, or short checkpoints are rejected even
+if a file named `final_model.pth` exists.
 
-Fresh resource jobs train for the configured 2,000 optimizer steps without
-validation-loss early stopping. They retain the six-hour allocation but no
-longer request an early Slurm signal that stops training ten minutes before
-the wall-time limit.
+The resource jobs use the model-2 learning rate, batch size, class-weighted
+loss, and `--compile-model`. This inference study does not train or compile a
+replacement model; it calls the existing model's `bin`, `layers`, and
+`group_sum` modules directly so faults can be inserted at the defined stage
+boundaries.
 
 ## Outputs
 

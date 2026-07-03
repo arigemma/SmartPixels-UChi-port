@@ -16,9 +16,10 @@ IFS=$'\t' read -r MODEL REGISTRY_NAME CHUNK_INDEX FLIP_COUNT_TEXT <<< "$(
 )"
 read -r -a CHUNK_COUNTS <<< "$FLIP_COUNT_TEXT"
 
-RESOURCE_ROOT="results/SLURM/2026_07_02_model2_resource_precision"
+RESOURCE_ROOT="results/SLURM/2026_07_03_model2_resource_precision_5h"
 OUTPUT_ROOT="results/SLURM/2026_07_03_model2_bit_flip_inference_dense_sweep"
 CLEAN_MODEL="${RESOURCE_ROOT}/${MODEL}/final_model.pth"
+TRAINING_STATUS="${RESOURCE_ROOT}/${MODEL}/training_complete.json"
 OUTPUT_DIR="${OUTPUT_ROOT}/${MODEL}/chunks/chunk_${CHUNK_INDEX}"
 
 mkdir -p logs "$OUTPUT_DIR"
@@ -28,6 +29,11 @@ echo "Chunk: ${CHUNK_INDEX}"
 echo "Flip counts: ${CHUNK_COUNTS[*]}"
 echo "Clean checkpoint: ${CLEAN_MODEL}"
 echo "Output: ${OUTPUT_DIR}"
+
+python -m lgnStudies.training_completion \
+  --checkpoint "$CLEAN_MODEL" \
+  --status "$TRAINING_STATUS" \
+  --minimum-hours 5.0
 
 python lgnStudies/bitFlipStudy/study.py \
   -c config/10783560/v3.yml \

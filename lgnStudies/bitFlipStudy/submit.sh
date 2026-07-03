@@ -2,7 +2,7 @@
 set -euo pipefail
 
 RESOURCE_JOB_ID="${1:-}"
-RESOURCE_ROOT="results/SLURM/2026_07_02_model2_resource_precision"
+RESOURCE_ROOT="results/SLURM/2026_07_03_model2_resource_precision_5h"
 MODELS=(
   "s06_p760M_tau40"
   "s08_p1202M_tau40"
@@ -21,8 +21,13 @@ fi
 MISSING=()
 for MODEL in "${MODELS[@]}"; do
   CHECKPOINT="${RESOURCE_ROOT}/${MODEL}/final_model.pth"
-  if [[ ! -f "$CHECKPOINT" ]]; then
-    MISSING+=("$CHECKPOINT")
+  COMPLETION="${RESOURCE_ROOT}/${MODEL}/training_complete.json"
+  if [[ ! -f "$CHECKPOINT" || ! -f "$COMPLETION" ]] || \
+     ! python -m lgnStudies.training_completion \
+       --checkpoint "$CHECKPOINT" \
+       --status "$COMPLETION" \
+       --minimum-hours 5.0 >/dev/null; then
+    MISSING+=("$CHECKPOINT + $COMPLETION")
   fi
 done
 

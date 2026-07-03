@@ -32,9 +32,9 @@ contents from all three training jobs:
 cd ~/synthesis-SmartPixels
 mkdir -p staged_models/model2/LGN
 
-scp -r TRAIN_HOST:/path/to/results/SLURM/2026_07_02_model2_resource_precision/s06_p760M_tau40/synthesis_export/model2/LGN/* staged_models/model2/LGN/
-scp -r TRAIN_HOST:/path/to/results/SLURM/2026_07_02_model2_resource_precision/s08_p1202M_tau40/synthesis_export/model2/LGN/* staged_models/model2/LGN/
-scp -r TRAIN_HOST:/path/to/results/SLURM/2026_07_02_model2_resource_precision/s09_p1460M_tau40/synthesis_export/model2/LGN/* staged_models/model2/LGN/
+scp -r TRAIN_HOST:/path/to/results/SLURM/2026_07_03_model2_resource_precision_5h/s06_p760M_tau40/synthesis_export/model2/LGN/* staged_models/model2/LGN/
+scp -r TRAIN_HOST:/path/to/results/SLURM/2026_07_03_model2_resource_precision_5h/s08_p1202M_tau40/synthesis_export/model2/LGN/* staged_models/model2/LGN/
+scp -r TRAIN_HOST:/path/to/results/SLURM/2026_07_03_model2_resource_precision_5h/s09_p1460M_tau40/synthesis_export/model2/LGN/* staged_models/model2/LGN/
 ```
 
 Optionally verify transfer integrity:
@@ -73,10 +73,10 @@ For each model, join the Vivado LUTs to its exact balanced accuracies:
 
 ```bash
 python lgnStudies/import_synthesis_results.py \
-  --training-csv results/SLURM/2026_07_02_model2_resource_precision/s09_p1460M_tau40/resource_precision.csv \
-  --synthesis-csv results/SLURM/2026_07_02_model2_resource_precision/stage_synthesis_results.csv \
+  --training-csv results/SLURM/2026_07_03_model2_resource_precision_5h/s09_p1460M_tau40/resource_precision.csv \
+  --synthesis-csv results/SLURM/2026_07_03_model2_resource_precision_5h/stage_synthesis_results.csv \
   --model-alias s09_p1460M_tau40 \
-  --output-dir results/SLURM/2026_07_02_model2_resource_precision/s09_p1460M_tau40
+  --output-dir results/SLURM/2026_07_03_model2_resource_precision_5h/s09_p1460M_tau40
 ```
 
 This produces `vivado_luts_vs_balanced_accuracy.png` and `.pdf`. Use
