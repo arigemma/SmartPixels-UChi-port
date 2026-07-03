@@ -273,7 +273,7 @@ def main() -> None:
     parser.add_argument("--batch-size", "-bs", type=int, default=1024)
     parser.add_argument("--learning-rate", "-lr", type=float, default=0.01)
     parser.add_argument("--weight-decay", type=float, default=0.0)
-    parser.add_argument("--steps", type=int, default=2_000)
+    parser.add_argument("--steps", type=int, default=20_000)
     parser.add_argument(
         "--minimum-training-hours",
         type=float,
@@ -284,7 +284,7 @@ def main() -> None:
             "and synthesis exports are excluded from this duration."
         ),
     )
-    parser.add_argument("--eval-freq", type=int, default=1_000)
+    parser.add_argument("--eval-freq", type=int, default=5_000)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--compile-model", action="store_true")
     args = parser.parse_args()

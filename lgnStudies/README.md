@@ -20,9 +20,9 @@ The array runs `s06_p760M_tau40`, `s08_p1202M_tau40`, and
 `s09_p1460M_tau40`. The training settings retain the LGN configuration used by
 the prior sweep: batch size 1024, learning rate 0.01, class-weighted
 cross-entropy, and `--compile-model`. A checkpoint is complete only after both
-2,000 optimizer steps and five accumulated hours in the optimizer loop.
+20,000 optimizer steps and five accumulated hours in the optimizer loop.
 Full-test evaluation and synthesis-export time do not count toward those five
-hours. Passing 2,000 steps early does not stop training.
+hours. The job continues until both requirements are satisfied.
 
 Each output directory is updated after every stage and contains:
 

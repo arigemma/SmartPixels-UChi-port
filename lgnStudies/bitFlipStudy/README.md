@@ -125,7 +125,7 @@ bash lgnStudies/submit_training_studies.sh
 ```
 
 The clean checkpoints are accepted only when `training_complete.json` proves
-that the resource job reached both 2,000 optimizer steps and five training
+that the resource job reached both 20,000 optimizer steps and five training
 hours without a stop request. Evaluation/export time is excluded from the
 five-hour counter. Old, interrupted, or short checkpoints are rejected even
 if a file named `final_model.pth` exists.

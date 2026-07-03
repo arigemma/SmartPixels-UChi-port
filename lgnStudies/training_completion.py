@@ -11,6 +11,7 @@ def validate_training_completion(
     checkpoint: Path,
     status_path: Path,
     minimum_hours: float,
+    required_minimum_steps: int = 0,
 ) -> dict:
     if not checkpoint.is_file():
         raise ValueError(f"Missing final checkpoint: {checkpoint}")
@@ -30,6 +31,11 @@ def validate_training_completion(
             f"Checkpoint has only {elapsed_hours:.3f} training hours with "
             f"{requested_hours:.3f} requested; require at least {minimum_hours:.3f}."
         )
+    if minimum_steps < required_minimum_steps:
+        raise ValueError(
+            f"Checkpoint requested only {minimum_steps} minimum steps; "
+            f"require at least {required_minimum_steps}."
+        )
     if completed_steps < minimum_steps or final_recorded_step != completed_steps:
         raise ValueError(
             "Checkpoint step accounting is incomplete: "
@@ -46,10 +52,14 @@ def main() -> None:
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--status", type=Path, required=True)
     parser.add_argument("--minimum-hours", type=float, default=5.0)
+    parser.add_argument("--minimum-steps", type=int, default=20_000)
     args = parser.parse_args()
     try:
         status = validate_training_completion(
-            args.checkpoint, args.status, args.minimum_hours
+            args.checkpoint,
+            args.status,
+            args.minimum_hours,
+            args.minimum_steps,
         )
     except (ValueError, json.JSONDecodeError) as error:
         raise SystemExit(str(error)) from error

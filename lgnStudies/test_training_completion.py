@@ -9,10 +9,18 @@ from lgnStudies.training_completion import validate_training_completion
 
 class TrainingCompletionTest(unittest.TestCase):
     def test_requires_both_steps_and_time(self):
-        self.assertFalse(training_requirements_met(1_999, 2_000, 5 * 3600, 5.0))
-        self.assertFalse(training_requirements_met(2_000, 2_000, 4.99 * 3600, 5.0))
-        self.assertTrue(training_requirements_met(2_000, 2_000, 5 * 3600, 5.0))
-        self.assertTrue(training_requirements_met(8_000, 2_000, 5.2 * 3600, 5.0))
+        self.assertFalse(
+            training_requirements_met(19_999, 20_000, 5 * 3600, 5.0)
+        )
+        self.assertFalse(
+            training_requirements_met(20_000, 20_000, 4.99 * 3600, 5.0)
+        )
+        self.assertTrue(
+            training_requirements_met(20_000, 20_000, 5 * 3600, 5.0)
+        )
+        self.assertTrue(
+            training_requirements_met(25_000, 20_000, 5.2 * 3600, 5.0)
+        )
 
     def test_validates_completed_checkpoint_metadata(self):
         with TemporaryDirectory() as temporary:
@@ -32,7 +40,7 @@ class TrainingCompletionTest(unittest.TestCase):
             }
             status_path.write_text(json.dumps(status))
             self.assertEqual(
-                validate_training_completion(checkpoint, status_path, 5.0),
+                validate_training_completion(checkpoint, status_path, 5.0, 2_000),
                 status,
             )
 
@@ -40,6 +48,13 @@ class TrainingCompletionTest(unittest.TestCase):
             status_path.write_text(json.dumps(status))
             with self.assertRaises(ValueError):
                 validate_training_completion(checkpoint, status_path, 5.0)
+
+            status["elapsed_training_hours"] = 5.1
+            status_path.write_text(json.dumps(status))
+            with self.assertRaises(ValueError):
+                validate_training_completion(
+                    checkpoint, status_path, 5.0, 20_000
+                )
 
     def test_rejects_interrupted_or_step_mismatched_runs(self):
         with TemporaryDirectory() as temporary:

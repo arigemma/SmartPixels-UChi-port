@@ -2,7 +2,7 @@
 set -euo pipefail
 
 RESOURCE_JOB_ID="${1:-}"
-RESOURCE_ROOT="results/SLURM/2026_07_03_model2_resource_precision_5h"
+RESOURCE_ROOT="results/SLURM/2026_07_03_model2_resource_precision_5h_20k"
 MODELS=(
   "s06_p760M_tau40"
   "s08_p1202M_tau40"
@@ -26,7 +26,8 @@ for MODEL in "${MODELS[@]}"; do
      ! python -m lgnStudies.training_completion \
        --checkpoint "$CHECKPOINT" \
        --status "$COMPLETION" \
-       --minimum-hours 5.0 >/dev/null; then
+       --minimum-hours 5.0 \
+       --minimum-steps 20000 >/dev/null; then
     MISSING+=("$CHECKPOINT + $COMPLETION")
   fi
 done
