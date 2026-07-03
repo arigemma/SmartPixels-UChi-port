@@ -3,7 +3,6 @@
 #SBATCH --output=logs/model2ResourcePrecision_%A_%a.out
 #SBATCH --error=logs/model2ResourcePrecision_%A_%a.err
 #SBATCH --time=5:59:59
-#SBATCH --signal=B:USR1@600
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16G

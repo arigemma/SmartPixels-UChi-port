@@ -26,7 +26,30 @@ from lgnStudies.bitFlipStudy.fault_injection import ExactCountBitFlipModel
 from lgnStudies.bitFlipStudy.plots import plot_single_model
 
 
-DEFAULT_FLIP_COUNTS = (0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024)
+DEFAULT_FLIP_COUNTS = (
+    0,
+    1,
+    2,
+    4,
+    8,
+    16,
+    24,
+    32,
+    48,
+    64,
+    96,
+    128,
+    192,
+    256,
+    384,
+    512,
+    768,
+    1024,
+    1536,
+    2048,
+    3072,
+    4096,
+)
 CSV_FIELDS = (
     "model_alias",
     "registry_name",
@@ -38,12 +61,22 @@ CSV_FIELDS = (
     "fault_seed",
     "balanced_accuracy",
     "prediction_change_fraction",
+    "balanced_repair_gain",
+    "balanced_damage_loss",
+    "repair_fraction",
+    "damage_fraction",
     "recall_class_0",
     "recall_class_1",
     "recall_class_2",
     "n_class_0",
     "n_class_1",
     "n_class_2",
+    "repairs_class_0",
+    "repairs_class_1",
+    "repairs_class_2",
+    "damages_class_0",
+    "damages_class_1",
+    "damages_class_2",
     *(f"confusion_{truth}_{prediction}" for truth in range(3) for prediction in range(3)),
 )
 
@@ -85,6 +118,8 @@ def evaluate_complete_test_split(
     confusion = torch.zeros((3, 3), dtype=torch.int64)
     predictions_for_output: list[np.ndarray] = []
     changed = 0
+    repairs = torch.zeros(3, dtype=torch.int64)
+    damages = torch.zeros(3, dtype=torch.int64)
     number_seen = 0
 
     with torch.no_grad():
@@ -105,6 +140,17 @@ def evaluate_complete_test_split(
                 if len(reference_batch) != len(prediction_array):
                     raise RuntimeError("Reference predictions do not match test split.")
                 changed += int(np.count_nonzero(prediction_array != reference_batch))
+                reference_tensor = torch.from_numpy(
+                    reference_batch.astype(np.int64, copy=False)
+                )
+                reference_correct = reference_tensor == truth
+                fault_correct = predictions == truth
+                repairs += torch.bincount(
+                    truth[(~reference_correct) & fault_correct], minlength=3
+                )
+                damages += torch.bincount(
+                    truth[reference_correct & (~fault_correct)], minlength=3
+                )
             if collect_predictions:
                 predictions_for_output.append(prediction_array.copy())
             number_seen += len(prediction_array)
@@ -117,6 +163,8 @@ def evaluate_complete_test_split(
     if torch.any(totals == 0):
         raise RuntimeError(f"Missing test class; totals={totals.tolist()}.")
     recalls = confusion.diag().to(torch.float64) / totals
+    repair_rates = repairs.to(torch.float64) / totals
+    damage_rates = damages.to(torch.float64) / totals
     metrics = {
         "balanced_accuracy": float(recalls.mean()),
         "prediction_change_fraction": (
@@ -124,6 +172,12 @@ def evaluate_complete_test_split(
             if reference_predictions is not None
             else 0.0
         ),
+        "balanced_repair_gain": float(repair_rates.mean()),
+        "balanced_damage_loss": float(damage_rates.mean()),
+        "repair_fraction": int(repairs.sum()) / number_seen,
+        "damage_fraction": int(damages.sum()) / number_seen,
+        "repairs": [int(value) for value in repairs],
+        "damages": [int(value) for value in damages],
         "recalls": [float(value) for value in recalls],
         "class_totals": [int(value) for value in totals],
         "confusion_matrix": confusion.tolist(),
@@ -144,6 +198,23 @@ def write_rows(path: Path, rows: list[dict]) -> None:
         writer.writeheader()
         writer.writerows(rows)
     temporary.replace(path)
+
+
+def validate_transition_accounting(clean_metrics: dict, fault_metrics: dict) -> None:
+    if clean_metrics["class_totals"] != fault_metrics["class_totals"]:
+        raise RuntimeError("Clean and fault evaluations have different class totals.")
+    observed_delta = (
+        fault_metrics["balanced_accuracy"] - clean_metrics["balanced_accuracy"]
+    )
+    transition_delta = (
+        fault_metrics["balanced_repair_gain"]
+        - fault_metrics["balanced_damage_loss"]
+    )
+    if not np.isclose(observed_delta, transition_delta, rtol=0.0, atol=1e-12):
+        raise RuntimeError(
+            "Repair/damage accounting does not reproduce the balanced-accuracy "
+            f"change: observed={observed_delta}, transitions={transition_delta}."
+        )
 
 
 def make_result_row(
@@ -168,8 +239,14 @@ def make_result_row(
         "fault_seed": fault_seed,
         "balanced_accuracy": metrics["balanced_accuracy"],
         "prediction_change_fraction": metrics["prediction_change_fraction"],
+        "balanced_repair_gain": metrics["balanced_repair_gain"],
+        "balanced_damage_loss": metrics["balanced_damage_loss"],
+        "repair_fraction": metrics["repair_fraction"],
+        "damage_fraction": metrics["damage_fraction"],
         **{f"recall_class_{index}": metrics["recalls"][index] for index in range(3)},
         **{f"n_class_{index}": metrics["class_totals"][index] for index in range(3)},
+        **{f"repairs_class_{index}": metrics["repairs"][index] for index in range(3)},
+        **{f"damages_class_{index}": metrics["damages"][index] for index in range(3)},
     }
     row.update(
         {
@@ -209,6 +286,11 @@ def main() -> None:
         help="Independent complete-test fault realizations for each nonzero count.",
     )
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--no-plots",
+        action="store_true",
+        help="Skip incremental plots; intended for chunked Slurm jobs.",
+    )
     args = parser.parse_args()
 
     flip_counts = sorted(set(args.flip_counts))
@@ -300,6 +382,7 @@ def main() -> None:
                 device,
                 reference_predictions=clean_predictions,
             )
+            validate_transition_accounting(clean_metrics, metrics)
             rows.append(
                 make_result_row(
                     args.model_alias,
@@ -315,18 +398,19 @@ def main() -> None:
                 f"K={flip_count}:repeat={repeat}"
             ] = metrics["confusion_matrix"]
             write_rows(output / "bit_flip_results.csv", rows)
-            plot_single_model(
-                rows,
-                args.model_alias,
-                output / "bit_flips_per_event",
-                x_mode="count",
-            )
-            plot_single_model(
-                rows,
-                args.model_alias,
-                output / "bit_flip_percentage",
-                x_mode="percentage",
-            )
+            if not args.no_plots:
+                plot_single_model(
+                    rows,
+                    args.model_alias,
+                    output / "bit_flips_per_event",
+                    x_mode="count",
+                )
+                plot_single_model(
+                    rows,
+                    args.model_alias,
+                    output / "bit_flip_percentage",
+                    x_mode="percentage",
+                )
             print(
                 f"[POINT] K={flip_count} repeat={repeat + 1}/{args.repeats} "
                 f"balanced_accuracy={metrics['balanced_accuracy']:.6f}",
@@ -352,6 +436,12 @@ def main() -> None:
         "prediction_change_fraction": (
             "Fraction of test events whose predicted class differs from the "
             "same event with K=0."
+        ),
+        "repair_and_damage": (
+            "A repair is an event wrong at K=0 and correct with faults; damage "
+            "is correct at K=0 and wrong with faults. balanced_repair_gain and "
+            "balanced_damage_loss are the macro averages of their per-class "
+            "rates, so balanced_accuracy(K)-balanced_accuracy(0) equals gain-loss."
         ),
         "fault_model": (
             "For every test event, uniformly sample exactly K distinct sites "

@@ -15,6 +15,16 @@ import numpy as np
 
 
 MODEL_COLORS = ("#3366a6", "#d05a3a", "#2f8a62")
+CLASS_COLORS = ("#3366a6", "#d05a3a", "#2f8a62")
+AGGREGATE_METRICS = (
+    "balanced_accuracy",
+    "prediction_change_fraction",
+    "balanced_repair_gain",
+    "balanced_damage_loss",
+    "recall_class_0",
+    "recall_class_1",
+    "recall_class_2",
+)
 T_CRITICAL_95 = {
     1: 12.706,
     2: 4.303,
@@ -59,15 +69,13 @@ def _confidence_half_width(values: np.ndarray) -> float:
 
 def _aggregate(rows: Iterable[dict]) -> dict[str, np.ndarray]:
     grouped: dict[int, dict[str, list[float]]] = defaultdict(
-        lambda: {"balanced_accuracy": [], "prediction_change_fraction": []}
+        lambda: {metric: [] for metric in AGGREGATE_METRICS}
     )
     percentages: dict[int, float] = {}
     for row in rows:
         count = int(row["flip_count_per_event"])
-        grouped[count]["balanced_accuracy"].append(float(row["balanced_accuracy"]))
-        grouped[count]["prediction_change_fraction"].append(
-            float(row["prediction_change_fraction"])
-        )
+        for metric in AGGREGATE_METRICS:
+            grouped[count][metric].append(float(row[metric]))
         percentages[count] = float(row["equivalent_fault_percentage"])
 
     counts = np.asarray(sorted(grouped), dtype=float)
@@ -77,7 +85,7 @@ def _aggregate(rows: Iterable[dict]) -> dict[str, np.ndarray]:
             [percentages[int(count)] for count in counts], dtype=float
         ),
     }
-    for metric in ("balanced_accuracy", "prediction_change_fraction"):
+    for metric in AGGREGATE_METRICS:
         samples = [
             np.asarray(grouped[int(count)][metric], dtype=float)
             for count in counts
@@ -158,12 +166,12 @@ def plot_single_model(
     values = _aggregate(rows)
     x = values[x_mode]
 
-    fig, (accuracy_axis, change_axis) = plt.subplots(
-        2,
+    fig, (accuracy_axis, recall_axis, change_axis) = plt.subplots(
+        3,
         1,
-        figsize=(7.4, 6.5),
+        figsize=(8.4, 9.0),
         sharex=True,
-        gridspec_kw={"height_ratios": (2.5, 1.5)},
+        gridspec_kw={"height_ratios": (2.2, 2.0, 1.8)},
         constrained_layout=True,
     )
     _plot_metric(
@@ -180,14 +188,53 @@ def plot_single_model(
     )
     accuracy_axis.grid(True, which="both", alpha=0.25)
 
+    class_labels = (
+        "positive low-pT",
+        "negative low-pT",
+        "high-pT",
+    )
+    for class_index, (class_label, color) in enumerate(
+        zip(class_labels, CLASS_COLORS)
+    ):
+        metric = f"recall_class_{class_index}"
+        _plot_metric(
+            recall_axis,
+            x,
+            values[f"{metric}_mean"],
+            values[f"{metric}_ci95"],
+            color,
+            label=class_label,
+        )
+    recall_axis.set_ylabel("Recall by true class [%]")
+    recall_axis.legend(loc="best", fontsize=8)
+    recall_axis.grid(True, which="both", alpha=0.25)
+
     _plot_metric(
         change_axis,
         x,
         values["prediction_change_fraction_mean"],
         values["prediction_change_fraction_ci95"],
-        MODEL_COLORS[1],
+        "#666666",
+        label="prediction changed",
     )
-    change_axis.set_ylabel("Predictions changed\nfrom K=0 [%]")
+    _plot_metric(
+        change_axis,
+        x,
+        values["balanced_repair_gain_mean"],
+        values["balanced_repair_gain_ci95"],
+        "#2f8a62",
+        label="balanced repair gain",
+    )
+    _plot_metric(
+        change_axis,
+        x,
+        values["balanced_damage_loss_mean"],
+        values["balanced_damage_loss_ci95"],
+        "#b33a3a",
+        label="balanced damage loss",
+    )
+    change_axis.set_ylabel("Changed / repaired / damaged [%]")
+    change_axis.legend(loc="best", fontsize=8)
     _configure_x_axis(change_axis, x, x_mode)
 
     for suffix in (".png", ".pdf"):
