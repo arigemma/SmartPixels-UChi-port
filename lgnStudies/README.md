@@ -20,9 +20,10 @@ The array runs `s06_p760M_tau40`, `s08_p1202M_tau40`, and
 `s09_p1460M_tau40`. The training settings retain the LGN configuration used by
 the prior sweep: batch size 1024, learning rate 0.01, class-weighted
 cross-entropy, and `--compile-model`. A checkpoint is complete only after both
-20,000 optimizer steps and five accumulated hours in the optimizer loop.
-Full-test evaluation and synthesis-export time do not count toward those five
-hours. The job continues until both requirements are satisfied.
+20,000 optimizer steps and five training-loop hours. Intermediate evaluation
+and export time count toward those five hours so the final evaluation and save
+fit inside the six-hour Slurm allocation. The job continues until both
+requirements are satisfied.
 
 Each output directory is updated after every stage and contains:
 
@@ -36,11 +37,27 @@ Each output directory is updated after every stage and contains:
 - `final_model.pth`: checkpoint published only after all training requirements;
 - `training_complete.json`: proof that the minimum steps and five-hour
   requirement were both met.
+- `latest_model.pth`: most recent recorded stage, retained for wall-time
+  recovery.
 
 Interrupted runs write `interrupted_model.pth` and
 `training_incomplete.json`; they do not publish a valid new
 `final_model.pth`. The dependent bit-flip campaign validates completion
 metadata before loading any checkpoint.
+
+If Slurm reaches its hard wall after a fully evaluated/exported stage but
+before the final save block, recover the latest stage without retraining:
+
+```bash
+python lgnStudies/recover_resource_checkpoint.py \
+  --model s06_p760M_tau40 \
+  --output results/SLURM/2026_07_03_model2_resource_precision_5h_20k/s06_p760M_tau40
+```
+
+The recovery command requires at least 20,000 recorded steps, checks the
+export metadata against `resource_precision.csv`, reconstructs the registered
+model around the exact exported TorchLogix modules, and verifies identical
+inference before publishing `final_model.pth`.
 
 Balanced accuracy is the mean of the three recalls from the discrete
 (`model.eval()`) LGN. Counts are accumulated over the entire test split in

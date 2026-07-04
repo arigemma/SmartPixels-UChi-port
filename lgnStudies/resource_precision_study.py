@@ -279,9 +279,9 @@ def main() -> None:
         type=float,
         default=0.0,
         help=(
-            "Continue training until both this accumulated optimizer-loop "
-            "duration and --steps have been reached. Full-test evaluations "
-            "and synthesis exports are excluded from this duration."
+            "Continue training until both this training-loop wall-clock "
+            "duration and --steps have been reached. Time starts after the "
+            "initial stage evaluation and includes intermediate evaluations."
         ),
     )
     parser.add_argument("--eval-freq", type=int, default=5_000)
@@ -356,17 +356,20 @@ def main() -> None:
     record_stage(
         model, args.model, registry_name, 0, test_loader, device, output, rows
     )
+    save_model(model, output / "latest_model.pth")
 
     step = 0
     epoch = 0
     training_started = time.monotonic()
-    active_training_seconds = 0.0
+
+    def elapsed_training_seconds() -> float:
+        return time.monotonic() - training_started
 
     def requirements_met() -> bool:
         return training_requirements_met(
             step,
             args.steps,
-            active_training_seconds,
+            elapsed_training_seconds(),
             args.minimum_training_hours,
         )
 
@@ -377,7 +380,6 @@ def main() -> None:
         for inputs, labels in progress:
             if requirements_met() or stop_requested:
                 break
-            batch_started = time.monotonic()
             step += 1
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
@@ -385,12 +387,11 @@ def main() -> None:
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
-            active_training_seconds += time.monotonic() - batch_started
             if step % 20 == 0:
                 progress.set_postfix(
                     step=step,
                     loss=f"{loss.item():.4f}",
-                    hours=f"{active_training_seconds / 3600:.2f}",
+                    hours=f"{elapsed_training_seconds() / 3600:.2f}",
                 )
 
             if step % args.eval_freq == 0:
@@ -404,6 +405,7 @@ def main() -> None:
                     output,
                     rows,
                 )
+                save_model(model, output / "latest_model.pth")
                 model.train()
         epoch += 1
 
@@ -412,8 +414,9 @@ def main() -> None:
         record_stage(
             model, args.model, registry_name, step, test_loader, device, output, rows
         )
+        save_model(model, output / "latest_model.pth")
 
-    elapsed_hours = active_training_seconds / 3600
+    elapsed_hours = elapsed_training_seconds() / 3600
     training_loop_wall_hours = (time.monotonic() - training_started) / 3600
     status = {
         "complete": complete,

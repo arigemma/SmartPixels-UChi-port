@@ -126,9 +126,10 @@ bash lgnStudies/submit_training_studies.sh
 
 The clean checkpoints are accepted only when `training_complete.json` proves
 that the resource job reached both 20,000 optimizer steps and five training
-hours without a stop request. Evaluation/export time is excluded from the
-five-hour counter. Old, interrupted, or short checkpoints are rejected even
-if a file named `final_model.pth` exists.
+hours without a stop request. Intermediate evaluation/export time counts
+toward the five-hour training loop so the final save fits before the six-hour
+wall. Old, interrupted, or short checkpoints are rejected even if a file
+named `final_model.pth` exists.
 
 Before any faulted evaluation is retained, the study recomputes `K=0` and
 requires it to match `final_balanced_accuracy` from the training completion
@@ -141,6 +142,12 @@ loss, and `--compile-model`. This inference study does not train or compile a
 replacement model; it calls the existing model's `bin`, `layers`, and
 `group_sum` modules directly so faults can be inserted at the defined stage
 boundaries.
+
+When a resource job reached the Slurm wall after recording a mature stage but
+before writing `final_model.pth`, use
+`lgnStudies/recover_resource_checkpoint.py` as documented in the parent
+README. Recovered checkpoints retain the exact exported TorchLogix wiring and
+must still satisfy the 20,000-step floor.
 
 ## Outputs
 

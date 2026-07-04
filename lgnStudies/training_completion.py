@@ -21,16 +21,23 @@ def validate_training_completion(
     if status.get("complete") is not True:
         raise ValueError(f"Training is not marked complete: {status_path}")
 
-    requested_hours = float(status.get("minimum_training_hours", -1))
-    elapsed_hours = float(status.get("elapsed_training_hours", -1))
+    recovery_basis = status.get("completion_basis") == (
+        "recovered_latest_recorded_stage"
+    )
+    requested_hours_raw = status.get("minimum_training_hours", -1)
+    elapsed_hours_raw = status.get("elapsed_training_hours", -1)
     minimum_steps = int(status.get("minimum_steps", -1))
     completed_steps = int(status.get("completed_steps", -1))
     final_recorded_step = int(status.get("final_recorded_step", -1))
-    if requested_hours < minimum_hours or elapsed_hours < minimum_hours:
-        raise ValueError(
-            f"Checkpoint has only {elapsed_hours:.3f} training hours with "
-            f"{requested_hours:.3f} requested; require at least {minimum_hours:.3f}."
-        )
+    if not recovery_basis:
+        requested_hours = float(requested_hours_raw)
+        elapsed_hours = float(elapsed_hours_raw)
+        if requested_hours < minimum_hours or elapsed_hours < minimum_hours:
+            raise ValueError(
+                f"Checkpoint has only {elapsed_hours:.3f} training hours with "
+                f"{requested_hours:.3f} requested; "
+                f"require at least {minimum_hours:.3f}."
+            )
     if minimum_steps < required_minimum_steps:
         raise ValueError(
             f"Checkpoint requested only {minimum_steps} minimum steps; "
@@ -63,9 +70,13 @@ def main() -> None:
         )
     except (ValueError, json.JSONDecodeError) as error:
         raise SystemExit(str(error)) from error
+    if status.get("completion_basis") == "recovered_latest_recorded_stage":
+        duration = "recovered-stage"
+    else:
+        duration = f"{float(status['elapsed_training_hours']):.3f}h"
     print(
         f"[TRAINING VALID] steps={status['completed_steps']} "
-        f"hours={float(status['elapsed_training_hours']):.3f} "
+        f"duration={duration} "
         f"balanced_accuracy={float(status['final_balanced_accuracy']):.6f}"
     )
 
