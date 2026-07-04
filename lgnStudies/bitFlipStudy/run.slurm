@@ -17,7 +17,7 @@ IFS=$'\t' read -r MODEL REGISTRY_NAME CHUNK_INDEX FLIP_COUNT_TEXT <<< "$(
 read -r -a CHUNK_COUNTS <<< "$FLIP_COUNT_TEXT"
 
 RESOURCE_ROOT="results/SLURM/2026_07_03_model2_resource_precision_5h_20k"
-OUTPUT_ROOT="results/SLURM/2026_07_03_model2_bit_flip_inference_dense_sweep"
+OUTPUT_ROOT="results/SLURM/2026_07_04_model2_bit_flip_5h_20k_dense_sweep"
 CLEAN_MODEL="${RESOURCE_ROOT}/${MODEL}/final_model.pth"
 TRAINING_STATUS="${RESOURCE_ROOT}/${MODEL}/training_complete.json"
 OUTPUT_DIR="${OUTPUT_ROOT}/${MODEL}/chunks/chunk_${CHUNK_INDEX}"
@@ -47,4 +47,5 @@ python lgnStudies/bitFlipStudy/study.py \
   --model-alias "$MODEL" \
   --registry-name "$REGISTRY_NAME" \
   --clean-model "$CLEAN_MODEL" \
+  --training-status "$TRAINING_STATUS" \
   -o "$OUTPUT_DIR"

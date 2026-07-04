@@ -130,6 +130,12 @@ hours without a stop request. Evaluation/export time is excluded from the
 five-hour counter. Old, interrupted, or short checkpoints are rejected even
 if a file named `final_model.pth` exists.
 
+Before any faulted evaluation is retained, the study recomputes `K=0` and
+requires it to match `final_balanced_accuracy` from the training completion
+metadata. A mismatch aborts the chunk, preventing plots from silently mixing
+an old checkpoint with a new training campaign. The checkpoint SHA-256 is
+stored in the bit-flip metadata for provenance.
+
 The resource jobs use the model-2 learning rate, batch size, class-weighted
 loss, and `--compile-model`. This inference study does not train or compile a
 replacement model; it calls the existing model's `bin`, `layers`, and
@@ -141,7 +147,7 @@ boundaries.
 The result root is:
 
 ```text
-results/SLURM/2026_07_03_model2_bit_flip_inference_dense_sweep/
+results/SLURM/2026_07_04_model2_bit_flip_5h_20k_dense_sweep/
 ```
 
 Each model directory contains:

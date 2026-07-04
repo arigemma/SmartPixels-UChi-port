@@ -8,4 +8,4 @@
 #SBATCH --export=ALL,PYTHONUNBUFFERED=1
 
 python lgnStudies/bitFlipStudy/combine_results.py \
-  --root results/SLURM/2026_07_03_model2_bit_flip_inference_dense_sweep
+  --root results/SLURM/2026_07_04_model2_bit_flip_5h_20k_dense_sweep

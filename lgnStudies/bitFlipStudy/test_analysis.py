@@ -21,6 +21,7 @@ from lgnStudies.bitFlipStudy.study import (
     DEFAULT_FLIP_COUNTS,
     evaluate_complete_test_split,
     make_result_row,
+    validate_clean_checkpoint_metrics,
     validate_transition_accounting,
     write_rows,
 )
@@ -58,6 +59,27 @@ def fake_metrics() -> dict:
 
 
 class BitFlipAnalysisTest(unittest.TestCase):
+    def test_clean_checkpoint_must_match_training_final_accuracy(self):
+        status = {
+            "complete": True,
+            "model_alias": MODELS[0][0],
+            "registry_name": MODELS[0][1],
+            "final_balanced_accuracy": 0.8,
+        }
+        validate_clean_checkpoint_metrics(
+            status,
+            MODELS[0][0],
+            MODELS[0][1],
+            {"balanced_accuracy": 0.8},
+        )
+        with self.assertRaises(RuntimeError):
+            validate_clean_checkpoint_metrics(
+                status,
+                MODELS[0][0],
+                MODELS[0][1],
+                {"balanced_accuracy": 0.617},
+            )
+
     def test_repair_damage_identity_explains_balanced_accuracy_delta(self):
         truth = torch.tensor([0, 0, 1, 1, 2, 2])
         labels = torch.nn.functional.one_hot(truth, num_classes=3).float()

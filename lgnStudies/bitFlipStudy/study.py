@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import random
 import signal
@@ -103,6 +104,36 @@ def set_fault_seed(seed: int) -> None:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def validate_clean_checkpoint_metrics(
+    training_status: dict,
+    model_alias: str,
+    registry_name: str,
+    clean_metrics: dict,
+) -> None:
+    if training_status.get("complete") is not True:
+        raise RuntimeError("Training status is not marked complete.")
+    if training_status.get("model_alias") != model_alias:
+        raise RuntimeError("Training status model alias does not match this study.")
+    if training_status.get("registry_name") != registry_name:
+        raise RuntimeError("Training status registry name does not match this study.")
+    expected = float(training_status["final_balanced_accuracy"])
+    observed = float(clean_metrics["balanced_accuracy"])
+    if not np.isclose(observed, expected, rtol=0.0, atol=1e-9):
+        raise RuntimeError(
+            "K=0 balanced accuracy does not match the final training evaluation: "
+            f"training={expected:.12f}, bit_flip={observed:.12f}. "
+            "Refusing to analyze a stale or different checkpoint."
+        )
 
 
 def evaluate_complete_test_split(
@@ -268,6 +299,7 @@ def main() -> None:
     parser.add_argument("--model-alias", required=True)
     parser.add_argument("--registry-name", required=True)
     parser.add_argument("--clean-model", type=Path, required=True)
+    parser.add_argument("--training-status", type=Path, required=True)
     parser.add_argument("-c", "--data-config", default="config/10783560/v3.yml")
     parser.add_argument("-o", "--output", action=CreateFolder, type=Path, required=True)
     parser.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
@@ -302,6 +334,10 @@ def main() -> None:
         flip_counts.insert(0, 0)
     if not args.clean_model.is_file():
         parser.error(f"Clean checkpoint does not exist: {args.clean_model}")
+    if not args.training_status.is_file():
+        parser.error(
+            f"Training completion metadata does not exist: {args.training_status}"
+        )
 
     set_fault_seed(args.seed)
     device = get_device(args.device)
@@ -352,6 +388,13 @@ def main() -> None:
     )
     if clean_predictions is None:
         raise RuntimeError("Clean reference predictions were not collected.")
+    training_status = json.loads(args.training_status.read_text())
+    validate_clean_checkpoint_metrics(
+        training_status,
+        args.model_alias,
+        args.registry_name,
+        clean_metrics,
+    )
     np.save(output / "clean_predictions.npy", clean_predictions)
     rows.append(
         make_result_row(
@@ -425,6 +468,11 @@ def main() -> None:
         "model_alias": args.model_alias,
         "registry_name": args.registry_name,
         "clean_checkpoint": str(args.clean_model),
+        "clean_checkpoint_sha256": sha256(args.clean_model),
+        "training_status": str(args.training_status),
+        "training_final_balanced_accuracy": float(
+            training_status["final_balanced_accuracy"]
+        ),
         "flip_counts_per_event": flip_counts,
         "total_fault_sites_per_event": fault_model.total_fault_sites,
         "stage_widths": fault_model.stage_widths,
