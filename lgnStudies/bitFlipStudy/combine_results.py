@@ -169,6 +169,10 @@ def load_and_combine_model_chunks(
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
+    parser.add_argument(
+        "--title-context",
+        help="Optional provenance line appended to plot titles.",
+    )
     args = parser.parse_args()
 
     rows_by_model = {}
@@ -192,12 +196,14 @@ def main() -> None:
             model_alias,
             model_root / "bit_flips_per_event",
             x_mode="count",
+            title_context=args.title_context,
         )
         plot_single_model(
             rows,
             model_alias,
             model_root / "bit_flip_percentage",
             x_mode="percentage",
+            title_context=args.title_context,
         )
         rows_by_model[model_alias] = rows
 
@@ -205,11 +211,13 @@ def main() -> None:
         rows_by_model,
         args.root / "bit_flips_per_event_all_models",
         x_mode="count",
+        title_context=args.title_context,
     )
     plot_combined_models(
         rows_by_model,
         args.root / "bit_flip_percentage_all_models",
         x_mode="percentage",
+        title_context=args.title_context,
     )
     print(f"[DONE] Validated and combined all chunks under {args.root}")
 

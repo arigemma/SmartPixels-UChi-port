@@ -9,6 +9,13 @@ three selected tau-40, model-2 y-profile LGNs:
 
 There is no fault-aware fine-tuning and no random-class baseline.
 
+The separate
+[`../bitFlipTrainingStudy`](../bitFlipTrainingStudy/README.md) injects
+activation faults during training, then evaluates the resulting checkpoints
+with this same inference-time sweep and plot layout. Do not interpret a small
+accuracy increase in this inference-only study as data augmentation: the
+frozen model does not learn from these faults.
+
 ## Fault definition
 
 For every test event, exactly `K` distinct fault sites are sampled uniformly

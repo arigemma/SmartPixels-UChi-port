@@ -79,3 +79,9 @@ cluster-side diagnostic.
 
 The exact-count, inference-only bit-flip robustness study is documented in
 [`bitFlipStudy/README.md`](bitFlipStudy/README.md).
+
+The separate fault-aware training study injects random activation faults
+during optimization, trains every model for at least five hours and 20,000
+steps, and then runs the same exact-count inference robustness evaluation.
+Launch and interpretation details are in
+[`bitFlipTrainingStudy/README.md`](bitFlipTrainingStudy/README.md).

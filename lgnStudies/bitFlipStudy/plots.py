@@ -162,6 +162,7 @@ def plot_single_model(
     model_alias: str,
     output_stem: Path,
     x_mode: str = "count",
+    title_context: str | None = None,
 ) -> None:
     values = _aggregate(rows)
     x = values[x_mode]
@@ -182,10 +183,13 @@ def plot_single_model(
         MODEL_COLORS[0],
     )
     accuracy_axis.set_ylabel("Balanced accuracy [%]")
-    accuracy_axis.set_title(
-        f"{model_alias}: inference robustness to transient bit flips\n"
-        "Mean and 95% CI over random fault realizations"
-    )
+    title_lines = [
+        f"{model_alias}: inference robustness to transient bit flips",
+        "Mean and 95% CI over random fault realizations",
+    ]
+    if title_context:
+        title_lines.append(title_context)
+    accuracy_axis.set_title("\n".join(title_lines))
     accuracy_axis.grid(True, which="both", alpha=0.25)
 
     class_labels = (
@@ -246,6 +250,7 @@ def plot_combined_models(
     rows_by_model: dict[str, list[dict]],
     output_stem: Path,
     x_mode: str = "count",
+    title_context: str | None = None,
 ) -> None:
     models = list(rows_by_model)
     if not models:
@@ -276,10 +281,13 @@ def plot_combined_models(
         if index == 0:
             axis.set_ylabel("Balanced accuracy [%]")
 
-    fig.suptitle(
-        "Model-2 LGN robustness to exact-count transient bit flips\n"
-        "(mean and 95% CI over random fault realizations)"
-    )
+    title_lines = [
+        "Model-2 LGN robustness to exact-count transient bit flips",
+        "(mean and 95% CI over random fault realizations)",
+    ]
+    if title_context:
+        title_lines.append(title_context)
+    fig.suptitle("\n".join(title_lines))
     for suffix in (".png", ".pdf"):
         fig.savefig(output_stem.with_suffix(suffix), dpi=300)
     plt.close(fig)

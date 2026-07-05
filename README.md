@@ -21,6 +21,12 @@ python train.py -c config/v3.yml -a conv2d --task regression
 python evaluate.py --input /path/to/model.pt -c config/v3.yml
 ```
 
+### Model-2 LGN studies
+
+The model-2 resource/accuracy, inference-time bit-flip robustness, and
+fault-aware bit-flip training campaigns are documented in
+[`lgnStudies/README.md`](lgnStudies/README.md).
+
 ## The data
 There are two datasets on zenodo: https://zenodo.org/records/10783560 (3 versions) and https://zenodo.org/records/17180303 (1 version).
 The latest versions of both contain charge deposits shape `(t, y, x) = (20, 13, 21)` (or permutations thereof). Meaning short videos with 20 frames of 13x21 (x,y) each. There are 13 labels (w/ example values):
