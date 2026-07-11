@@ -16,7 +16,11 @@ from lgnStudies.bitFlipStudy.campaign import (
     task_configuration,
 )
 from lgnStudies.bitFlipStudy.combine_results import load_and_combine_model_chunks
-from lgnStudies.bitFlipStudy.plots import _aggregate
+from lgnStudies.bitFlipStudy.plots import (
+    _aggregate,
+    _percentage_axis_ticks,
+    plot_fault_aware_training_comparison,
+)
 from lgnStudies.bitFlipStudy.study import (
     DEFAULT_FLIP_COUNTS,
     evaluate_complete_test_split,
@@ -210,6 +214,74 @@ class BitFlipAnalysisTest(unittest.TestCase):
         self.assertIn("balanced_repair_gain_mean", values)
         self.assertIn("balanced_damage_loss_mean", values)
         self.assertIn("recall_class_2_mean", values)
+
+    def test_percentage_axis_ticks_are_sparse_for_dense_sweep(self):
+        percentages = np.asarray(
+            [
+                0.0,
+                0.0013,
+                0.0026,
+                0.0052,
+                0.01,
+                0.021,
+                0.031,
+                0.042,
+                0.062,
+                0.083,
+                0.12,
+                0.17,
+                0.25,
+                0.33,
+                0.5,
+                0.66,
+                0.99,
+                1.3,
+                2.0,
+                2.6,
+                4.0,
+                5.3,
+            ]
+        )
+        ticks = _percentage_axis_ticks(percentages)
+        self.assertLess(len(ticks), len(percentages))
+        self.assertTrue(np.isclose(ticks[0], 0.0))
+        self.assertTrue(np.isclose(ticks[-1], percentages[-1]))
+
+    def test_fault_aware_comparison_writes_one_graph_per_model(self):
+        model_alias, registry_name = MODELS[0]
+        inference_rows = [
+            make_result_row(
+                model_alias,
+                registry_name,
+                count,
+                77_300,
+                repeat,
+                42 + repeat,
+                fake_metrics(),
+            )
+            for count in (0, 1)
+            for repeat in range(2)
+        ]
+        fault_aware_rows = [
+            {
+                **row,
+                "balanced_accuracy": float(row["balanced_accuracy"]) + 0.01,
+            }
+            for row in inference_rows
+        ]
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            plot_fault_aware_training_comparison(
+                {model_alias: inference_rows},
+                {model_alias: fault_aware_rows},
+                output,
+            )
+            self.assertTrue(
+                (output / f"bit_flip_accuracy_comparison_{model_alias}.png").is_file()
+            )
+            self.assertTrue(
+                (output / f"bit_flip_accuracy_comparison_{model_alias}.pdf").is_file()
+            )
 
 
 if __name__ == "__main__":

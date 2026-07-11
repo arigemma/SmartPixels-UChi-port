@@ -125,7 +125,23 @@ The final inference-robustness artifacts are written at `MODEL/`:
 - `clean_predictions.npy`.
 
 The campaign root also receives the combined three-model plots. Intermediate
-evaluation chunks remain under `MODEL/chunks/` for auditing.
+evaluation chunks remain under `MODEL/chunks/` for auditing. If the
+inference-only campaign root exists at
+`results/SLURM/2026_07_04_model2_bit_flip_5h_20k_dense_sweep/`, the combine
+job also writes one comparison graph per model:
+
+- `bit_flip_accuracy_comparison_s06_p760M_tau40.png` and `.pdf`;
+- `bit_flip_accuracy_comparison_s08_p1202M_tau40.png` and `.pdf`;
+- `bit_flip_accuracy_comparison_s09_p1460M_tau40.png` and `.pdf`.
+
+To redraw only those comparison plots from saved CSVs, without training or
+evaluation, run:
+
+```bash
+python -m lgnStudies.bitFlipStudy.compare_training \
+  --inference-root results/SLURM/2026_07_04_model2_bit_flip_5h_20k_dense_sweep \
+  --fault-aware-root results/SLURM/2026_07_05_model2_fault_aware_training_1pct_5h_20k
+```
 
 ## Interpretation
 

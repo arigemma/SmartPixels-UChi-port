@@ -177,3 +177,17 @@ Intermediate chunk files remain below `chunks/` for auditing. The dependent
 CPU job creates the corresponding combined three-model plots in the common
 result root. FPGA synthesis is not needed for this transient inference-fault
 study.
+
+To compare this inference-only campaign against the 1% fault-aware training
+campaign using only the saved merged CSV files, run:
+
+```bash
+python -m lgnStudies.bitFlipStudy.compare_training \
+  --inference-root results/SLURM/2026_07_04_model2_bit_flip_5h_20k_dense_sweep \
+  --fault-aware-root results/SLURM/2026_07_05_model2_fault_aware_training_1pct_5h_20k
+```
+
+This writes three model-specific balanced-accuracy plots into the
+fault-aware root. Each graph overlays the inference-only curve as a solid
+line and the fault-aware training curve as a dashed line on the equivalent
+fault-percentage x-axis.

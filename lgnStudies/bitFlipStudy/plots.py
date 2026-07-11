@@ -109,21 +109,53 @@ def _percentage_formatter(value: float, _position: int) -> str:
     return f"{value:.2g}"
 
 
+def _append_unique_tick(ticks: list[float], value: float) -> None:
+    if not any(np.isclose(value, tick, rtol=1e-9, atol=1e-12) for tick in ticks):
+        ticks.append(float(value))
+
+
+def _percentage_axis_ticks(x: np.ndarray) -> np.ndarray:
+    """Choose percentage ticks sparse enough for readable labels."""
+    x = np.asarray(x, dtype=float)
+    positive = np.unique(x[x > 0])
+    if len(positive) == 0:
+        return np.asarray([0.0], dtype=float)
+    if len(x) <= 10:
+        return np.asarray(sorted(np.unique(x)), dtype=float)
+
+    minimum = float(positive.min())
+    maximum = float(positive.max())
+    ticks: list[float] = [0.0]
+    exponent_min = int(np.floor(np.log10(minimum)))
+    exponent_max = int(np.ceil(np.log10(maximum)))
+    for exponent in range(exponent_min, exponent_max + 1):
+        for mantissa in (1.0, 3.0):
+            candidate = mantissa * 10**exponent
+            if minimum <= candidate <= maximum:
+                _append_unique_tick(ticks, candidate)
+    _append_unique_tick(ticks, maximum)
+    return np.asarray(sorted(ticks), dtype=float)
+
+
 def _configure_x_axis(axis, x: np.ndarray, x_mode: str) -> None:
     positive = x[x > 0]
     if x_mode == "count":
         axis.set_xscale("symlog", base=2, linthresh=0.5, linscale=0.75)
         axis.xaxis.set_major_formatter(FuncFormatter(_count_formatter))
         axis.set_xlabel("Random transient bit flips per event, K")
+        axis.set_xticks(x)
+        axis.tick_params(axis="x", labelsize=8)
     elif x_mode == "percentage":
         threshold = positive.min() / 2 if len(positive) else 1e-6
         axis.set_xscale("symlog", base=10, linthresh=threshold, linscale=0.75)
         axis.xaxis.set_major_formatter(FuncFormatter(_percentage_formatter))
         axis.set_xlabel("Flipped activation sites per event [%]")
+        axis.set_xticks(_percentage_axis_ticks(x))
+        axis.tick_params(axis="x", labelsize=7, labelrotation=30)
+        for label in axis.get_xticklabels():
+            label.set_horizontalalignment("right")
     else:
         raise ValueError(f"Unknown x-axis mode: {x_mode}")
-    axis.set_xticks(x)
-    axis.tick_params(axis="x", labelsize=8)
     axis.grid(True, which="both", alpha=0.25)
 
 
@@ -134,6 +166,9 @@ def _plot_metric(
     ci95: np.ndarray,
     color: str,
     label: str | None = None,
+    linestyle: str = "-",
+    marker: str = "o",
+    ci_alpha: float = 0.2,
 ) -> None:
     mean_percent = 100 * mean
     ci_percent = 100 * ci95
@@ -141,9 +176,10 @@ def _plot_metric(
         x,
         mean_percent,
         color=color,
-        marker="o",
+        marker=marker,
         markersize=5,
         linewidth=1.8,
+        linestyle=linestyle,
         label=label,
     )
     if np.any(ci_percent > 0):
@@ -152,7 +188,7 @@ def _plot_metric(
             mean_percent - ci_percent,
             mean_percent + ci_percent,
             color=color,
-            alpha=0.2,
+            alpha=ci_alpha,
             linewidth=0,
         )
 
@@ -291,3 +327,82 @@ def plot_combined_models(
     for suffix in (".png", ".pdf"):
         fig.savefig(output_stem.with_suffix(suffix), dpi=300)
     plt.close(fig)
+
+
+def plot_fault_aware_training_comparison(
+    inference_rows_by_model: dict[str, list[dict]],
+    fault_aware_rows_by_model: dict[str, list[dict]],
+    output_dir: Path,
+    x_mode: str = "percentage",
+    title_context: str | None = None,
+) -> None:
+    """Write one balanced-accuracy comparison graph for each shared model."""
+    models = [
+        model
+        for model in inference_rows_by_model
+        if model in fault_aware_rows_by_model
+    ]
+    if not models:
+        raise ValueError("No shared models supplied for comparison.")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for index, model_alias in enumerate(models):
+        inference_values = _aggregate(inference_rows_by_model[model_alias])
+        fault_aware_values = _aggregate(fault_aware_rows_by_model[model_alias])
+        x = np.asarray(
+            sorted(
+                np.unique(
+                    np.concatenate(
+                        (
+                            inference_values[x_mode],
+                            fault_aware_values[x_mode],
+                        )
+                    )
+                )
+            ),
+            dtype=float,
+        )
+        color = MODEL_COLORS[index % len(MODEL_COLORS)]
+
+        fig, axis = plt.subplots(
+            1,
+            1,
+            figsize=(7.2, 4.8),
+            constrained_layout=True,
+        )
+        _plot_metric(
+            axis,
+            inference_values[x_mode],
+            inference_values["balanced_accuracy_mean"],
+            inference_values["balanced_accuracy_ci95"],
+            color,
+            label="Inference-time bit flips",
+            linestyle="-",
+            marker="o",
+        )
+        _plot_metric(
+            axis,
+            fault_aware_values[x_mode],
+            fault_aware_values["balanced_accuracy_mean"],
+            fault_aware_values["balanced_accuracy_ci95"],
+            color,
+            label="Fault-aware training",
+            linestyle="--",
+            marker="s",
+            ci_alpha=0.12,
+        )
+        axis.set_ylabel("Balanced accuracy [%]")
+        title_lines = [
+            f"{model_alias}: bit-flip robustness comparison",
+            "Mean and 95% CI over random fault realizations",
+        ]
+        if title_context:
+            title_lines.append(title_context)
+        axis.set_title("\n".join(title_lines))
+        axis.legend(loc="best", fontsize=8)
+        _configure_x_axis(axis, x, x_mode)
+
+        output_stem = output_dir / f"bit_flip_accuracy_comparison_{model_alias}"
+        for suffix in (".png", ".pdf"):
+            fig.savefig(output_stem.with_suffix(suffix), dpi=300)
+        plt.close(fig)
