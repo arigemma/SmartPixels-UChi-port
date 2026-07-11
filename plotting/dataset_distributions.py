@@ -114,9 +114,9 @@ def make_figure(
     # (We rely on matplotlib's default color cycle; linestyle encodes dataset type.)
     style = {
         "barrel_phys": dict(label="Physical p$_T$, barrel region", linestyle="-", color = "green"),
-        "barrel_flat": dict(label="Flat p$_T$, barrel region", linestyle="--", color = "orange"),
-        "endcap_flat": dict(label="Flat p$_T$, endcap region", linestyle="-", color = "red"),
-        "endcap_phys": dict(label="Physical p$_T$, endcap region", linestyle="-.", color = "blue"),
+        "barrel_flat": dict(label="Flat p$_T$, barrel region", linestyle="-", color = "orange"),
+        "endcap_flat": dict(label="Flat p$_T$, endcap region", linestyle="--", color = "red"),
+        "endcap_phys": dict(label="Physical p$_T$, endcap region", linestyle="--", color = "blue"),
 
     }
     legend_kw = dict(

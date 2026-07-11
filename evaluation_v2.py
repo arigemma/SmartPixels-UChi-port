@@ -259,16 +259,14 @@ def main():
         true_pts, logits = [], []
         with torch.no_grad():
             for i, (x, y) in enumerate(tqdm(test_loader)):
-            # for x, y in tqdm(test_loader):
                 x = x.to(device)
-                logits.append(model(x))  # logits
+                out = model(x)
+                logits.append(out)
                 true_pts.append(y[:, pt_idx])
-                # preds.append(pred.argmax(dim=1))  # Get the class with highest probability
                 if i >= 1000:  # Limit to first 100 batches for quick evaluation
                     break
 
         true_pts = np.concatenate(true_pts, axis=0)
-        # logits = np.concatenate(logits, axis=0)
         logits = torch.cat(logits, dim=0)
 
         if args.forward == "discrete":

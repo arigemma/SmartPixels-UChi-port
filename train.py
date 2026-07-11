@@ -202,14 +202,14 @@ def main(args):
         args.data_config,
         batch_size=args.batch_size,
         shuffle=False,
-        val_size=0.01,
+        val_size=args.val_size,
         balance_classes=args.balance_classes,
         input_type=input_type,
         target_type=task_type,
         drop_dominant_features=False,
-        )
+    )
 
-    if args.plot_data:
+    if args.plot_data and task_type != "classification":
         plot_data_distributions(train_loader)
 
     model_cls = model_cfg["class"]
@@ -299,7 +299,7 @@ def main(args):
                 writer.add_scalar("Loss/train_batch", loss.item(), step)
 
 
-            if step % args.eval_freq == 0:
+            if args.eval_freq > 0 and step % args.eval_freq == 0:
                 metrics = evaluate_model(
                     model, val_loader, eval_functions, mode="eval", device=args.device
                 )
@@ -346,8 +346,9 @@ if __name__ == "__main__":
 
     # Training parameters
     parser.add_argument("--seed", "-s", type=int, default=42, help="Random seed")
-    parser.add_argument("--batch-size", "-bs", type=int, default=128, help="Batch size")
+    parser.add_argument("--batch-size", "-bs", type=int, default=1024, help="Batch size")
     parser.add_argument("--learning-rate", "-lr", type=float, default=0.001, help="Learning rate")
+    parser.add_argument("--val-size", type=float, default=0.01)
     parser.add_argument(
         "--num-iterations", "-ni", type=int, default=100_000, help="Number of training iterations"
     )
