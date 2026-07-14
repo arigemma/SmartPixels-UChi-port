@@ -20,6 +20,7 @@ from lgnStudies.bitFlipStudy.plots import (
     _aggregate,
     _percentage_axis_ticks,
     plot_fault_aware_training_comparison,
+    plot_training_percentage_sweep,
 )
 from lgnStudies.bitFlipStudy.study import (
     DEFAULT_FLIP_COUNTS,
@@ -282,6 +283,47 @@ class BitFlipAnalysisTest(unittest.TestCase):
             self.assertTrue(
                 (output / f"bit_flip_accuracy_comparison_{model_alias}.pdf").is_file()
             )
+
+    def test_training_percentage_sweep_writes_2d_and_3d_graphs(self):
+        model_alias, registry_name = MODELS[1]
+        counts = (0, 64, 512, 4096)
+        inference_rows = [
+            make_result_row(
+                model_alias,
+                registry_name,
+                count,
+                97_100,
+                repeat,
+                42 + repeat,
+                fake_metrics(),
+            )
+            for count in counts
+            for repeat in range(2)
+        ]
+        fault_aware_rows = {}
+        for percentage, boost in ((0.1, 0.005), (1.0, 0.012)):
+            fault_aware_rows[percentage] = [
+                {
+                    **row,
+                    "balanced_accuracy": float(row["balanced_accuracy"]) + boost,
+                }
+                for row in inference_rows
+            ]
+
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary) / "s08_sweep"
+            plot_training_percentage_sweep(
+                inference_rows,
+                fault_aware_rows,
+                output,
+                model_alias,
+                fit_exponential_decay=True,
+            )
+            for suffix in (".png", ".pdf"):
+                self.assertTrue(output.with_suffix(suffix).is_file())
+                self.assertTrue(
+                    output.with_name(output.name + "_3d").with_suffix(suffix).is_file()
+                )
 
 
 if __name__ == "__main__":

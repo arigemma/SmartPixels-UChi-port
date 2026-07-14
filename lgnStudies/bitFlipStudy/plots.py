@@ -406,3 +406,237 @@ def plot_fault_aware_training_comparison(
         for suffix in (".png", ".pdf"):
             fig.savefig(output_stem.with_suffix(suffix), dpi=300)
         plt.close(fig)
+
+
+def _fit_exponential_decay(
+    x: np.ndarray,
+    y_percent: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """Fit y = floor + amplitude * exp(-rate * x) without SciPy."""
+    x = np.asarray(x, dtype=float)
+    y_percent = np.asarray(y_percent, dtype=float)
+    order = np.argsort(x)
+    x = x[order]
+    y_percent = y_percent[order]
+    if len(x) < 4 or np.allclose(y_percent, y_percent[0]):
+        return None
+
+    y_min = float(y_percent.min())
+    y_max = float(y_percent.max())
+    floor_candidates = np.linspace(
+        max(0.0, y_min - 15.0),
+        min(y_min - 1e-3, y_max - 1e-3),
+        80,
+    )
+    best_error = np.inf
+    best_parameters: tuple[float, float, float] | None = None
+    for floor in floor_candidates:
+        shifted = y_percent - floor
+        valid = shifted > 1e-6
+        if valid.sum() < 3:
+            continue
+        slope, intercept = np.polyfit(x[valid], np.log(shifted[valid]), deg=1)
+        rate = -float(slope)
+        amplitude = float(np.exp(intercept))
+        fitted = floor + amplitude * np.exp(-rate * x)
+        error = float(np.mean((fitted - y_percent) ** 2))
+        if error < best_error:
+            best_error = error
+            best_parameters = (floor, amplitude, rate)
+
+    if best_parameters is None:
+        return None
+    floor, amplitude, rate = best_parameters
+    x_fit = np.linspace(float(x.min()), float(x.max()), 240)
+    y_fit = floor + amplitude * np.exp(-rate * x_fit)
+    return x_fit, y_fit
+
+
+def _percentage_axis_positions(
+    x: np.ndarray,
+) -> tuple[np.ndarray, callable, float]:
+    x = np.asarray(x, dtype=float)
+    positive = x[x > 0]
+    offset = positive.min() / 2 if len(positive) else 1e-6
+
+    def transform(values):
+        return np.log10(np.asarray(values, dtype=float) + offset)
+
+    return transform(x), transform, offset
+
+
+def _configure_3d_percentage_axis(axis, x_values: np.ndarray) -> None:
+    _, transform, _ = _percentage_axis_positions(x_values)
+    ticks = _percentage_axis_ticks(x_values)
+    axis.set_xticks(transform(ticks))
+    axis.set_xticklabels([_percentage_formatter(value, 0) for value in ticks])
+    axis.set_xlabel("Inference-time bit flips [%]", labelpad=10)
+
+
+def _plot_training_sweep_line(
+    axis,
+    values: dict[str, np.ndarray],
+    color: str,
+    label: str,
+    linestyle: str,
+    marker: str,
+    fit_exponential_decay: bool,
+) -> None:
+    x = values["percentage"]
+    y = 100 * values["balanced_accuracy_mean"]
+    ci = 100 * values["balanced_accuracy_ci95"]
+    axis.plot(
+        x,
+        y,
+        color=color,
+        linestyle=linestyle,
+        linewidth=2.0,
+        marker=marker,
+        markersize=4.5,
+        label=label,
+    )
+    if np.any(ci > 0):
+        axis.fill_between(x, y - ci, y + ci, color=color, alpha=0.08, linewidth=0)
+    if fit_exponential_decay:
+        fit = _fit_exponential_decay(x, y)
+        if fit is not None:
+            axis.plot(
+                fit[0],
+                fit[1],
+                color=color,
+                linestyle=":",
+                linewidth=1.5,
+                alpha=0.9,
+            )
+
+
+def plot_training_percentage_sweep(
+    inference_rows: list[dict],
+    fault_aware_rows_by_percentage: dict[float, list[dict]],
+    output_stem: Path,
+    model_alias: str,
+    fit_exponential_decay: bool = False,
+) -> None:
+    """Plot accuracy curves across training and inference fault percentages."""
+    inference_values = _aggregate(inference_rows)
+    training_items = sorted(fault_aware_rows_by_percentage.items())
+    if not training_items:
+        raise ValueError("No fault-aware training curves supplied.")
+    training_values = {
+        percentage: _aggregate(rows) for percentage, rows in training_items
+    }
+    all_x = np.unique(
+        np.concatenate(
+            [
+                inference_values["percentage"],
+                *[values["percentage"] for values in training_values.values()],
+            ]
+        )
+    )
+
+    colors = plt.cm.viridis(np.linspace(0.18, 0.85, len(training_items)))
+    fig, axis = plt.subplots(figsize=(8.6, 5.3), constrained_layout=True)
+    _plot_training_sweep_line(
+        axis,
+        inference_values,
+        color="#333333",
+        label="Inference-only training",
+        linestyle="-",
+        marker="o",
+        fit_exponential_decay=fit_exponential_decay,
+    )
+    for color, (percentage, values) in zip(colors, training_values.items()):
+        _plot_training_sweep_line(
+            axis,
+            values,
+            color=color,
+            label=f"Fault-aware training {percentage:g}%",
+            linestyle="--",
+            marker="s",
+            fit_exponential_decay=fit_exponential_decay,
+        )
+
+    axis.set_ylabel("Balanced accuracy [%]")
+    title = f"{model_alias}: robustness vs training fault percentage"
+    if fit_exponential_decay:
+        title += " with exponential-decay fits"
+    axis.set_title(title)
+    axis.legend(loc="best", fontsize=8, ncol=2)
+    _configure_x_axis(axis, all_x, "percentage")
+    for suffix in (".png", ".pdf"):
+        fig.savefig(output_stem.with_suffix(suffix), dpi=300)
+    plt.close(fig)
+
+    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+    fig = plt.figure(figsize=(9.4, 6.6))
+    axis3d = fig.add_subplot(111, projection="3d")
+    _, transform, _ = _percentage_axis_positions(all_x)
+
+    def plot_3d_line(
+        values: dict[str, np.ndarray],
+        training_percentage: float,
+        color,
+        label: str,
+        linestyle: str,
+        marker: str,
+    ) -> None:
+        x_raw = values["percentage"]
+        x = transform(x_raw)
+        y = np.full_like(x, training_percentage, dtype=float)
+        z = 100 * values["balanced_accuracy_mean"]
+        axis3d.plot(
+            x,
+            y,
+            z,
+            color=color,
+            linestyle=linestyle,
+            linewidth=2.0,
+            marker=marker,
+            markersize=4.0,
+            label=label,
+        )
+        if fit_exponential_decay:
+            fit = _fit_exponential_decay(x_raw, z)
+            if fit is not None:
+                axis3d.plot(
+                    transform(fit[0]),
+                    np.full_like(fit[0], training_percentage, dtype=float),
+                    fit[1],
+                    color=color,
+                    linestyle=":",
+                    linewidth=1.4,
+                    alpha=0.9,
+                )
+
+    plot_3d_line(
+        inference_values,
+        0.0,
+        "#333333",
+        "Inference-only training",
+        "-",
+        "o",
+    )
+    for color, (percentage, values) in zip(colors, training_values.items()):
+        plot_3d_line(
+            values,
+            percentage,
+            color,
+            f"Fault-aware {percentage:g}%",
+            "--",
+            "s",
+        )
+
+    _configure_3d_percentage_axis(axis3d, all_x)
+    axis3d.set_ylabel("Training flip probability [% per site]", labelpad=10)
+    axis3d.set_zlabel("Balanced accuracy [%]", labelpad=10)
+    axis3d.set_title(f"{model_alias}: 3D view of training and inference faults")
+    axis3d.view_init(elev=24, azim=-58)
+    axis3d.legend(loc="upper left", bbox_to_anchor=(0.02, 0.98), fontsize=8)
+    fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.9)
+    for suffix in (".png", ".pdf"):
+        fig.savefig(
+            output_stem.with_name(output_stem.name + "_3d").with_suffix(suffix),
+            dpi=300,
+        )
+    plt.close(fig)

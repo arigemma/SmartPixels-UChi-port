@@ -69,6 +69,8 @@ def _validate_chunk_rows(
 def load_and_combine_model_chunks(
     model_root: Path,
     model_alias: str,
+    flip_count_chunks: tuple[tuple[int, ...], ...] = FLIP_COUNT_CHUNKS,
+    expected_flip_counts: tuple[int, ...] = EXPECTED_FLIP_COUNTS,
 ) -> tuple[list[dict], dict, Path]:
     clean_rows: list[dict] = []
     clean_predictions: np.ndarray | None = None
@@ -78,7 +80,7 @@ def load_and_combine_model_chunks(
     registry_names: set[str] = set()
     total_fault_sites: set[int] = set()
 
-    for chunk_index, expected_counts in enumerate(FLIP_COUNT_CHUNKS):
+    for chunk_index, expected_counts in enumerate(flip_count_chunks):
         chunk_root = model_root / "chunks" / f"chunk_{chunk_index:02d}"
         csv_path = chunk_root / "bit_flip_results.csv"
         metadata_path = chunk_root / "bit_flip_metadata.json"
@@ -142,7 +144,7 @@ def load_and_combine_model_chunks(
     observed_counts = tuple(
         sorted({int(row["flip_count_per_event"]) for row in combined_rows})
     )
-    if observed_counts != EXPECTED_FLIP_COUNTS:
+    if observed_counts != expected_flip_counts:
         raise ValueError(
             f"Incomplete combined sweep for {model_alias}: {observed_counts}"
         )
@@ -152,11 +154,11 @@ def load_and_combine_model_chunks(
         combined_confusions.update(metadata.get("confusion_matrices", {}))
     combined_metadata = {
         **metadata_by_chunk[0],
-        "flip_counts_per_event": list(EXPECTED_FLIP_COUNTS),
+        "flip_counts_per_event": list(expected_flip_counts),
         "repeats_per_nonzero_count": REPEATS,
-        "chunk_count": len(FLIP_COUNT_CHUNKS),
+        "chunk_count": len(flip_count_chunks),
         "source_chunks": [
-            f"chunks/chunk_{index:02d}" for index in range(len(FLIP_COUNT_CHUNKS))
+            f"chunks/chunk_{index:02d}" for index in range(len(flip_count_chunks))
         ],
         "complete": True,
         "confusion_matrices": combined_confusions,

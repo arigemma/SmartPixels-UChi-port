@@ -143,6 +143,32 @@ python -m lgnStudies.bitFlipStudy.compare_training \
   --fault-aware-root results/SLURM/2026_07_05_model2_fault_aware_training_1pct_5h_20k
 ```
 
+## S08 Training-Percentage Sweep
+
+To vary the training-time fault percentage without launching all three
+models, use the s08-only sweep:
+
+```bash
+bash lgnStudies/bitFlipTrainingStudy/submit_s08_percentage_sweep.sh \
+  results/SLURM/$(date +%Y_%m_%d)_s08_fault_aware_training_pct_sweep_5h_20k \
+  0.1 0.3 1.0 3.0 5.0
+```
+
+This submits one training job per percentage for `s08_p1202M_tau40`, plus an
+s08 inference-only baseline evaluated on the same percentage grid. The
+inference-time x-axis is always stored as equivalent flipped activation sites
+per event [%], and the grid ends at 5.3% for s08 rather than stopping at the
+old 4096-count point.
+
+The final sweep root receives:
+
+- `s08_training_percentage_sweep_accuracy.png` and `.pdf`: regular 2D lines;
+- `s08_training_percentage_sweep_accuracy_3d.png` and `.pdf`: 3D-style view;
+- `s08_training_percentage_sweep_accuracy_fit.png` and `.pdf`: 2D lines with
+  exponential-decay fits;
+- `s08_training_percentage_sweep_accuracy_fit_3d.png` and `.pdf`: 3D-style
+  view with the same fits.
+
 ## Interpretation
 
 The clean-trained checkpoints and plots from `bitFlipStudy` are the baseline.

@@ -16,6 +16,15 @@ from lgnStudies.bitFlipTrainingStudy.fault_injection import (
     apply_bernoulli_faults,
     validate_fault_probability,
 )
+from lgnStudies.bitFlipTrainingStudy.s08_percentage_sweep import (
+    MAX_EVALUATION_PERCENTAGE,
+    S08_TOTAL_FAULT_SITES,
+    evaluation_configuration as s08_evaluation_configuration,
+    evaluation_flip_count_chunks,
+    evaluation_flip_counts,
+    parse_training_percentages,
+    training_configuration as s08_training_configuration,
+)
 from lgnStudies.bitFlipTrainingStudy.train import plot_training_history
 
 
@@ -132,6 +141,42 @@ class FaultAwareTrainingTest(unittest.TestCase):
             plot_training_history(rows, "fake_model", output)
             self.assertTrue(output.with_suffix(".png").is_file())
             self.assertTrue(output.with_suffix(".pdf").is_file())
+
+    def test_s08_percentage_sweep_count_grid_ends_at_5p3_percent(self):
+        counts = evaluation_flip_counts()
+        chunks = evaluation_flip_count_chunks()
+        self.assertEqual(counts[0], 0)
+        self.assertEqual(counts[-1], round(S08_TOTAL_FAULT_SITES * 0.053))
+        self.assertAlmostEqual(
+            100 * counts[-1] / S08_TOTAL_FAULT_SITES,
+            MAX_EVALUATION_PERCENTAGE,
+            places=3,
+        )
+        self.assertEqual(tuple(count for chunk in chunks for count in chunk), counts[1:])
+        self.assertTrue(all(left < right for left, right in zip(counts, counts[1:])))
+
+    def test_s08_percentage_sweep_task_mapping(self):
+        percentages = parse_training_percentages("3.0 0.1 1.0")
+        self.assertEqual(percentages, (0.1, 1.0, 3.0))
+        self.assertEqual(
+            s08_training_configuration(1, percentages)[:2],
+            (1.0, "train_1pct"),
+        )
+        condition, tag, percentage_text, model, registry, chunk, counts = (
+            s08_evaluation_configuration(0, percentages)
+        )
+        self.assertEqual(condition, "inference_only")
+        self.assertEqual(tag, "inference_only")
+        self.assertEqual(percentage_text, "none")
+        self.assertEqual(chunk, 0)
+        self.assertEqual(tuple(counts), evaluation_flip_count_chunks()[0])
+
+        condition, tag, percentage_text, model, registry, chunk, counts = (
+            s08_evaluation_configuration(len(evaluation_flip_count_chunks()), percentages)
+        )
+        self.assertEqual(condition, "fault_aware_training")
+        self.assertEqual(tag, "train_0p1pct")
+        self.assertEqual(percentage_text, "0.1")
 
 
 if __name__ == "__main__":
