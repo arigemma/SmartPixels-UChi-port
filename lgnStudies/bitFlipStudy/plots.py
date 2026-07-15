@@ -640,3 +640,185 @@ def plot_training_percentage_sweep(
             dpi=300,
         )
     plt.close(fig)
+
+
+def plot_fault_scope_training_percentage_comparison(
+    scope_rows: dict[str, dict],
+    output_stem: Path,
+    model_alias: str,
+    fit_exponential_decay: bool = False,
+) -> None:
+    """Compare training-percentage sweeps for different fault scopes."""
+    if not scope_rows:
+        raise ValueError("No fault-scope rows supplied.")
+
+    training_percentages = sorted(
+        {
+            float(percentage)
+            for scope_data in scope_rows.values()
+            for percentage in scope_data["fault_aware_rows_by_percentage"]
+        }
+    )
+    if not training_percentages:
+        raise ValueError("No fault-aware training curves supplied.")
+    percentage_colors = {
+        percentage: color
+        for percentage, color in zip(
+            training_percentages,
+            plt.cm.viridis(np.linspace(0.18, 0.85, len(training_percentages))),
+        )
+    }
+    scope_items = list(scope_rows.items())
+
+    fig, axes = plt.subplots(
+        1,
+        len(scope_items),
+        figsize=(6.8 * len(scope_items), 5.2),
+        sharey=True,
+        constrained_layout=True,
+    )
+    if len(scope_items) == 1:
+        axes = [axes]
+
+    for index, (axis, (_scope_key, scope_data)) in enumerate(zip(axes, scope_items)):
+        inference_values = _aggregate(scope_data["inference_rows"])
+        training_values = {
+            float(percentage): _aggregate(rows)
+            for percentage, rows in sorted(
+                scope_data["fault_aware_rows_by_percentage"].items()
+            )
+        }
+        all_x = np.unique(
+            np.concatenate(
+                [
+                    inference_values["percentage"],
+                    *[values["percentage"] for values in training_values.values()],
+                ]
+            )
+        )
+        _plot_training_sweep_line(
+            axis,
+            inference_values,
+            color="#333333",
+            label="Inference-only training",
+            linestyle="-",
+            marker="o",
+            fit_exponential_decay=fit_exponential_decay,
+        )
+        for percentage, values in training_values.items():
+            _plot_training_sweep_line(
+                axis,
+                values,
+                color=percentage_colors[percentage],
+                label=f"Fault-aware training {percentage:g}%",
+                linestyle="--",
+                marker="s",
+                fit_exponential_decay=fit_exponential_decay,
+            )
+        axis.set_title(scope_data.get("label", _scope_key))
+        if index == 0:
+            axis.set_ylabel("Balanced accuracy [%]")
+        axis.legend(loc="best", fontsize=7)
+        _configure_x_axis(axis, all_x, "percentage")
+
+    title = f"{model_alias}: input-only vs whole-model fault scope"
+    if fit_exponential_decay:
+        title += " with exponential-decay fits"
+    fig.suptitle(title)
+    for suffix in (".png", ".pdf"):
+        fig.savefig(output_stem.with_suffix(suffix), dpi=300)
+    plt.close(fig)
+
+    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+    fig = plt.figure(figsize=(6.9 * len(scope_items), 6.3))
+
+    for index, (_scope_key, scope_data) in enumerate(scope_items, start=1):
+        axis3d = fig.add_subplot(1, len(scope_items), index, projection="3d")
+        inference_values = _aggregate(scope_data["inference_rows"])
+        training_values = {
+            float(percentage): _aggregate(rows)
+            for percentage, rows in sorted(
+                scope_data["fault_aware_rows_by_percentage"].items()
+            )
+        }
+        all_x = np.unique(
+            np.concatenate(
+                [
+                    inference_values["percentage"],
+                    *[values["percentage"] for values in training_values.values()],
+                ]
+            )
+        )
+        _, transform, _ = _percentage_axis_positions(all_x)
+
+        def plot_3d_line(
+            values: dict[str, np.ndarray],
+            training_percentage: float,
+            color,
+            label: str,
+            linestyle: str,
+            marker: str,
+        ) -> None:
+            x_raw = values["percentage"]
+            x = transform(x_raw)
+            y = np.full_like(x, training_percentage, dtype=float)
+            z = 100 * values["balanced_accuracy_mean"]
+            axis3d.plot(
+                x,
+                y,
+                z,
+                color=color,
+                linestyle=linestyle,
+                linewidth=2.0,
+                marker=marker,
+                markersize=4.0,
+                label=label,
+            )
+            if fit_exponential_decay:
+                fit = _fit_exponential_decay(x_raw, z)
+                if fit is not None:
+                    axis3d.plot(
+                        transform(fit[0]),
+                        np.full_like(fit[0], training_percentage, dtype=float),
+                        fit[1],
+                        color=color,
+                        linestyle=":",
+                        linewidth=1.4,
+                        alpha=0.9,
+                    )
+
+        plot_3d_line(
+            inference_values,
+            0.0,
+            "#333333",
+            "Inference-only training",
+            "-",
+            "o",
+        )
+        for percentage, values in training_values.items():
+            plot_3d_line(
+                values,
+                percentage,
+                percentage_colors[percentage],
+                f"Fault-aware {percentage:g}%",
+                "--",
+                "s",
+            )
+
+        _configure_3d_percentage_axis(axis3d, all_x)
+        axis3d.set_ylabel("Training flip probability [% per site]", labelpad=10)
+        axis3d.set_zlabel("Balanced accuracy [%]", labelpad=10)
+        axis3d.set_title(scope_data.get("label", f"Scope {index}"))
+        axis3d.view_init(elev=24, azim=-58)
+        if index == 1:
+            axis3d.legend(loc="upper left", bbox_to_anchor=(0.0, 1.0), fontsize=7)
+
+    fig.suptitle(f"{model_alias}: 3D view by fault scope")
+    fig.subplots_adjust(left=0.02, right=0.98, bottom=0.04, top=0.88, wspace=0.02)
+    for suffix in (".png", ".pdf"):
+        fig.savefig(
+            output_stem.with_name(output_stem.name + "_3d").with_suffix(suffix),
+            dpi=300,
+        )
+    plt.close(fig)

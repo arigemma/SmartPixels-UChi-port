@@ -28,6 +28,7 @@ from models.registry import REGISTRY
 from utils import CreateFolder, get_device
 
 from lgnStudies.bitFlipTrainingStudy.fault_injection import (
+    FAULT_SCOPES,
     FaultAwareTrainingModel,
     validate_fault_probability,
 )
@@ -48,6 +49,7 @@ CSV_FIELDS = (
     "step",
     "training_fault_probability",
     "training_fault_percentage",
+    "training_fault_scope",
     "total_fault_sites_per_event",
     "expected_training_flips_per_event",
     "fault_count_standard_deviation",
@@ -92,8 +94,9 @@ def plot_training_history(
     accuracy_axis.plot(steps, accuracy, color="#3366a6", marker="o")
     accuracy_axis.set_ylabel("Clean balanced accuracy [%]")
     probability = 100 * float(rows[0]["training_fault_probability"])
+    scope = rows[0].get("training_fault_scope", "all")
     accuracy_axis.set_title(
-        f"{model_alias}: fault-aware training ({probability:g}% per site)"
+        f"{model_alias}: fault-aware training ({probability:g}% per site, {scope})"
     )
     accuracy_axis.grid(True, alpha=0.25)
 
@@ -142,6 +145,7 @@ def record_clean_stage(
         "step": step,
         "training_fault_probability": fault_model.fault_probability,
         "training_fault_percentage": 100 * fault_model.fault_probability,
+        "training_fault_scope": fault_model.fault_scope,
         "total_fault_sites_per_event": fault_model.total_fault_sites,
         "expected_training_flips_per_event": fault_model.expected_flips_per_event,
         "fault_count_standard_deviation": fault_model.fault_count_standard_deviation,
@@ -187,6 +191,16 @@ def main() -> None:
         type=float,
         required=True,
         help="Independent per-site training fault probability in [0, 1].",
+    )
+    parser.add_argument(
+        "--fault-scope",
+        choices=FAULT_SCOPES,
+        default="all",
+        help=(
+            "Eligible activation space for training faults: all keeps the "
+            "FixedBinarization plus every LogicDense output; input uses only "
+            "the FixedBinarization output."
+        ),
     )
     parser.add_argument("--data-config", "-c", default="config/10783560/v3.yml")
     parser.add_argument("--output", "-o", action=CreateFolder, type=Path, required=True)
@@ -257,6 +271,7 @@ def main() -> None:
     fault_model = FaultAwareTrainingModel(
         base_model,
         fault_probability=fault_probability,
+        fault_scope=args.fault_scope,
     ).to(device)
 
     class_weights = get_class_weights(train_loader).to(device)
@@ -273,6 +288,7 @@ def main() -> None:
 
     print(
         "[FAULT MODEL] "
+        f"scope={fault_model.fault_scope} "
         f"sites={fault_model.total_fault_sites} "
         f"p={fault_model.fault_probability:.8f} "
         f"expected_K={fault_model.expected_flips_per_event:.3f} "
@@ -392,8 +408,11 @@ def main() -> None:
         "final_metric_fault_condition": "clean inference, p=0",
         "training_fault_probability": fault_model.fault_probability,
         "training_fault_percentage": 100 * fault_model.fault_probability,
+        "training_fault_scope": fault_model.fault_scope,
         "total_fault_sites_per_event": fault_model.total_fault_sites,
         "stage_widths": fault_model.stage_widths,
+        "model_stage_widths": fault_model.model_stage_widths,
+        "eligible_model_stage_indices": fault_model._eligible_stage_indices,
         "expected_training_flips_per_event": (
             fault_model.expected_flips_per_event
         ),
@@ -402,9 +421,10 @@ def main() -> None:
         ),
         "training_fault_definition": (
             "On every training forward pass, independently select every "
-            "FixedBinarization and LogicDense output with probability p and "
-            "apply x -> 1-x. GroupSum is excluded. Faults are disabled for "
-            "clean stage evaluation."
+            "eligible activation with probability p and apply x -> 1-x. "
+            "Scope 'all' includes FixedBinarization and every LogicDense "
+            "output; scope 'input' includes only FixedBinarization. GroupSum "
+            "is excluded. Faults are disabled for clean stage evaluation."
         ),
         "stop_requested": stop_requested,
     }

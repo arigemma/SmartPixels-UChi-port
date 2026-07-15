@@ -26,14 +26,16 @@ is `p = q / 100`. On every training forward pass, every eligible activation is
 selected independently with probability `p`. Selected values are complemented
 with `x -> 1-x`.
 
-The eligible activation space is unchanged from the inference study:
+The default eligible activation space is unchanged from the inference study:
 
 1. every output of `FixedBinarization`;
 2. every output of every `LogicDense` layer.
 
-`GroupSum`, learned LUT parameters, and fixed connections are not faulted.
-Masks are newly sampled on every forward pass and every event. If a model has
-`N` eligible sites, the number of training flips per event follows
+`GroupSum`, learned LUT parameters, and fixed connections are not faulted. The
+training and inference scripts also accept `--fault-scope input`, which limits
+the eligible space to the `FixedBinarization` output only. Masks are newly
+sampled on every forward pass and every event. If a scope has `N` eligible
+sites, the number of training flips per event follows
 `Binomial(N, p)`, with:
 
 ```text
@@ -168,6 +170,45 @@ The final sweep root receives:
   exponential-decay fits;
 - `s08_training_percentage_sweep_accuracy_fit_3d.png` and `.pdf`: 3D-style
   view with the same fits.
+
+## S08 Input-vs-Whole Fault-Scope Sweep
+
+After the whole-model s08 percentage sweep is complete, reuse it and launch
+only the missing input-only scope:
+
+```bash
+bash lgnStudies/bitFlipTrainingStudy/submit_s08_fault_scope_sweep.sh \
+  results/SLURM/$(date +%Y_%m_%d)_s08_input_vs_whole_fault_scope_5h_20k \
+  0.1 0.3 1.0 3.0 5.0
+```
+
+By default this reuses:
+
+```text
+results/SLURM/2026_07_14_s08_fault_aware_training_pct_sweep_5h_20k
+```
+
+as the completed whole-model scope. Override it only if needed:
+
+```bash
+S08_WHOLE_SCOPE_ROOT=results/SLURM/my_completed_s08_whole_scope \
+  bash lgnStudies/bitFlipTrainingStudy/submit_s08_fault_scope_sweep.sh \
+  results/SLURM/my_s08_input_vs_whole_scope 0.1 0.3 1.0 3.0 5.0
+```
+
+The new Slurm jobs train and evaluate `--fault-scope input` only. The input
+scope has 1,400 eligible sites for `s08_p1202M_tau40`, so the exact-count
+evaluation grid ends at `K=74`, about 5.3% of that scope. The combine job
+loads the existing whole-model CSVs/chunks and writes comparison plots into
+the new root:
+
+- `s08_input_scope_training_percentage_sweep_accuracy*`: input-only standalone
+  2D, 3D-style, and fitted plots;
+- `s08_whole_scope_training_percentage_sweep_accuracy*`: redrawn whole-model
+  plots in the same output root for direct visual comparison;
+- `s08_fault_scope_training_percentage_sweep_accuracy*`: side-by-side
+  whole-model vs input-only plots, with inference-only training as a solid
+  line and fault-aware training percentages as dashed lines.
 
 ## Interpretation
 

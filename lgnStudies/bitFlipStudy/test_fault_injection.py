@@ -7,6 +7,7 @@ from lgnStudies.bitFlipStudy.fault_injection import (
     apply_stage_faults,
     sample_unique_fault_indices,
     validate_flip_count,
+    validate_fault_scope,
 )
 
 
@@ -60,6 +61,10 @@ class FaultInjectionTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_flip_count(count, 10)
 
+    def test_invalid_fault_scope_is_rejected(self):
+        with self.assertRaises(ValueError):
+            validate_fault_scope("weights")
+
     def test_stage_applies_only_its_global_indices(self):
         values = torch.zeros((2, 4))
         plan = torch.tensor([[0, 5, 9], [4, 6, 11]])
@@ -74,6 +79,23 @@ class FaultInjectionTest(unittest.TestCase):
         self.assertTrue(torch.equal(wrapped(values), base(values)))
         self.assertEqual(wrapped.total_fault_sites, 12)
         self.assertEqual(wrapped.fault_stages, 3)
+        self.assertEqual(wrapped.fault_scope, "all")
+
+    def test_input_scope_counts_only_binarized_inputs(self):
+        model = ExactCountBitFlipModel(
+            FakeDenseLGN(),
+            flip_count=4,
+            fault_scope="input",
+        )
+        values = torch.tensor([[0.0, 1.0, 1.0, 0.0]])
+        expected = 1 - values
+        self.assertEqual(model.total_fault_sites, 4)
+        self.assertEqual(model.fault_stages, 1)
+        self.assertEqual(model.fault_scope, "input")
+        self.assertTrue(torch.equal(model(values), expected))
+
+        with self.assertRaises(ValueError):
+            model.set_flip_count(5)
 
     def test_flipping_every_site_complements_each_stage(self):
         model = ExactCountBitFlipModel(FakeDenseLGN(), flip_count=12)

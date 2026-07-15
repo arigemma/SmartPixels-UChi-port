@@ -5,6 +5,18 @@ from __future__ import annotations
 import torch
 
 
+FAULT_SCOPES = ("all", "input")
+
+
+def validate_fault_scope(fault_scope: str) -> str:
+    """Validate which activation stages are eligible for fault injection."""
+    if fault_scope not in FAULT_SCOPES:
+        raise ValueError(
+            f"Fault scope must be one of {FAULT_SCOPES}, got {fault_scope!r}."
+        )
+    return fault_scope
+
+
 def validate_flip_count(flip_count: int, total_sites: int) -> int:
     """Validate an exact number of unique faults per event."""
     if isinstance(flip_count, bool) or int(flip_count) != flip_count:
@@ -95,6 +107,13 @@ def apply_stage_faults(
     return values
 
 
+def _eligible_stage_indices(number_stages: int, fault_scope: str) -> tuple[int, ...]:
+    fault_scope = validate_fault_scope(fault_scope)
+    if fault_scope == "input":
+        return (0,)
+    return tuple(range(number_stages))
+
+
 class ExactCountBitFlipModel(torch.nn.Module):
     """Existing model-2 LGN with exactly K transient signal faults per event.
 
@@ -105,7 +124,12 @@ class ExactCountBitFlipModel(torch.nn.Module):
     pass; model parameters and TorchLogix connection indices are unchanged.
     """
 
-    def __init__(self, base_model: torch.nn.Module, flip_count: int = 0):
+    def __init__(
+        self,
+        base_model: torch.nn.Module,
+        flip_count: int = 0,
+        fault_scope: str = "all",
+    ):
         super().__init__()
         for attribute in ("bin", "layers", "group_sum"):
             if not hasattr(base_model, attribute):
@@ -124,7 +148,15 @@ class ExactCountBitFlipModel(torch.nn.Module):
             ) from error
 
         self.base_model = base_model
-        self.stage_widths = (input_width, *layer_widths)
+        self.model_stage_widths = (input_width, *layer_widths)
+        self.fault_scope = validate_fault_scope(fault_scope)
+        self._eligible_stage_indices = _eligible_stage_indices(
+            len(self.model_stage_widths),
+            self.fault_scope,
+        )
+        self.stage_widths = tuple(
+            self.model_stage_widths[index] for index in self._eligible_stage_indices
+        )
         offsets = [0]
         for width in self.stage_widths[:-1]:
             offsets.append(offsets[-1] + width)
@@ -135,6 +167,27 @@ class ExactCountBitFlipModel(torch.nn.Module):
     @property
     def fault_stages(self) -> int:
         return len(self.stage_widths)
+
+    def _eligible_stage_index(self, model_stage_index: int) -> int | None:
+        try:
+            return self._eligible_stage_indices.index(model_stage_index)
+        except ValueError:
+            return None
+
+    def _apply_faults_for_model_stage(
+        self,
+        values: torch.Tensor,
+        fault_indices: torch.Tensor,
+        model_stage_index: int,
+    ) -> torch.Tensor:
+        eligible_index = self._eligible_stage_index(model_stage_index)
+        if eligible_index is None:
+            return values
+        return apply_stage_faults(
+            values,
+            fault_indices,
+            self.stage_offsets[eligible_index],
+        )
 
     def set_flip_count(self, flip_count: int) -> None:
         self.flip_count = validate_flip_count(
@@ -153,12 +206,12 @@ class ExactCountBitFlipModel(torch.nn.Module):
         )
 
         values = self.base_model.bin(inputs)
-        values = apply_stage_faults(
-            values, fault_indices, self.stage_offsets[0]
-        )
-        for layer, offset in zip(
-            self.base_model.layers, self.stage_offsets[1:]
-        ):
+        values = self._apply_faults_for_model_stage(values, fault_indices, 0)
+        for layer_index, layer in enumerate(self.base_model.layers, start=1):
             values = layer(values)
-            values = apply_stage_faults(values, fault_indices, offset)
+            values = self._apply_faults_for_model_stage(
+                values,
+                fault_indices,
+                layer_index,
+            )
         return self.base_model.group_sum(values)

@@ -23,7 +23,10 @@ from dataloader import create_dataloaders
 from models.registry import class_to_config, load_registered_model
 from utils import CreateFolder, get_device
 
-from lgnStudies.bitFlipStudy.fault_injection import ExactCountBitFlipModel
+from lgnStudies.bitFlipStudy.fault_injection import (
+    FAULT_SCOPES,
+    ExactCountBitFlipModel,
+)
 from lgnStudies.bitFlipStudy.plots import plot_single_model
 
 
@@ -312,6 +315,16 @@ def main() -> None:
         help="Exact unique transient activation-bit flips per test event.",
     )
     parser.add_argument(
+        "--fault-scope",
+        choices=FAULT_SCOPES,
+        default="all",
+        help=(
+            "Eligible activation space for inference faults: all keeps the "
+            "FixedBinarization plus every LogicDense output; input uses only "
+            "the FixedBinarization output."
+        ),
+    )
+    parser.add_argument(
         "--repeats",
         type=int,
         default=5,
@@ -358,7 +371,10 @@ def main() -> None:
         str(args.clean_model), map_location=device
     ).to(device)
     validate_model(clean_model, args.registry_name)
-    fault_model = ExactCountBitFlipModel(clean_model).to(device)
+    fault_model = ExactCountBitFlipModel(
+        clean_model,
+        fault_scope=args.fault_scope,
+    ).to(device)
     if flip_counts[-1] > fault_model.total_fault_sites:
         parser.error(
             f"Requested {flip_counts[-1]} flips, but this model has only "
@@ -474,8 +490,11 @@ def main() -> None:
             training_status["final_balanced_accuracy"]
         ),
         "flip_counts_per_event": flip_counts,
+        "fault_scope": fault_model.fault_scope,
         "total_fault_sites_per_event": fault_model.total_fault_sites,
         "stage_widths": fault_model.stage_widths,
+        "model_stage_widths": fault_model.model_stage_widths,
+        "eligible_model_stage_indices": fault_model._eligible_stage_indices,
         "stage_offsets": fault_model.stage_offsets,
         "repeats_per_nonzero_count": args.repeats,
         "number_test_events": clean_metrics["number_test_events"],
@@ -493,10 +512,11 @@ def main() -> None:
         ),
         "fault_model": (
             "For every test event, uniformly sample exactly K distinct sites "
-            "without replacement from the concatenated Boolean outputs of "
-            "FixedBinarization and every LogicDense layer, then apply x -> 1-x. "
-            "Faults are transient and resampled on each forward pass. GroupSum "
-            "and all model parameters are unchanged."
+            "without replacement from the eligible Boolean activation outputs, "
+            "then apply x -> 1-x. Scope 'all' includes FixedBinarization and "
+            "every LogicDense layer; scope 'input' includes only "
+            "FixedBinarization. Faults are transient and resampled on each "
+            "forward pass. GroupSum and all model parameters are unchanged."
         ),
         "percentage_definition": (
             "100 * K / total_fault_sites_per_event; derived from the exact-K "

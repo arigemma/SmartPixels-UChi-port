@@ -25,6 +25,13 @@ from lgnStudies.bitFlipTrainingStudy.s08_percentage_sweep import (
     parse_training_percentages,
     training_configuration as s08_training_configuration,
 )
+from lgnStudies.bitFlipTrainingStudy.s08_fault_scope_sweep import (
+    S08_INPUT_FAULT_SITES,
+    evaluation_configuration as s08_scope_evaluation_configuration,
+    input_evaluation_flip_count_chunks,
+    input_evaluation_flip_counts,
+    training_configuration as s08_scope_training_configuration,
+)
 from lgnStudies.bitFlipTrainingStudy.train import plot_training_history
 
 
@@ -84,6 +91,25 @@ class FaultAwareTrainingTest(unittest.TestCase):
 
         model.eval()
         self.assertTrue(torch.equal(model(values), values))
+
+    def test_input_scope_faults_only_binarized_inputs(self):
+        values = torch.tensor([[0.0, 1.0, 1.0, 0.0]])
+        model = FaultAwareTrainingModel(
+            FakeDenseLGN(),
+            fault_probability=1.0,
+            fault_scope="input",
+        ).train()
+        self.assertEqual(model.fault_scope, "input")
+        self.assertEqual(model.total_fault_sites, 4)
+        self.assertEqual(model.expected_flips_per_event, 4)
+        self.assertTrue(torch.equal(model(values), 1 - values))
+
+        with self.assertRaises(ValueError):
+            FaultAwareTrainingModel(
+                FakeDenseLGN(),
+                fault_probability=0.1,
+                fault_scope="weights",
+            )
 
     def test_zero_probability_matches_base_model(self):
         base = FakeDenseLGN(width=8)
@@ -175,6 +201,51 @@ class FaultAwareTrainingTest(unittest.TestCase):
             s08_evaluation_configuration(len(evaluation_flip_count_chunks()), percentages)
         )
         self.assertEqual(condition, "fault_aware_training")
+        self.assertEqual(tag, "train_0p1pct")
+        self.assertEqual(percentage_text, "0.1")
+
+    def test_s08_input_scope_grid_ends_at_5p3_percent(self):
+        counts = input_evaluation_flip_counts()
+        chunks = input_evaluation_flip_count_chunks()
+        self.assertEqual(counts[0], 0)
+        self.assertEqual(counts[-1], round(S08_INPUT_FAULT_SITES * 0.053))
+        self.assertAlmostEqual(
+            100 * counts[-1] / S08_INPUT_FAULT_SITES,
+            MAX_EVALUATION_PERCENTAGE,
+            places=1,
+        )
+        self.assertEqual(tuple(count for chunk in chunks for count in chunk), counts[1:])
+        self.assertTrue(all(left < right for left, right in zip(counts, counts[1:])))
+
+    def test_s08_fault_scope_task_mapping(self):
+        percentages = parse_training_percentages("3.0 0.1 1.0")
+        self.assertEqual(
+            s08_scope_training_configuration(1, percentages),
+            (
+                1.0,
+                "train_1pct",
+                "s08_p1202M_tau40",
+                "lgn-dense-2-dense-100_128_-model2lgnFull_s08_p1202M_40",
+            ),
+        )
+        condition, scope, tag, percentage_text, model, registry, chunk, counts = (
+            s08_scope_evaluation_configuration(0, percentages)
+        )
+        self.assertEqual(condition, "inference_only")
+        self.assertEqual(scope, "input_only")
+        self.assertEqual(tag, "inference_only")
+        self.assertEqual(percentage_text, "none")
+        self.assertEqual(chunk, 0)
+        self.assertEqual(tuple(counts), input_evaluation_flip_count_chunks()[0])
+
+        condition, scope, tag, percentage_text, model, registry, chunk, counts = (
+            s08_scope_evaluation_configuration(
+                len(input_evaluation_flip_count_chunks()),
+                percentages,
+            )
+        )
+        self.assertEqual(condition, "fault_aware_training")
+        self.assertEqual(scope, "input_only")
         self.assertEqual(tag, "train_0p1pct")
         self.assertEqual(percentage_text, "0.1")
 

@@ -20,6 +20,7 @@ from lgnStudies.bitFlipStudy.plots import (
     _aggregate,
     _percentage_axis_ticks,
     plot_fault_aware_training_comparison,
+    plot_fault_scope_training_percentage_comparison,
     plot_training_percentage_sweep,
 )
 from lgnStudies.bitFlipStudy.study import (
@@ -315,6 +316,78 @@ class BitFlipAnalysisTest(unittest.TestCase):
             plot_training_percentage_sweep(
                 inference_rows,
                 fault_aware_rows,
+                output,
+                model_alias,
+                fit_exponential_decay=True,
+            )
+            for suffix in (".png", ".pdf"):
+                self.assertTrue(output.with_suffix(suffix).is_file())
+                self.assertTrue(
+                    output.with_name(output.name + "_3d").with_suffix(suffix).is_file()
+                )
+
+    def test_fault_scope_comparison_writes_2d_and_3d_graphs(self):
+        model_alias, registry_name = MODELS[1]
+        counts = (0, 64, 512, 4096)
+        whole_inference_rows = [
+            make_result_row(
+                model_alias,
+                registry_name,
+                count,
+                97_100,
+                repeat,
+                42 + repeat,
+                fake_metrics(),
+            )
+            for count in counts
+            for repeat in range(2)
+        ]
+        input_inference_rows = [
+            make_result_row(
+                model_alias,
+                registry_name,
+                count,
+                1_400,
+                repeat,
+                42 + repeat,
+                fake_metrics(),
+            )
+            for count in (0, 4, 16, 74)
+            for repeat in range(2)
+        ]
+        scope_rows = {
+            "whole_model": {
+                "label": "Whole-model faults",
+                "inference_rows": whole_inference_rows,
+                "fault_aware_rows_by_percentage": {
+                    1.0: [
+                        {
+                            **row,
+                            "balanced_accuracy": float(row["balanced_accuracy"]) + 0.01,
+                        }
+                        for row in whole_inference_rows
+                    ]
+                },
+            },
+            "input_only": {
+                "label": "Input-only faults",
+                "inference_rows": input_inference_rows,
+                "fault_aware_rows_by_percentage": {
+                    1.0: [
+                        {
+                            **row,
+                            "balanced_accuracy": float(row["balanced_accuracy"]) + 0.02,
+                        }
+                        for row in input_inference_rows
+                    ]
+                },
+            },
+        }
+
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary) / "s08_scope"
+            plot_fault_scope_training_percentage_comparison(
+                scope_rows,
                 output,
                 model_alias,
                 fit_exponential_decay=True,

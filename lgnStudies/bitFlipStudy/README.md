@@ -46,6 +46,10 @@ The percentage plot is retained as a secondary normalization. It uses
 model. It is derived from the exact same runs; it is not an independent
 Bernoulli-per-site experiment.
 
+The default scope is the whole activation space above. For the s08
+input-vs-whole follow-up, `study.py --fault-scope input` restricts `N` and
+the exact-K sampling space to the `FixedBinarization` output only.
+
 This distinction matters. An exact-count x-axis directly answers how many
 faults the model tolerates. An independent probability only controls an
 expected count, which varies event by event and differs between model sizes.
