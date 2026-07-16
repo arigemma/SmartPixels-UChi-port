@@ -12,8 +12,10 @@ export MPLCONFIGDIR="${MPLCONFIGDIR:-/tmp/smartpixels-matplotlib}"
 
 : "${QKERAS_SCOPE_ROOT:?Missing sweep output root}"
 : "${QKERAS_SCOPE_TRAINING_PERCENTAGES:?Missing training percentages}"
+QKERAS_SCOPE_MODELS="${QKERAS_SCOPE_MODELS:-all}"
 
 python -m qkerasStudies.bitFlipTrainingStudy.fault_scope_sweep \
+  --models "$QKERAS_SCOPE_MODELS" \
   --training-percentages "$QKERAS_SCOPE_TRAINING_PERCENTAGES" \
   --combine \
   --root "$QKERAS_SCOPE_ROOT" \

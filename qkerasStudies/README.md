@@ -18,7 +18,16 @@ classification target as the LGN model-2 studies.
 ## Launch
 
 Run from the SmartPixels repository root on the `wip-mila-lgn-analysis`
-branch:
+branch. To focus on the middle `Y256/64 W4/A8` model only:
+
+```bash
+QKERAS_SCOPE_MODELS=qkeras_y256_64_w4a8 \
+  bash qkerasStudies/bitFlipTrainingStudy/submit_fault_scope_sweep.sh \
+  results/SLURM/$(date +%Y_%m_%d)_qkeras_y256_64_input_vs_whole_fault_scope_3h_6k \
+  0.1 0.3 1.0 3.0 5.0
+```
+
+The full three-model launch is:
 
 ```bash
 bash qkerasStudies/bitFlipTrainingStudy/submit_fault_scope_sweep.sh \
@@ -36,9 +45,11 @@ This is the one-command launcher. It submits:
 4. one dependent combine/plot job.
 
 With the five percentages above, the launcher creates 33 training tasks and
-132 evaluation tasks. Training jobs request one GPU for `3:59:59` and require
-both at least 6,000 optimizer steps and at least 3.0 training-loop hours
-before publishing `final_model.keras`.
+132 evaluation tasks for all three models. With
+`QKERAS_SCOPE_MODELS=qkeras_y256_64_w4a8`, it creates 11 training tasks and
+42 evaluation tasks. Training jobs request one GPU for `3:59:59` and require
+both at least 6,000 optimizer steps and at least 3.0 training-loop hours before
+publishing `final_model.keras`.
 
 The QKeras environment must provide TensorFlow/Keras plus QKeras. The local
 dependency hint is:
@@ -167,8 +178,8 @@ python -m qkerasStudies.bitFlipTrainingStudy.fault_scope_sweep \
 The expected counts for the standard five-percentage launch are:
 
 ```text
-training tasks: 33
-evaluation tasks: 132
+middle model only: training tasks 11, evaluation tasks 42
+all three models:  training tasks 33, evaluation tasks 132
 ```
 
 ## Interpretation

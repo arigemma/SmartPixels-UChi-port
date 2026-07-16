@@ -54,6 +54,31 @@ def parse_training_percentages(text: str) -> tuple[float, ...]:
     return tuple(sorted(values))
 
 
+def parse_model_selection(text: str | None) -> tuple[QKerasModelConfig, ...]:
+    if text is None or text.strip() == "" or text.strip().lower() == "all":
+        return MODEL_CONFIGS
+
+    by_name = {
+        name: config
+        for config in MODEL_CONFIGS
+        for name in (config.alias, config.registry_name)
+    }
+    selected: list[QKerasModelConfig] = []
+    for raw in text.replace(",", " ").split():
+        try:
+            config = by_name[raw]
+        except KeyError as error:
+            raise ValueError(
+                f"Unknown QKeras model {raw!r}; available aliases are "
+                f"{', '.join(config.alias for config in MODEL_CONFIGS)}."
+            ) from error
+        if config not in selected:
+            selected.append(config)
+    if not selected:
+        raise ValueError("At least one QKeras model must be selected.")
+    return tuple(selected)
+
+
 def percentage_tag(percentage: float | None) -> str:
     return lgn_percentage_tag(percentage)
 
@@ -96,9 +121,12 @@ def evaluation_flip_count_chunks(
     )
 
 
-def training_tasks(percentages: tuple[float, ...]) -> list[dict]:
+def training_tasks(
+    percentages: tuple[float, ...],
+    configs: tuple[QKerasModelConfig, ...] = MODEL_CONFIGS,
+) -> list[dict]:
     tasks: list[dict] = []
-    for config in MODEL_CONFIGS:
+    for config in configs:
         tasks.append(
             {
                 "condition": "inference_only",
@@ -113,7 +141,7 @@ def training_tasks(percentages: tuple[float, ...]) -> list[dict]:
         )
     for scope_key, fault_scope, scope_dir, _label in SCOPE_LAYOUT:
         for percentage in percentages:
-            for config in MODEL_CONFIGS:
+            for config in configs:
                 tasks.append(
                     {
                         "condition": "fault_aware_training",
@@ -129,10 +157,13 @@ def training_tasks(percentages: tuple[float, ...]) -> list[dict]:
     return tasks
 
 
-def evaluation_tasks(percentages: tuple[float, ...]) -> list[dict]:
+def evaluation_tasks(
+    percentages: tuple[float, ...],
+    configs: tuple[QKerasModelConfig, ...] = MODEL_CONFIGS,
+) -> list[dict]:
     tasks: list[dict] = []
     source_percentages: tuple[float | None, ...] = (None, *percentages)
-    for config in MODEL_CONFIGS:
+    for config in configs:
         for scope_key, fault_scope, scope_dir, _label in SCOPE_LAYOUT:
             chunks = evaluation_flip_count_chunks(config, fault_scope)
             for percentage in source_percentages:
@@ -163,8 +194,9 @@ def evaluation_tasks(percentages: tuple[float, ...]) -> list[dict]:
 def training_configuration(
     task_id: int,
     percentages: tuple[float, ...],
+    configs: tuple[QKerasModelConfig, ...] = MODEL_CONFIGS,
 ) -> dict:
-    tasks = training_tasks(percentages)
+    tasks = training_tasks(percentages, configs)
     if task_id < 0 or task_id >= len(tasks):
         raise ValueError(f"Training task ID must lie in [0, {len(tasks) - 1}].")
     return tasks[task_id]
@@ -173,8 +205,9 @@ def training_configuration(
 def evaluation_configuration(
     task_id: int,
     percentages: tuple[float, ...],
+    configs: tuple[QKerasModelConfig, ...] = MODEL_CONFIGS,
 ) -> dict:
-    tasks = evaluation_tasks(percentages)
+    tasks = evaluation_tasks(percentages, configs)
     if task_id < 0 or task_id >= len(tasks):
         raise ValueError(f"Evaluation task ID must lie in [0, {len(tasks) - 1}].")
     return tasks[task_id]
@@ -221,6 +254,7 @@ def _load_scope_rows(
 def combine_sweep(
     root: Path,
     percentages: tuple[float, ...],
+    configs: tuple[QKerasModelConfig, ...] = MODEL_CONFIGS,
     fit_exponential_decay: bool = False,
 ) -> None:
     from lgnStudies.bitFlipStudy.plots import (
@@ -229,7 +263,7 @@ def combine_sweep(
     )
 
     summary_models = []
-    for config in MODEL_CONFIGS:
+    for config in configs:
         whole_inference_rows, whole_fault_aware_rows = _load_scope_rows(
             root,
             config,
@@ -360,6 +394,14 @@ def _format_percentage(percentage: float | None) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--training-percentages", required=True)
+    parser.add_argument(
+        "--models",
+        default="all",
+        help=(
+            "Space- or comma-separated QKeras model aliases/registry names. "
+            "Use 'all' for the three-model campaign."
+        ),
+    )
     task_group = parser.add_mutually_exclusive_group(required=True)
     task_group.add_argument("--training-task-id", type=int)
     task_group.add_argument("--evaluation-task-id", type=int)
@@ -373,8 +415,9 @@ def main() -> None:
 
     try:
         percentages = parse_training_percentages(args.training_percentages)
+        configs = parse_model_selection(args.models)
         if args.training_task_id is not None:
-            task = training_configuration(args.training_task_id, percentages)
+            task = training_configuration(args.training_task_id, percentages, configs)
             print(
                 "\t".join(
                     (
@@ -390,7 +433,11 @@ def main() -> None:
                 )
             )
         elif args.evaluation_task_id is not None:
-            task = evaluation_configuration(args.evaluation_task_id, percentages)
+            task = evaluation_configuration(
+                args.evaluation_task_id,
+                percentages,
+                configs,
+            )
             print(
                 "\t".join(
                     (
@@ -408,11 +455,11 @@ def main() -> None:
                 )
             )
         elif args.print_training_task_count:
-            print(len(training_tasks(percentages)))
+            print(len(training_tasks(percentages, configs)))
         elif args.print_evaluation_task_count:
-            print(len(evaluation_tasks(percentages)))
+            print(len(evaluation_tasks(percentages, configs)))
         elif args.print_model_counts:
-            for config in MODEL_CONFIGS:
+            for config in configs:
                 for scope_key, fault_scope, _scope_dir, _label in SCOPE_LAYOUT:
                     print(
                         "\t".join(
@@ -436,6 +483,7 @@ def main() -> None:
             combine_sweep(
                 args.root,
                 percentages,
+                configs,
                 fit_exponential_decay=args.fit_exponential_decay,
             )
     except (FileNotFoundError, ValueError) as error:

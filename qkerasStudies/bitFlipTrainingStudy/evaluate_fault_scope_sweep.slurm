@@ -13,9 +13,11 @@ export MPLCONFIGDIR="${MPLCONFIGDIR:-/tmp/smartpixels-matplotlib}"
 
 : "${QKERAS_SCOPE_ROOT:?Missing sweep output root}"
 : "${QKERAS_SCOPE_TRAINING_PERCENTAGES:?Missing training percentages}"
+QKERAS_SCOPE_MODELS="${QKERAS_SCOPE_MODELS:-all}"
 
 IFS=$'\t' read -r CONDITION SCOPE_KEY FAULT_SCOPE SCOPE_DIR TAG TRAINING_PERCENTAGE MODEL REGISTRY_NAME CHUNK_INDEX FLIP_COUNT_TEXT <<< "$(
   python -m qkerasStudies.bitFlipTrainingStudy.fault_scope_sweep \
+    --models "$QKERAS_SCOPE_MODELS" \
     --training-percentages "$QKERAS_SCOPE_TRAINING_PERCENTAGES" \
     --evaluation-task-id "$SLURM_ARRAY_TASK_ID"
 )"

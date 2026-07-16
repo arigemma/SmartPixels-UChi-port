@@ -4,11 +4,13 @@ set -euo pipefail
 if (( $# < 2 )); then
   echo "Usage: bash qkerasStudies/bitFlipTrainingStudy/submit_fault_scope_sweep.sh OUTPUT_ROOT TRAINING_PERCENTAGE [TRAINING_PERCENTAGE ...]" >&2
   echo "Example: bash qkerasStudies/bitFlipTrainingStudy/submit_fault_scope_sweep.sh results/SLURM/\$(date +%Y_%m_%d)_qkeras_input_vs_whole_fault_scope_3h_6k 0.1 0.3 1.0 3.0 5.0" >&2
+  echo "Middle-model-only example: QKERAS_SCOPE_MODELS=qkeras_y256_64_w4a8 bash qkerasStudies/bitFlipTrainingStudy/submit_fault_scope_sweep.sh results/SLURM/\$(date +%Y_%m_%d)_qkeras_y256_64_input_vs_whole_fault_scope_3h_6k 0.1 0.3 1.0 3.0 5.0" >&2
   exit 2
 fi
 
 QKERAS_SCOPE_ROOT="$1"
 shift
+QKERAS_SCOPE_MODELS="${QKERAS_SCOPE_MODELS:-all}"
 QKERAS_SCOPE_TRAINING_PERCENTAGES="$(
   python - "$@" <<'PY'
 import math
@@ -36,16 +38,19 @@ fi
 
 TRAINING_TASKS="$(
   python -m qkerasStudies.bitFlipTrainingStudy.fault_scope_sweep \
+    --models "$QKERAS_SCOPE_MODELS" \
     --training-percentages "$QKERAS_SCOPE_TRAINING_PERCENTAGES" \
     --print-training-task-count
 )"
 EVALUATION_TASKS="$(
   python -m qkerasStudies.bitFlipTrainingStudy.fault_scope_sweep \
+    --models "$QKERAS_SCOPE_MODELS" \
     --training-percentages "$QKERAS_SCOPE_TRAINING_PERCENTAGES" \
     --print-evaluation-task-count
 )"
 MODEL_COUNTS="$(
   python -m qkerasStudies.bitFlipTrainingStudy.fault_scope_sweep \
+    --models "$QKERAS_SCOPE_MODELS" \
     --training-percentages "$QKERAS_SCOPE_TRAINING_PERCENTAGES" \
     --print-model-counts
 )"
@@ -105,6 +110,7 @@ path.write_text(
 PY
 
 export QKERAS_SCOPE_ROOT
+export QKERAS_SCOPE_MODELS
 export QKERAS_SCOPE_TRAINING_PERCENTAGES
 export PYTHONUNBUFFERED=1
 
@@ -139,6 +145,7 @@ COMBINE_JOB_ID="$(
 COMBINE_JOB_ID="${COMBINE_JOB_ID%%;*}"
 echo "Submitted QKeras combine/plot job ${COMBINE_JOB_ID}"
 echo "New sweep root: ${QKERAS_SCOPE_ROOT}"
+echo "Models: ${QKERAS_SCOPE_MODELS}"
 echo "Training percentages: ${QKERAS_SCOPE_TRAINING_PERCENTAGES}"
 echo "Training tasks: ${TRAINING_TASKS}"
 echo "Evaluation tasks: ${EVALUATION_TASKS}"
