@@ -53,6 +53,47 @@ def _validate_chunk_rows(
         )
 
 
+def _metadata_from_complete_rows(
+    rows: list[dict],
+    expected_counts: tuple[int, ...],
+    repeats: int,
+    chunk_root: Path,
+) -> dict:
+    """Recover minimal chunk metadata when an interrupted job left a complete CSV.
+
+    Evaluation writes the CSV incrementally and writes metadata only at the end.
+    If Slurm terminates the process between those two steps, the complete CSV
+    and clean predictions are still enough for validation and plotting.
+    """
+    first = rows[0]
+    confusion_matrices = {}
+    for row in rows:
+        count = int(row["flip_count_per_event"])
+        repeat = int(row["repeat"])
+        key = f"K={count}:repeat={repeat}"
+        confusion_matrices[key] = [
+            [
+                int(row[f"confusion_{truth}_{prediction}"])
+                for prediction in range(3)
+            ]
+            for truth in range(3)
+        ]
+    return {
+        "model_alias": first["model_alias"],
+        "registry_name": first["registry_name"],
+        "flip_counts_per_event": [0, *expected_counts],
+        "total_fault_sites_per_event": int(first["total_fault_sites_per_event"]),
+        "repeats_per_nonzero_count": repeats,
+        "number_test_events": sum(
+            int(first[f"n_class_{index}"]) for index in range(3)
+        ),
+        "complete": True,
+        "metadata_recovered_from_complete_csv": True,
+        "metadata_recovery_source": str(chunk_root / "bit_flip_results.csv"),
+        "confusion_matrices": confusion_matrices,
+    }
+
+
 def load_and_combine_model_chunks(
     model_root: Path,
     model_alias: str,
@@ -73,13 +114,21 @@ def load_and_combine_model_chunks(
         csv_path = chunk_root / "bit_flip_results.csv"
         metadata_path = chunk_root / "bit_flip_metadata.json"
         predictions_path = chunk_root / "clean_predictions.npy"
-        for required in (csv_path, metadata_path, predictions_path):
+        for required in (csv_path, predictions_path):
             if not required.is_file():
                 raise ValueError(f"Missing completed chunk artifact: {required}")
 
         rows = read_csv(csv_path)
         _validate_chunk_rows(rows, model_alias, expected_counts, csv_path, repeats)
-        metadata = json.loads(metadata_path.read_text())
+        if metadata_path.is_file():
+            metadata = json.loads(metadata_path.read_text())
+        else:
+            metadata = _metadata_from_complete_rows(
+                rows,
+                expected_counts,
+                repeats,
+                chunk_root,
+            )
         if not metadata.get("complete"):
             raise ValueError(f"Study is marked incomplete: {metadata_path}")
         if tuple(metadata.get("flip_counts_per_event", ())) != (
