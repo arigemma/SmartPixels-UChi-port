@@ -7,6 +7,7 @@ import argparse
 import csv
 import json
 import math
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -22,8 +23,29 @@ REGISTRY_NAME = "lgn-dense-2-dense-100_128_-model2lgnFull_s08_p1202M_40"
 REFERENCE_MODEL_ALIAS = "s06_p760M_tau40"
 REFERENCE_TOTAL_FAULT_SITES = 77_300
 S08_TOTAL_FAULT_SITES = 97_100
-MAX_EVALUATION_PERCENTAGE = 5.3
+DEFAULT_MAX_EVALUATION_PERCENTAGE = 5.3
 COUNTS_PER_CHUNK = 3
+
+
+def configured_max_evaluation_percentage() -> float:
+    raw = os.environ.get("S08_MAX_EVALUATION_PERCENTAGE")
+    if raw is None:
+        return DEFAULT_MAX_EVALUATION_PERCENTAGE
+    try:
+        value = float(raw)
+    except ValueError as error:
+        raise ValueError(
+            f"S08_MAX_EVALUATION_PERCENTAGE must be numeric, got {raw!r}."
+        ) from error
+    if not math.isfinite(value) or not 0.0 < value <= 100.0:
+        raise ValueError(
+            "S08_MAX_EVALUATION_PERCENTAGE must lie in (0, 100], "
+            f"got {raw!r}."
+        )
+    return value
+
+
+MAX_EVALUATION_PERCENTAGE = configured_max_evaluation_percentage()
 
 
 def validate_percentage(value: float) -> float:
