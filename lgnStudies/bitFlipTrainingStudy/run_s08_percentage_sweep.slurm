@@ -4,7 +4,7 @@
 #SBATCH --error=logs/s08FaultAwarePctTrain_%A_%a.err
 #SBATCH --time=5:59:59
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=2
+#SBATCH --cpus-per-task=8
 #SBATCH --mem=16G
 #SBATCH --export=ALL,PYTHONUNBUFFERED=1
 
