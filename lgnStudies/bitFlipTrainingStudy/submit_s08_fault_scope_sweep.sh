@@ -10,6 +10,8 @@ fi
 
 S08_SCOPE_ROOT="$1"
 shift
+S08_MAX_EVALUATION_PERCENTAGE="${S08_MAX_EVALUATION_PERCENTAGE:-5.3}"
+export S08_MAX_EVALUATION_PERCENTAGE
 S08_WHOLE_SCOPE_ROOT="${S08_WHOLE_SCOPE_ROOT:-results/SLURM/2026_07_14_s08_fault_aware_training_pct_sweep_5h_20k}"
 S08_SCOPE_TRAINING_PERCENTAGES="$(
   python - "$@" <<'PY'
@@ -60,7 +62,8 @@ mkdir -p logs "$S08_SCOPE_ROOT"
 GIT_COMMIT="$(git rev-parse HEAD)"
 python - "$S08_SCOPE_ROOT/campaign_config.json" \
   "$S08_SCOPE_TRAINING_PERCENTAGES" "$INPUT_EVALUATION_COUNTS" \
-  "$GIT_COMMIT" "$S08_WHOLE_SCOPE_ROOT" <<'PY'
+  "$GIT_COMMIT" "$S08_WHOLE_SCOPE_ROOT" \
+  "$S08_MAX_EVALUATION_PERCENTAGE" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -70,6 +73,7 @@ percentages = [float(value) for value in sys.argv[2].split()]
 counts = [int(value) for value in sys.argv[3].split()]
 git_commit = sys.argv[4]
 whole_scope_root = sys.argv[5]
+max_evaluation_percentage = float(sys.argv[6])
 path.write_text(
     json.dumps(
         {
@@ -82,7 +86,7 @@ path.write_text(
             "new_jobs": "input-only fault scope training and evaluation",
             "reused_whole_model_scope_root": whole_scope_root,
             "input_scope_evaluation_flip_counts_per_event": counts,
-            "maximum_evaluation_percentage": 5.3,
+            "maximum_evaluation_percentage": max_evaluation_percentage,
             "evaluation": (
                 "Exact-count inference-time fault sweep. Percentages are "
                 "computed relative to each scope's eligible fault-site count."

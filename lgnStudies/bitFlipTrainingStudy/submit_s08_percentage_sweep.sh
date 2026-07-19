@@ -9,6 +9,8 @@ fi
 
 S08_SWEEP_ROOT="$1"
 shift
+S08_MAX_EVALUATION_PERCENTAGE="${S08_MAX_EVALUATION_PERCENTAGE:-5.3}"
+export S08_MAX_EVALUATION_PERCENTAGE
 S08_SWEEP_TRAINING_PERCENTAGES="$(
   python - "$@" <<'PY'
 import math
@@ -53,7 +55,8 @@ EVALUATION_COUNTS="$(
 mkdir -p logs "$S08_SWEEP_ROOT"
 GIT_COMMIT="$(git rev-parse HEAD)"
 python - "$S08_SWEEP_ROOT/campaign_config.json" \
-  "$S08_SWEEP_TRAINING_PERCENTAGES" "$EVALUATION_COUNTS" "$GIT_COMMIT" <<'PY'
+  "$S08_SWEEP_TRAINING_PERCENTAGES" "$EVALUATION_COUNTS" "$GIT_COMMIT" \
+  "$S08_MAX_EVALUATION_PERCENTAGE" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -62,6 +65,7 @@ path = Path(sys.argv[1])
 percentages = [float(value) for value in sys.argv[2].split()]
 counts = [int(value) for value in sys.argv[3].split()]
 git_commit = sys.argv[4]
+max_evaluation_percentage = float(sys.argv[5])
 path.write_text(
     json.dumps(
         {
@@ -72,10 +76,11 @@ path.write_text(
             "minimum_training_hours": 5.0,
             "minimum_training_steps": 20_000,
             "evaluation_flip_counts_per_event": counts,
-            "maximum_evaluation_percentage": 5.3,
+            "maximum_evaluation_percentage": max_evaluation_percentage,
             "evaluation": (
                 "Exact-count inference-time fault sweep on a percentage grid "
-                "that ends at 5.3% of the s08 fault space."
+                "that ends at the configured maximum percentage of the s08 "
+                "fault space."
             ),
         },
         indent=2,

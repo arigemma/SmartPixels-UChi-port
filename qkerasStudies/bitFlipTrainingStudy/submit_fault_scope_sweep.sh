@@ -10,6 +10,8 @@ fi
 
 QKERAS_SCOPE_ROOT="$1"
 shift
+S08_MAX_EVALUATION_PERCENTAGE="${S08_MAX_EVALUATION_PERCENTAGE:-5.3}"
+export S08_MAX_EVALUATION_PERCENTAGE
 QKERAS_SCOPE_MODELS="${QKERAS_SCOPE_MODELS:-all}"
 QKERAS_SCOPE_TRAINING_PERCENTAGES="$(
   python - "$@" <<'PY'
@@ -58,7 +60,8 @@ MODEL_COUNTS="$(
 mkdir -p logs "$QKERAS_SCOPE_ROOT"
 GIT_COMMIT="$(git rev-parse HEAD)"
 python - "$QKERAS_SCOPE_ROOT/campaign_config.json" \
-  "$QKERAS_SCOPE_TRAINING_PERCENTAGES" "$MODEL_COUNTS" "$GIT_COMMIT" <<'PY'
+  "$QKERAS_SCOPE_TRAINING_PERCENTAGES" "$MODEL_COUNTS" "$GIT_COMMIT" \
+  "$S08_MAX_EVALUATION_PERCENTAGE" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -67,6 +70,7 @@ path = Path(sys.argv[1])
 percentages = [float(value) for value in sys.argv[2].split()]
 counts_text = sys.argv[3]
 git_commit = sys.argv[4]
+max_evaluation_percentage = float(sys.argv[5])
 models = {}
 for line in counts_text.splitlines():
     alias, scope_key, total_sites, counts = line.split("\t")
@@ -93,7 +97,7 @@ path.write_text(
                 "Percentages are computed relative to each model/scope eligible "
                 "activation-bit count."
             ),
-            "maximum_evaluation_percentage": 5.3,
+            "maximum_evaluation_percentage": max_evaluation_percentage,
             "input_scope": (
                 "The 14 y-profile input features quantized to the model activation "
                 "width using the training split calibration range."

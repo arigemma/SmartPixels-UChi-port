@@ -22,7 +22,10 @@ import numpy as np
 from lgnStudies.bitFlipStudy.campaign import REPEATS
 from lgnStudies.bitFlipStudy.combine_results import read_csv
 from lgnStudies.bitFlipStudy.plots import plot_training_percentage_sweep_2d
-from lgnStudies.bitFlipTrainingStudy.s08_percentage_sweep import MODEL_ALIAS
+from lgnStudies.bitFlipTrainingStudy.s08_percentage_sweep import (
+    MODEL_ALIAS,
+    parse_training_percentages,
+)
 
 
 TAG_PATTERN = re.compile(r"^train_(?P<percentage>.+)pct$")
@@ -167,6 +170,18 @@ def _maximum_inference_percentage(rows: list[dict]) -> float:
     return max(float(row["equivalent_fault_percentage"]) for row in rows)
 
 
+def _percentage_is_requested(
+    percentage: float | None,
+    requested_percentages: tuple[float, ...] | None,
+) -> bool:
+    if percentage is None or requested_percentages is None:
+        return True
+    return any(
+        np.isclose(percentage, requested, rtol=1e-9, atol=1e-12)
+        for requested in requested_percentages
+    )
+
+
 def _candidate_patterns(scope: str, model_alias: str) -> tuple[str, ...]:
     if scope == "whole":
         return (
@@ -196,6 +211,7 @@ def discover_candidates(
     search_roots: tuple[Path, ...],
     scope: str,
     model_alias: str,
+    requested_training_percentages: tuple[float, ...] | None,
     max_training_percentage: float,
     max_inference_percentage: float,
     expected_chunks: int | None,
@@ -220,6 +236,11 @@ def discover_candidates(
                 try:
                     percentage = parse_tag_percentage(tag)
                 except ValueError:
+                    continue
+                if not _percentage_is_requested(
+                    percentage,
+                    requested_training_percentages,
+                ):
                     continue
                 if percentage is not None and percentage > max_training_percentage:
                     continue
@@ -278,6 +299,7 @@ def write_scope_plot(
     model_alias: str,
     x_limit: float,
     fit_exponential_decay: bool,
+    require_x_coverage: bool,
 ) -> dict:
     _require_plot_inputs(scope, selected)
     inference_rows = selected[None].rows
@@ -289,6 +311,25 @@ def write_scope_plot(
         ),
         key=lambda item: item[0],
     )
+    if require_x_coverage:
+        coverage_items = [("baseline", selected[None])]
+        coverage_items.extend(
+            (f"{percentage:g}%", candidate)
+            for percentage, candidate in training_candidates
+        )
+        shortfalls = [
+            (
+                f"{label} reaches {candidate.maximum_inference_percentage:g}% "
+                f"from {candidate.model_root}"
+            )
+            for label, candidate in coverage_items
+            if candidate.maximum_inference_percentage + 1e-6 < x_limit
+        ]
+        if shortfalls:
+            raise SystemExit(
+                f"{scope} plot cannot cover requested x-axis limit {x_limit:g}%:\n"
+                + "\n".join(f"  - {item}" for item in shortfalls)
+            )
     fault_aware_rows = {
         percentage: candidate.rows for percentage, candidate in training_candidates
     }
@@ -333,6 +374,14 @@ def main() -> None:
     )
     parser.add_argument("--output-dir", type=Path, default=Path("temp"))
     parser.add_argument("--model-alias", default=MODEL_ALIAS)
+    parser.add_argument(
+        "--training-percentages",
+        help=(
+            "Optional exact fault-aware training percentages to include. "
+            "Defaults to all discovered percentages up to "
+            "--max-training-percentage."
+        ),
+    )
     parser.add_argument("--max-training-percentage", type=float, default=7.0)
     parser.add_argument("--max-inference-percentage", type=float, default=7.0)
     parser.add_argument(
@@ -342,10 +391,23 @@ def main() -> None:
         help="Expected chunks per completed S08 tag. Use 0 to accept any count.",
     )
     parser.add_argument("--fit-exponential-decay", action="store_true")
+    parser.add_argument(
+        "--allow-partial-x-coverage",
+        action="store_true",
+        help=(
+            "Write plots even when selected curves do not reach the requested "
+            "--max-inference-percentage. By default this is treated as an error."
+        ),
+    )
     args = parser.parse_args()
 
     if args.max_training_percentage <= 0 or args.max_inference_percentage <= 0:
         parser.error("Maximum percentages must be positive.")
+    requested_training_percentages = (
+        parse_training_percentages(args.training_percentages)
+        if args.training_percentages
+        else None
+    )
     expected_chunks = args.expected_chunks if args.expected_chunks > 0 else None
     search_roots = tuple(args.search_root or (Path("results/SLURM"),))
 
@@ -353,6 +415,7 @@ def main() -> None:
         search_roots,
         "whole",
         args.model_alias,
+        requested_training_percentages,
         args.max_training_percentage,
         args.max_inference_percentage,
         expected_chunks,
@@ -361,6 +424,7 @@ def main() -> None:
         search_roots,
         "input",
         args.model_alias,
+        requested_training_percentages,
         args.max_training_percentage,
         args.max_inference_percentage,
         expected_chunks,
@@ -378,6 +442,7 @@ def main() -> None:
         args.model_alias,
         args.max_inference_percentage,
         args.fit_exponential_decay,
+        not args.allow_partial_x_coverage,
     )
     input_summary = write_scope_plot(
         "input",
@@ -387,12 +452,18 @@ def main() -> None:
         args.model_alias,
         args.max_inference_percentage,
         args.fit_exponential_decay,
+        not args.allow_partial_x_coverage,
     )
 
     summary = {
         "model_alias": args.model_alias,
         "search_roots": [str(path) for path in search_roots],
         "output_dir": str(args.output_dir),
+        "requested_training_percentages": (
+            list(requested_training_percentages)
+            if requested_training_percentages is not None
+            else None
+        ),
         "max_training_percentage": args.max_training_percentage,
         "max_inference_percentage": args.max_inference_percentage,
         "whole_model_plot": whole_summary,
