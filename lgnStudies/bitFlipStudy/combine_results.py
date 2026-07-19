@@ -126,9 +126,18 @@ def load_and_combine_model_chunks(
 
         rows = read_csv(csv_path)
         _validate_chunk_rows(rows, model_alias, expected_counts, csv_path)
-        if metadata_path.is_file():
-            metadata = json.loads(metadata_path.read_text())
-        else:
+        metadata = (
+            json.loads(metadata_path.read_text())
+            if metadata_path.is_file()
+            else None
+        )
+        expected_metadata_counts = (0, *expected_counts)
+        if (
+            metadata is None
+            or not metadata.get("complete")
+            or tuple(metadata.get("flip_counts_per_event", ()))
+            != expected_metadata_counts
+        ):
             metadata = _metadata_from_complete_rows(
                 rows,
                 expected_counts,
@@ -136,10 +145,7 @@ def load_and_combine_model_chunks(
             )
         if not metadata.get("complete"):
             raise ValueError(f"Study is marked incomplete: {metadata_path}")
-        if tuple(metadata.get("flip_counts_per_event", ())) != (
-            0,
-            *expected_counts,
-        ):
+        if tuple(metadata.get("flip_counts_per_event", ())) != expected_metadata_counts:
             raise ValueError(f"Metadata count mismatch: {metadata_path}")
 
         chunk_predictions = np.load(predictions_path)
