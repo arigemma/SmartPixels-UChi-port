@@ -172,18 +172,19 @@ class BitFlipAnalysisTest(unittest.TestCase):
                     chunk_root / "clean_predictions.npy",
                     np.asarray([0, 1, 2], dtype=np.int8),
                 )
-                (chunk_root / "bit_flip_metadata.json").write_text(
-                    json.dumps(
-                        {
-                            "complete": True,
-                            "flip_counts_per_event": [0, *counts],
-                            "confusion_matrices": {
-                                f"K={count}:repeat=0": [[1, 0, 0]] * 3
-                                for count in (0, *counts)
-                            },
-                        }
+                if chunk_index != 0:
+                    (chunk_root / "bit_flip_metadata.json").write_text(
+                        json.dumps(
+                            {
+                                "complete": True,
+                                "flip_counts_per_event": [0, *counts],
+                                "confusion_matrices": {
+                                    f"K={count}:repeat=0": [[1, 0, 0]] * 3
+                                    for count in (0, *counts)
+                                },
+                            }
+                        )
                     )
-                )
 
             rows, metadata, prediction_source = load_and_combine_model_chunks(
                 model_root, model_alias
@@ -194,6 +195,7 @@ class BitFlipAnalysisTest(unittest.TestCase):
         self.assertEqual(tuple(sorted(set(counts))), EXPECTED_FLIP_COUNTS)
         self.assertEqual(len(rows), 1 + REPEATS * (len(EXPECTED_FLIP_COUNTS) - 1))
         self.assertTrue(metadata["complete"])
+        self.assertTrue(metadata["metadata_recovered_from_complete_csv"])
         self.assertEqual(metadata["chunk_count"], len(FLIP_COUNT_CHUNKS))
         self.assertEqual(prediction_source.name, "clean_predictions.npy")
 

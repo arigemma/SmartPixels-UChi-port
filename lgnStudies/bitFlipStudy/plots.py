@@ -642,6 +642,65 @@ def plot_training_percentage_sweep(
     plt.close(fig)
 
 
+def plot_training_percentage_sweep_2d(
+    inference_rows: list[dict],
+    fault_aware_rows_by_percentage: dict[float, list[dict]],
+    output_stem: Path,
+    model_alias: str,
+    title: str | None = None,
+    x_limit: float | None = None,
+    fit_exponential_decay: bool = False,
+) -> None:
+    """Plot only the 2D accuracy curves across training/inference percentages."""
+    inference_values = _aggregate(inference_rows)
+    training_items = sorted(fault_aware_rows_by_percentage.items())
+    if not training_items:
+        raise ValueError("No fault-aware training curves supplied.")
+    training_values = {
+        percentage: _aggregate(rows) for percentage, rows in training_items
+    }
+    all_x = np.unique(
+        np.concatenate(
+            [
+                inference_values["percentage"],
+                *[values["percentage"] for values in training_values.values()],
+            ]
+        )
+    )
+
+    colors = plt.cm.viridis(np.linspace(0.18, 0.85, len(training_items)))
+    fig, axis = plt.subplots(figsize=(8.6, 5.3), constrained_layout=True)
+    _plot_training_sweep_line(
+        axis,
+        inference_values,
+        color="#333333",
+        label="Baseline clean training",
+        linestyle="-",
+        marker="o",
+        fit_exponential_decay=fit_exponential_decay,
+    )
+    for color, (percentage, values) in zip(colors, training_values.items()):
+        _plot_training_sweep_line(
+            axis,
+            values,
+            color=color,
+            label=f"Fault-aware training {percentage:g}%",
+            linestyle="--",
+            marker="s",
+            fit_exponential_decay=fit_exponential_decay,
+        )
+
+    axis.set_ylabel("Balanced accuracy [%]")
+    axis.set_title(title or f"{model_alias}: robustness vs training fault percentage")
+    axis.legend(loc="best", fontsize=8, ncol=2)
+    _configure_x_axis(axis, all_x, "percentage")
+    if x_limit is not None:
+        axis.set_xlim(left=0.0, right=x_limit)
+    for suffix in (".png", ".pdf"):
+        fig.savefig(output_stem.with_suffix(suffix), dpi=300)
+    plt.close(fig)
+
+
 def plot_fault_scope_training_percentage_comparison(
     scope_rows: dict[str, dict],
     output_stem: Path,
