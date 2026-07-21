@@ -137,21 +137,38 @@ def _percentage_axis_ticks(x: np.ndarray) -> np.ndarray:
     return np.asarray(sorted(ticks), dtype=float)
 
 
-def _configure_x_axis(axis, x: np.ndarray, x_mode: str) -> None:
+def _configure_x_axis(
+    axis,
+    x: np.ndarray,
+    x_mode: str,
+    x_label: str | None = None,
+    tick_labelsize: float | None = None,
+    axis_labelsize: float | None = None,
+) -> None:
     positive = x[x > 0]
     if x_mode == "count":
         axis.set_xscale("symlog", base=2, linthresh=0.5, linscale=0.75)
         axis.xaxis.set_major_formatter(FuncFormatter(_count_formatter))
-        axis.set_xlabel("Random transient bit flips per event, K")
+        axis.set_xlabel(
+            x_label or "Random transient bit flips per event, K",
+            fontsize=axis_labelsize,
+        )
         axis.set_xticks(x)
-        axis.tick_params(axis="x", labelsize=8)
+        axis.tick_params(axis="x", labelsize=tick_labelsize or 8)
     elif x_mode == "percentage":
         threshold = positive.min() / 2 if len(positive) else 1e-6
         axis.set_xscale("symlog", base=10, linthresh=threshold, linscale=0.75)
         axis.xaxis.set_major_formatter(FuncFormatter(_percentage_formatter))
-        axis.set_xlabel("Flipped activation sites per event [%]")
+        axis.set_xlabel(
+            x_label or "Flipped activation sites per event [%]",
+            fontsize=axis_labelsize,
+        )
         axis.set_xticks(_percentage_axis_ticks(x))
-        axis.tick_params(axis="x", labelsize=7, labelrotation=30)
+        axis.tick_params(
+            axis="x",
+            labelsize=tick_labelsize or 7,
+            labelrotation=30,
+        )
         for label in axis.get_xticklabels():
             label.set_horizontalalignment("right")
     else:
@@ -481,6 +498,8 @@ def _plot_training_sweep_line(
     linestyle: str,
     marker: str,
     fit_exponential_decay: bool,
+    linewidth: float = 2.0,
+    markersize: float = 4.5,
 ) -> None:
     x = values["percentage"]
     y = 100 * values["balanced_accuracy_mean"]
@@ -490,9 +509,9 @@ def _plot_training_sweep_line(
         y,
         color=color,
         linestyle=linestyle,
-        linewidth=2.0,
+        linewidth=linewidth,
         marker=marker,
-        markersize=4.5,
+        markersize=markersize,
         label=label,
     )
     if np.any(ci > 0):
@@ -650,6 +669,9 @@ def plot_training_percentage_sweep_2d(
     title: str | None = None,
     x_limit: float | None = None,
     fit_exponential_decay: bool = False,
+    x_label: str | None = None,
+    show_title: bool = True,
+    paper_style: bool = False,
 ) -> None:
     """Plot only the 2D accuracy curves across training/inference percentages."""
     inference_values = _aggregate(inference_rows)
@@ -669,7 +691,12 @@ def plot_training_percentage_sweep_2d(
     )
 
     colors = plt.cm.viridis(np.linspace(0.18, 0.85, len(training_items)))
-    fig, axis = plt.subplots(figsize=(8.6, 5.3), constrained_layout=True)
+    fig, axis = plt.subplots(figsize=(8.6, 5.0), constrained_layout=True)
+    axis_labelsize = 15 if paper_style else None
+    tick_labelsize = 11 if paper_style else None
+    legend_fontsize = 9.5 if paper_style else 8
+    linewidth = 2.35 if paper_style else 2.0
+    markersize = 5.4 if paper_style else 4.5
     _plot_training_sweep_line(
         axis,
         inference_values,
@@ -678,6 +705,8 @@ def plot_training_percentage_sweep_2d(
         linestyle="-",
         marker="o",
         fit_exponential_decay=fit_exponential_decay,
+        linewidth=linewidth,
+        markersize=markersize,
     )
     for color, (percentage, values) in zip(colors, training_values.items()):
         _plot_training_sweep_line(
@@ -688,12 +717,26 @@ def plot_training_percentage_sweep_2d(
             linestyle="--",
             marker="s",
             fit_exponential_decay=fit_exponential_decay,
+            linewidth=linewidth,
+            markersize=markersize,
         )
 
-    axis.set_ylabel("Balanced accuracy [%]")
-    axis.set_title(title or f"{model_alias}: robustness vs training fault percentage")
-    axis.legend(loc="best", fontsize=8, ncol=2)
-    _configure_x_axis(axis, all_x, "percentage")
+    axis.set_ylabel("Balanced accuracy [%]", fontsize=axis_labelsize)
+    if show_title:
+        axis.set_title(
+            title or f"{model_alias}: robustness vs training fault percentage",
+            fontsize=14 if paper_style else None,
+        )
+    axis.tick_params(axis="y", labelsize=tick_labelsize)
+    axis.legend(loc="best", fontsize=legend_fontsize, ncol=2)
+    _configure_x_axis(
+        axis,
+        all_x,
+        "percentage",
+        x_label=x_label,
+        tick_labelsize=tick_labelsize,
+        axis_labelsize=axis_labelsize,
+    )
     if x_limit is not None:
         axis.set_xlim(left=0.0, right=x_limit)
     for suffix in (".png", ".pdf"):

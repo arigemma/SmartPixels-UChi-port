@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+import csv
 from dataclasses import dataclass
 import json
 import os
@@ -21,7 +22,10 @@ import numpy as np
 
 from lgnStudies.bitFlipStudy.campaign import REPEATS
 from lgnStudies.bitFlipStudy.combine_results import read_csv
-from lgnStudies.bitFlipStudy.plots import plot_training_percentage_sweep_2d
+from lgnStudies.bitFlipStudy.plots import (
+    _aggregate,
+    plot_training_percentage_sweep_2d,
+)
 from lgnStudies.bitFlipTrainingStudy.s08_percentage_sweep import (
     MODEL_ALIAS,
     parse_training_percentages,
@@ -291,15 +295,98 @@ def _require_plot_inputs(scope: str, selected: dict[float | None, Candidate]) ->
         )
 
 
+def _point_rows_for_candidate(
+    scope: str,
+    curve_label: str,
+    training_percentage: float | None,
+    candidate: Candidate,
+) -> list[dict]:
+    values = _aggregate(candidate.rows)
+    sample_counts = Counter(
+        int(row["flip_count_per_event"]) for row in candidate.rows
+    )
+    rows = []
+    for index, count in enumerate(values["count"]):
+        count_int = int(count)
+        rows.append(
+            {
+                "scope": scope,
+                "curve_label": curve_label,
+                "training_percentage": ""
+                if training_percentage is None
+                else f"{training_percentage:.12g}",
+                "flip_count_per_event": count_int,
+                "equivalent_fault_percentage": f"{values['percentage'][index]:.12g}",
+                "balanced_accuracy_percent": (
+                    f"{100 * values['balanced_accuracy_mean'][index]:.12g}"
+                ),
+                "balanced_accuracy_ci95_percent": (
+                    f"{100 * values['balanced_accuracy_ci95'][index]:.12g}"
+                ),
+                "sample_count": sample_counts[count_int],
+                "source": str(candidate.model_root),
+            }
+        )
+    return rows
+
+
+def _write_points_csv(path: Path, rows: list[dict]) -> None:
+    if not rows:
+        raise ValueError(f"No point rows supplied for {path}.")
+    fieldnames = (
+        "scope",
+        "curve_label",
+        "training_percentage",
+        "flip_count_per_event",
+        "equivalent_fault_percentage",
+        "balanced_accuracy_percent",
+        "balanced_accuracy_ci95_percent",
+        "sample_count",
+        "source",
+    )
+    temporary = path.with_suffix(".csv.tmp")
+    with temporary.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+    temporary.replace(path)
+
+
+def _scope_point_rows(
+    scope: str,
+    selected: dict[float | None, Candidate],
+    training_candidates: list[tuple[float, Candidate]],
+) -> list[dict]:
+    rows = _point_rows_for_candidate(
+        scope,
+        "Baseline clean training",
+        None,
+        selected[None],
+    )
+    for percentage, candidate in training_candidates:
+        rows.extend(
+            _point_rows_for_candidate(
+                scope,
+                f"Fault-aware training {percentage:g}%",
+                percentage,
+                candidate,
+            )
+        )
+    return rows
+
+
 def write_scope_plot(
     scope: str,
     selected: dict[float | None, Candidate],
     output_stem: Path,
-    title: str,
+    title: str | None,
     model_alias: str,
     x_limit: float,
     fit_exponential_decay: bool,
     require_x_coverage: bool,
+    x_label: str,
+    show_title: bool,
+    paper_style: bool,
 ) -> dict:
     _require_plot_inputs(scope, selected)
     inference_rows = selected[None].rows
@@ -341,10 +428,17 @@ def write_scope_plot(
         title=title,
         x_limit=x_limit,
         fit_exponential_decay=fit_exponential_decay,
+        x_label=x_label,
+        show_title=show_title,
+        paper_style=paper_style,
     )
+    point_rows = _scope_point_rows(scope, selected, training_candidates)
+    points_csv = output_stem.with_name(output_stem.name + "_points.csv")
+    _write_points_csv(points_csv, point_rows)
     return {
         "baseline_source": str(selected[None].model_root),
         "training_percentages": sorted(fault_aware_rows),
+        "points_csv": str(points_csv),
         "training_sources": {
             f"{percentage:g}": str(candidate.model_root)
             for percentage, candidate in training_candidates
@@ -392,6 +486,14 @@ def main() -> None:
     )
     parser.add_argument("--fit-exponential-decay", action="store_true")
     parser.add_argument(
+        "--paper-style",
+        action="store_true",
+        help=(
+            "Use larger text, scope-specific x-axis labels, and no in-figure "
+            "titles for paper figures."
+        ),
+    )
+    parser.add_argument(
         "--allow-partial-x-coverage",
         action="store_true",
         help=(
@@ -435,7 +537,9 @@ def main() -> None:
         "whole",
         whole,
         args.output_dir / "s08_internal_bit_flips_training_percentage_sweep",
-        (
+        None
+        if args.paper_style
+        else (
             "S08 internal/whole-model bit flips: baseline vs fault-aware "
             "training percentages"
         ),
@@ -443,17 +547,31 @@ def main() -> None:
         args.max_inference_percentage,
         args.fit_exponential_decay,
         not args.allow_partial_x_coverage,
+        "Flipped internal bits per event (%)",
+        not args.paper_style,
+        args.paper_style,
     )
     input_summary = write_scope_plot(
         "input",
         input_scope,
         args.output_dir / "s08_input_bit_flips_training_percentage_sweep",
-        "S08 input bit flips: baseline vs fault-aware training percentages",
+        None
+        if args.paper_style
+        else "S08 input bit flips: baseline vs fault-aware training percentages",
         args.model_alias,
         args.max_inference_percentage,
         args.fit_exponential_decay,
         not args.allow_partial_x_coverage,
+        "Flipped input bits per event (%)",
+        not args.paper_style,
+        args.paper_style,
     )
+    combined_points_csv = args.output_dir / "s08_final_plot_points.csv"
+    combined_point_rows = []
+    for summary_key in (whole_summary, input_summary):
+        with Path(summary_key["points_csv"]).open(newline="") as handle:
+            combined_point_rows.extend(csv.DictReader(handle))
+    _write_points_csv(combined_points_csv, combined_point_rows)
 
     summary = {
         "model_alias": args.model_alias,
@@ -466,6 +584,8 @@ def main() -> None:
         ),
         "max_training_percentage": args.max_training_percentage,
         "max_inference_percentage": args.max_inference_percentage,
+        "paper_style": args.paper_style,
+        "combined_points_csv": str(combined_points_csv),
         "whole_model_plot": whole_summary,
         "input_scope_plot": input_summary,
         "skipped_candidates": {
@@ -480,6 +600,7 @@ def main() -> None:
     print("[DONE] Wrote final S08 plots:")
     print(args.output_dir / "s08_internal_bit_flips_training_percentage_sweep.png")
     print(args.output_dir / "s08_input_bit_flips_training_percentage_sweep.png")
+    print(combined_points_csv)
     print(args.output_dir / "s08_final_plot_sources.json")
 
 
