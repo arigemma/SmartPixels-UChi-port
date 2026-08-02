@@ -1,19 +1,20 @@
 # S08 similarity-visualization strategy
 
-Status: **design note only**. This deliberately adds no comparison script, no
-radiation workflow, no training, and no changes to the existing visualizer.
-The current scope remains the clean, discrete `s08_p1202M_tau40` LGN.
+Status: **the two single-checkpoint atlases are implemented**. There is still no
+cross-checkpoint comparison, radiation workflow, or training, and the existing
+visualizer remains unchanged. The current scope is the clean, discrete
+`s08_p1202M_tau40` LGN.
 
 ## Required output contract: exactly two PNGs
 
-The future similarity mode must mirror the current visualizer and publish only
-these two primary plots:
+The single-checkpoint similarity mode mirrors the current visualizer and
+publishes only these two primary plots:
 
-1. `regular_similarity_network.png`: all 95,700 regular discrete gates, with
+1. `regular_similarity_atlas.png`: all 95,700 regular discrete gates, with
    unchanged gates muted and changed gates highlighted;
-2. `compacted_similarity_network.png`: only physical/reachable logic after
-   compaction, projected back onto the same stable gate coordinates so visual
-   regions correspond between models.
+2. `compacted_similarity_atlas.png`: physical/reachable logic after compaction,
+   projected back onto the same stable gate coordinates, with removed or
+   absorbed gates shown in quiet light gray.
 
 Any transition matrix, exact-count summary, or legend belongs as an inset in
 one of those two PNGs and as machine-readable data, not as a third plot.
@@ -140,13 +141,13 @@ projects the compact physical nodes back to those provenance coordinates:
 - physical in both with a changed compacted LUT: truth-table-distance color;
 - physical only in the baseline: blue removal marker;
 - physical only in the comparison: magenta addition marker;
-- removed in both by compaction: blank;
+- removed in both by compaction: quiet light gray;
 - changed and connected to other changed gates: candidate sensitive component;
 - stable gate on the boundary of a changed component: candidate interface net.
 
 An inverter folded into a downstream LUT is therefore shown at the downstream
 gate's original coordinate using its canonical compacted truth table. A
-passthrough or constant that creates no physical node is blank. This preserves
+passthrough or constant that creates no physical node is light gray. This preserves
 the meaning of “regular plot” versus “compact plot” while keeping locations
 stable enough for visual comparison.
 
@@ -218,6 +219,29 @@ raw counts without labelling any region “reconfigurable.”
 - choosing radiation levels, damage models, or retraining protocol;
 - generating an RTL patch or claiming an FPGA-reconfigurable region.
 
-The next implementation step, when explicitly requested, is only a read-only
-two-checkpoint, two-PNG prototype guarded by strict s08 and connection-hash
-checks.
+## Generate the two additional images now
+
+From the SmartPixels repository root, using the same environment as LGN
+training:
+
+```bash
+python -m visualizingLGN.visualize_similarity_atlas \
+  results/SLURM/2026_07_03_model2_resource_precision_5h_20k/s08_p1202M_tau40/final_model.pth \
+  --output-dir results/LGN_visualization/s08_clean
+```
+
+This adds exactly these two PNGs alongside the original regular and compacted
+overview images:
+
+```text
+regular_similarity_atlas.png
+compacted_similarity_atlas.png
+```
+
+It also saves `similarity_atlas_layout.npz`, which freezes the baseline gate
+coordinates for a later comparison, and `similarity_atlas_summary.json` with
+the checkpoint hash, compaction validation, and equivalence result.
+
+The next implementation step, only when explicitly requested, is a read-only
+two-checkpoint comparison that reuses this saved layout and still produces the
+same two-PNG regular/compacted contract.
