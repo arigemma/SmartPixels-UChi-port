@@ -53,6 +53,23 @@ def sample_unique_fault_indices(
             total_sites, dtype=torch.int64, device=device
         ).expand(batch_size, -1)
 
+    # Duplicate rejection is efficient for the low-density campaigns.  For
+    # high-density input-fault studies (for example K=60% of all input bits),
+    # assign every site an independent random key and take the K smallest.
+    # Continuous i.i.d. keys induce a uniform sample without replacement and
+    # avoid a rejection loop whose collision rate explodes at large K/N.
+    if flip_count * 10 >= total_sites:
+        random_keys = torch.rand(
+            (batch_size, total_sites), device=device, dtype=torch.float64
+        )
+        return torch.topk(
+            random_keys,
+            k=flip_count,
+            dim=1,
+            largest=False,
+            sorted=False,
+        ).indices
+
     indices = torch.randint(
         total_sites, (batch_size, flip_count), dtype=torch.int64, device=device
     )

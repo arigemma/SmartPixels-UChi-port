@@ -94,6 +94,15 @@ def sample_unique_fault_indices(
             (batch_size, total_sites),
         ).copy()
 
+    # At high fault fractions, duplicate rejection becomes both slow and
+    # unreliable.  Random-key partitioning samples a uniform K-subset for
+    # every event and remains well behaved through the 60% input-fault point.
+    if flip_count * 10 >= total_sites:
+        random_keys = rng.random((batch_size, total_sites))
+        return np.argpartition(random_keys, kth=flip_count - 1, axis=1)[
+            :, :flip_count
+        ].astype(np.int64, copy=False)
+
     indices = rng.integers(
         0,
         total_sites,

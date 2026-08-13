@@ -144,6 +144,7 @@ def _configure_x_axis(
     x_label: str | None = None,
     tick_labelsize: float | None = None,
     axis_labelsize: float | None = None,
+    linear: bool = False,
 ) -> None:
     positive = x[x > 0]
     if x_mode == "count":
@@ -156,21 +157,32 @@ def _configure_x_axis(
         axis.set_xticks(x)
         axis.tick_params(axis="x", labelsize=tick_labelsize or 8)
     elif x_mode == "percentage":
-        threshold = positive.min() / 2 if len(positive) else 1e-6
-        axis.set_xscale("symlog", base=10, linthresh=threshold, linscale=0.75)
+        if linear:
+            axis.set_xscale("linear")
+        else:
+            threshold = positive.min() / 2 if len(positive) else 1e-6
+            axis.set_xscale(
+                "symlog", base=10, linthresh=threshold, linscale=0.75
+            )
         axis.xaxis.set_major_formatter(FuncFormatter(_percentage_formatter))
         axis.set_xlabel(
             x_label or "Flipped activation sites per event [%]",
             fontsize=axis_labelsize,
         )
-        axis.set_xticks(_percentage_axis_ticks(x))
+        if linear:
+            maximum = float(np.max(x)) if len(x) else 0.0
+            step = 10.0 if maximum > 20.0 else 5.0
+            axis.set_xticks(np.arange(0.0, maximum + step / 2.0, step))
+        else:
+            axis.set_xticks(_percentage_axis_ticks(x))
         axis.tick_params(
             axis="x",
             labelsize=tick_labelsize or 7,
-            labelrotation=30,
+            labelrotation=0 if linear else 30,
         )
-        for label in axis.get_xticklabels():
-            label.set_horizontalalignment("right")
+        if not linear:
+            for label in axis.get_xticklabels():
+                label.set_horizontalalignment("right")
     else:
         raise ValueError(f"Unknown x-axis mode: {x_mode}")
     axis.grid(True, which="both", alpha=0.25)
@@ -672,6 +684,7 @@ def plot_training_percentage_sweep_2d(
     x_label: str | None = None,
     show_title: bool = True,
     paper_style: bool = False,
+    linear_x_axis: bool = False,
 ) -> None:
     """Plot only the 2D accuracy curves across training/inference percentages."""
     inference_values = _aggregate(inference_rows)
@@ -736,6 +749,7 @@ def plot_training_percentage_sweep_2d(
         x_label=x_label,
         tick_labelsize=tick_labelsize,
         axis_labelsize=axis_labelsize,
+        linear=linear_x_axis,
     )
     if x_limit is not None:
         axis.set_xlim(left=0.0, right=x_limit)

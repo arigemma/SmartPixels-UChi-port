@@ -110,10 +110,14 @@ def plot_training_history(
     probability = 100 * float(rows[0]["training_fault_probability"])
     scope = rows[0].get("training_fault_scope", "all")
     accuracy_axis.set_ylabel("Clean balanced accuracy [%]")
-    accuracy_axis.set_title(
-        f"{model_alias}: QKeras fault-aware training "
-        f"({probability:g}% per activation bit, {scope})"
-    )
+    if probability == 0.0:
+        title = f"{model_alias}: QKeras clean baseline training"
+    else:
+        title = (
+            f"{model_alias}: QKeras fault-aware training "
+            f"({probability:g}% per activation bit, {scope})"
+        )
+    accuracy_axis.set_title(title)
     accuracy_axis.grid(True, alpha=0.25)
 
     colors = ("#3366a6", "#d05a3a", "#2f8a62")
@@ -517,6 +521,9 @@ def main() -> None:
     completion = {
         "complete": True,
         "completion_basis": "qkeras_fault_aware_training_loop",
+        "training_condition": (
+            "clean_baseline" if fault_probability == 0.0 else "fault_aware"
+        ),
         "stop_requested": False,
         "model_alias": args.model_alias,
         "registry_name": config.registry_name,

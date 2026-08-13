@@ -32,6 +32,7 @@ from lgnStudies.synthesis_interface import export_dense_lgn_stage
 
 
 MODEL_ALIASES = {
+    "s02_p163M_tau20": "lgn-dense-2-dense-100_128_-model2lgnFull_s02_p163M_20",
     "s06_p760M_tau40": "lgn-dense-2-dense-100_128_-model2lgnFull_s06_p760M_40",
     "s08_p1202M_tau40": "lgn-dense-2-dense-100_128_-model2lgnFull_s08_p1202M_40",
     "s09_p1460M_tau40": "lgn-dense-2-dense-100_128_-model2lgnFull_s09_p1460M_40",

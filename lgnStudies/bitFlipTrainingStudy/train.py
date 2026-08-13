@@ -95,9 +95,14 @@ def plot_training_history(
     accuracy_axis.set_ylabel("Clean balanced accuracy [%]")
     probability = 100 * float(rows[0]["training_fault_probability"])
     scope = rows[0].get("training_fault_scope", "all")
-    accuracy_axis.set_title(
-        f"{model_alias}: fault-aware training ({probability:g}% per site, {scope})"
-    )
+    if probability == 0.0:
+        title = f"{model_alias}: clean baseline training (no injected faults)"
+    else:
+        title = (
+            f"{model_alias}: fault-aware training "
+            f"({probability:g}% per site, {scope})"
+        )
+    accuracy_axis.set_title(title)
     accuracy_axis.grid(True, alpha=0.25)
 
     colors = ("#3366a6", "#d05a3a", "#2f8a62")
@@ -221,10 +226,6 @@ def main() -> None:
         )
     except ValueError as error:
         parser.error(str(error))
-    if fault_probability == 0:
-        parser.error(
-            "--training-fault-probability must be nonzero for this study."
-        )
     if (
         args.steps < 1
         or args.eval_freq < 1
@@ -393,7 +394,16 @@ def main() -> None:
     elapsed_hours = elapsed_training_seconds() / 3600
     status = {
         "complete": complete,
-        "study": "fault_aware_activation_bit_flip_training",
+        "study": (
+            "clean_baseline_training"
+            if fault_model.fault_probability == 0.0
+            else "fault_aware_activation_bit_flip_training"
+        ),
+        "training_condition": (
+            "clean_baseline"
+            if fault_model.fault_probability == 0.0
+            else "fault_aware"
+        ),
         "model_alias": args.model,
         "registry_name": registry_name,
         "minimum_steps": args.steps,
