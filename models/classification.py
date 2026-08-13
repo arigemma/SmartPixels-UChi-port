@@ -1175,6 +1175,226 @@ class ConvLGNModel3FullS05P1069M__60(_ConvLGNModel3FullS05P1069M):
     tau = 60.0
 
 
+class _ConvLGNModel3CurveS01P046M(_ConvLGNModel3FullSized):
+    """Lower extension of the model3Full width family (45.811M proxy params)."""
+
+    k1, k2, k3, k4 = 64, 128, 256, 240
+    fc_base = 1200
+
+
+class _ConvLGNModel3CurveS02P074M(_ConvLGNModel3FullSized):
+    """Lower extension of the model3Full width family (74.220M proxy params)."""
+
+    k1, k2, k3, k4 = 96, 192, 384, 360
+    fc_base = 1500
+
+
+class _ConvLGNModel3CurveS03P109M(_ConvLGNModel3FullSized):
+    """Lower extension of the model3Full width family (109.498M proxy params)."""
+
+    k1, k2, k3, k4 = 128, 256, 512, 480
+    fc_base = 1800
+
+
+class _ConvLGNModel3CurveS04P152M(_ConvLGNModel3FullSized):
+    """Lower extension of the model3Full width family (151.644M proxy params)."""
+
+    k1, k2, k3, k4 = 160, 320, 640, 600
+    fc_base = 2100
+
+
+class _ConvLGNModel3CurveS05P201M(_ConvLGNModel3FullSized):
+    """Lower extension of the model3Full width family (200.659M proxy params)."""
+
+    k1, k2, k3, k4 = 192, 384, 768, 720
+    fc_base = 2400
+
+
+class _ConvLGNModel3CurveS06P1325M(_ConvLGNModel3FullSized):
+    """Upper extension of the model3Full width family (1324.608M proxy params)."""
+
+    k1, k2, k3, k4 = 576, 1152, 2304, 2160
+    fc_base = 6000
+
+
+class _ConvLGNModel3CurveS07P1608M(_ConvLGNModel3FullSized):
+    """Upper extension of the model3Full width family (1608.096M proxy params)."""
+
+    k1, k2, k3, k4 = 640, 1280, 2560, 2400
+    fc_base = 6600
+
+
+class _ConvLGNModel3CurveS08P1919M(_ConvLGNModel3FullSized):
+    """Upper extension of the model3Full width family (1919.059M proxy params)."""
+
+    k1, k2, k3, k4 = 704, 1408, 2816, 2640
+    fc_base = 7200
+
+
+class _ConvLGNModel3CurveS09P2257M(_ConvLGNModel3FullSized):
+    """Upper extension of the model3Full width family (2257.498M proxy params)."""
+
+    k1, k2, k3, k4 = 768, 1536, 3072, 2880
+    fc_base = 7800
+
+
+class _ConvLGNModel3CurveS10P2623M(_ConvLGNModel3FullSized):
+    """Upper extension of the model3Full width family (2623.411M proxy params)."""
+
+    k1, k2, k3, k4 = 832, 1664, 3328, 3120
+    fc_base = 8400
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s01_p046M_10", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS01P046M__10(_ConvLGNModel3CurveS01P046M):
+    tau = 10.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s01_p046M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS01P046M__20(_ConvLGNModel3CurveS01P046M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s01_p046M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS01P046M__40(_ConvLGNModel3CurveS01P046M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s02_p074M_10", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS02P074M__10(_ConvLGNModel3CurveS02P074M):
+    tau = 10.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s02_p074M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS02P074M__20(_ConvLGNModel3CurveS02P074M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s02_p074M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS02P074M__40(_ConvLGNModel3CurveS02P074M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s03_p109M_10", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS03P109M__10(_ConvLGNModel3CurveS03P109M):
+    tau = 10.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s03_p109M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS03P109M__20(_ConvLGNModel3CurveS03P109M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s03_p109M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS03P109M__40(_ConvLGNModel3CurveS03P109M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s04_p152M_10", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS04P152M__10(_ConvLGNModel3CurveS04P152M):
+    tau = 10.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s04_p152M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS04P152M__20(_ConvLGNModel3CurveS04P152M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s04_p152M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS04P152M__40(_ConvLGNModel3CurveS04P152M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s05_p201M_10", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS05P201M__10(_ConvLGNModel3CurveS05P201M):
+    tau = 10.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s05_p201M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS05P201M__20(_ConvLGNModel3CurveS05P201M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s05_p201M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS05P201M__40(_ConvLGNModel3CurveS05P201M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s06_p1325M_10", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS06P1325M__10(_ConvLGNModel3CurveS06P1325M):
+    tau = 10.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s06_p1325M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS06P1325M__20(_ConvLGNModel3CurveS06P1325M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s06_p1325M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS06P1325M__40(_ConvLGNModel3CurveS06P1325M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s07_p1608M_10", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS07P1608M__10(_ConvLGNModel3CurveS07P1608M):
+    tau = 10.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s07_p1608M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS07P1608M__20(_ConvLGNModel3CurveS07P1608M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s07_p1608M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS07P1608M__40(_ConvLGNModel3CurveS07P1608M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s08_p1919M_10", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS08P1919M__10(_ConvLGNModel3CurveS08P1919M):
+    tau = 10.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s08_p1919M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS08P1919M__20(_ConvLGNModel3CurveS08P1919M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s08_p1919M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS08P1919M__40(_ConvLGNModel3CurveS08P1919M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s09_p2257M_10", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS09P2257M__10(_ConvLGNModel3CurveS09P2257M):
+    tau = 10.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s09_p2257M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS09P2257M__20(_ConvLGNModel3CurveS09P2257M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s09_p2257M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS09P2257M__40(_ConvLGNModel3CurveS09P2257M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s10_p2623M_10", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS10P2623M__10(_ConvLGNModel3CurveS10P2623M):
+    tau = 10.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s10_p2623M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS10P2623M__20(_ConvLGNModel3CurveS10P2623M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Curve_s10_p2623M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3CurveS10P2623M__40(_ConvLGNModel3CurveS10P2623M):
+    tau = 40.0
+
+
 class _ConvLGNModel3DeepSized(_ConvLGNModel3FullS01P319M):
     extra_dense_layers = 1
 
@@ -1585,6 +1805,153 @@ class _DenseOnlyLGN14F_Model2FullS16P3977M(_DenseOnlyLGN14F_Model2FullSized):
 
 class _DenseOnlyLGN14F_Model2FullS17P4437M(_DenseOnlyLGN14F_Model2FullSized):
     hidden_dims = (33600, 33600, 33600, 22400, 22400, 22400, 16800)
+
+
+class _DenseOnlyLGN14F_Model2FullLeftS01P005M(_DenseOnlyLGN14F_Model2FullSized):
+    """4.997M dense-connectivity proxy parameters (0.005M plot label)."""
+
+    hidden_dims = (1269, 1269, 1269)
+
+
+class _DenseOnlyLGN14F_Model2FullLeftS02P008M(_DenseOnlyLGN14F_Model2FullSized):
+    """7.493M dense-connectivity proxy parameters (0.0075M plot target)."""
+
+    hidden_dims = (1617, 1617, 1617)
+
+
+class _DenseOnlyLGN14F_Model2FullLeftS03P010M(_DenseOnlyLGN14F_Model2FullSized):
+    """10.006M dense-connectivity proxy parameters (0.010M plot label)."""
+
+    hidden_dims = (1914, 1914, 1914)
+
+
+class _DenseOnlyLGN14F_Model2FullLeftS04P013M(_DenseOnlyLGN14F_Model2FullSized):
+    """12.506M dense-connectivity proxy parameters (0.0125M plot target)."""
+
+    hidden_dims = (2175, 2175, 2175)
+
+
+class _DenseOnlyLGN14F_Model2FullLeftS05P015M(_DenseOnlyLGN14F_Model2FullSized):
+    """15.012M dense-connectivity proxy parameters (0.015M plot label)."""
+
+    hidden_dims = (2412, 2412, 2412)
+
+
+class _DenseOnlyLGN14F_Model2FullLeftS06P018M(_DenseOnlyLGN14F_Model2FullSized):
+    """17.492M dense-connectivity proxy parameters (0.0175M plot target)."""
+
+    hidden_dims = (2628, 2628, 2628)
+
+
+class _DenseOnlyLGN14F_Model2FullLeftS07P020M(_DenseOnlyLGN14F_Model2FullSized):
+    """20.005M dense-connectivity proxy parameters (0.020M plot label)."""
+
+    hidden_dims = (2832, 2832, 2832)
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFullLeft_s01_p005M_10", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullLeftS01P005M__10(_DenseOnlyLGN14F_Model2FullLeftS01P005M):
+    tau = 10.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFullLeft_s01_p005M_20", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullLeftS01P005M__20(_DenseOnlyLGN14F_Model2FullLeftS01P005M):
+    tau = 20.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFullLeft_s01_p005M_40", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullLeftS01P005M__40(_DenseOnlyLGN14F_Model2FullLeftS01P005M):
+    tau = 40.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFullLeft_s02_p008M_10", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullLeftS02P008M__10(_DenseOnlyLGN14F_Model2FullLeftS02P008M):
+    tau = 10.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFullLeft_s02_p008M_20", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullLeftS02P008M__20(_DenseOnlyLGN14F_Model2FullLeftS02P008M):
+    tau = 20.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFullLeft_s02_p008M_40", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullLeftS02P008M__40(_DenseOnlyLGN14F_Model2FullLeftS02P008M):
+    tau = 40.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFullLeft_s03_p010M_10", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullLeftS03P010M__10(_DenseOnlyLGN14F_Model2FullLeftS03P010M):
+    tau = 10.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFullLeft_s03_p010M_20", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullLeftS03P010M__20(_DenseOnlyLGN14F_Model2FullLeftS03P010M):
+    tau = 20.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFullLeft_s03_p010M_40", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullLeftS03P010M__40(_DenseOnlyLGN14F_Model2FullLeftS03P010M):
+    tau = 40.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFullLeft_s04_p013M_10", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullLeftS04P013M__10(_DenseOnlyLGN14F_Model2FullLeftS04P013M):
+    tau = 10.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFullLeft_s04_p013M_20", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullLeftS04P013M__20(_DenseOnlyLGN14F_Model2FullLeftS04P013M):
+    tau = 20.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFullLeft_s04_p013M_40", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullLeftS04P013M__40(_DenseOnlyLGN14F_Model2FullLeftS04P013M):
+    tau = 40.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFullLeft_s05_p015M_10", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullLeftS05P015M__10(_DenseOnlyLGN14F_Model2FullLeftS05P015M):
+    tau = 10.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFullLeft_s05_p015M_20", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullLeftS05P015M__20(_DenseOnlyLGN14F_Model2FullLeftS05P015M):
+    tau = 20.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFullLeft_s05_p015M_40", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullLeftS05P015M__40(_DenseOnlyLGN14F_Model2FullLeftS05P015M):
+    tau = 40.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFullLeft_s06_p018M_10", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullLeftS06P018M__10(_DenseOnlyLGN14F_Model2FullLeftS06P018M):
+    tau = 10.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFullLeft_s06_p018M_20", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullLeftS06P018M__20(_DenseOnlyLGN14F_Model2FullLeftS06P018M):
+    tau = 20.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFullLeft_s06_p018M_40", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullLeftS06P018M__40(_DenseOnlyLGN14F_Model2FullLeftS06P018M):
+    tau = 40.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFullLeft_s07_p020M_10", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullLeftS07P020M__10(_DenseOnlyLGN14F_Model2FullLeftS07P020M):
+    tau = 10.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFullLeft_s07_p020M_20", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullLeftS07P020M__20(_DenseOnlyLGN14F_Model2FullLeftS07P020M):
+    tau = 20.0
+
+
+@register("lgn-dense-2-dense-100_128_-model2lgnFullLeft_s07_p020M_40", input_type="y-profile", task_type="classification")
+class DenseOnlyLGN_14F_Model2FullLeftS07P020M__40(_DenseOnlyLGN14F_Model2FullLeftS07P020M):
+    tau = 40.0
 
 
 @register("lgn-dense-2-dense-100_128_-model2lgnFull_s01_dsNewLike_5", input_type="y-profile", task_type="classification")
