@@ -1,5 +1,8 @@
 # Model-2 LGN resource/precision study
 
+The separate June-25 model-3 convolutional tau-selection workflow is
+documented in [`MODEL3_EVALUATION.md`](MODEL3_EVALUATION.md).
+
 This study produces the PI-requested per-model trajectory: total estimated
 hardware resource on the x-axis and balanced accuracy on the y-axis, with one
 point for each recorded training stage.

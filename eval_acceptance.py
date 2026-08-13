@@ -105,7 +105,9 @@ def write_balanced_accuracy_summary(outdir: Path, rows: List[Tuple[str, str, str
         writer = csv.writer(f, delimiter="\t")
         writer.writerow(["label", "input_type", "balanced_acc", "path"])
         for label, input_type, path, bal in rows:
-            writer.writerow([label, input_type, f"{bal:.6f}", path])
+            # Preserve enough precision for deterministic hyperparameter
+            # selection; the human-readable console summary remains at 6 dp.
+            writer.writerow([label, input_type, f"{bal:.12g}", path])
     print("[DONE] Wrote balanced accuracy table to:", str(outpath))
 
 
