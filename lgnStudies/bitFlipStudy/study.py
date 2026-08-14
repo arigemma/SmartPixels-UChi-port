@@ -54,6 +54,14 @@ DEFAULT_FLIP_COUNTS = (
     3072,
     4096,
 )
+SUPPORTED_MODEL_HIDDEN_DIMS = (
+    # Selected small Pareto point used by inputBitFlipStudy.
+    (6300, 6300, 6300, 4200, 4200, 4200, 3150),
+    # Original three-model S08 inference campaign.
+    (13800, 13800, 13800, 9200, 9200, 9200, 6900),
+    (17400, 17400, 17400, 11600, 11600, 11600, 8700),
+    (19200, 19200, 19200, 12800, 12800, 12800, 9600),
+)
 CSV_FIELDS = (
     "model_alias",
     "registry_name",
@@ -93,12 +101,8 @@ def validate_model(model, expected_registry_name: str) -> None:
         )
     if config["input_type"] != "y-profile":
         raise ValueError("Bit-flip study is restricted to model-2 y-profile LGNs.")
-    if tuple(getattr(model, "hidden_dims", ())) not in (
-        (13800, 13800, 13800, 9200, 9200, 9200, 6900),
-        (17400, 17400, 17400, 11600, 11600, 11600, 8700),
-        (19200, 19200, 19200, 12800, 12800, 12800, 9600),
-    ):
-        raise ValueError("Checkpoint is not one of the three selected model-2 LGNs.")
+    if tuple(getattr(model, "hidden_dims", ())) not in SUPPORTED_MODEL_HIDDEN_DIMS:
+        raise ValueError("Checkpoint is not one of the selected model-2 LGNs.")
 
 
 def set_fault_seed(seed: int) -> None:

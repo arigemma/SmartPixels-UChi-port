@@ -91,3 +91,20 @@ qkeras_y256_64_w4a8_input_bit_flip_robustness_linear.pdf
 The plots show the clean-trained baseline as a solid line and all ten
 fault-aware training conditions as dashed lines, with balanced accuracy on
 the y-axis and random input-bit faults per event [%] on a linear x-axis.
+
+## Resuming failed evaluation tasks
+
+The trained checkpoints and completed evaluation chunks can be reused. After
+fixing the cause of a failed task, provide the existing campaign root and the
+Slurm array indices to rerun. The launcher submits only those evaluation tasks
+and a dependent combine/plot job:
+
+```bash
+bash inputBitFlipStudy/resume_failed_evaluation.sh \
+  results/SLURM/YYYY_MM_DD_selected_input_bit_flip_1to10pct_eval60_linear \
+  0-43,84-87
+```
+
+For the 2026-08-13 campaign, indices `0-43` are the LGN chunks and `84-87`
+are the QKeras 10%-trained chunks. The launcher refuses to run unless all 22
+training completion records exist.

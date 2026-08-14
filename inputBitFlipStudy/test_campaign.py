@@ -20,6 +20,8 @@ from lgnStudies.bitFlipStudy.fault_injection import (
     sample_unique_fault_indices as sample_lgn_indices,
 )
 from lgnStudies.bitFlipStudy.plots import _configure_x_axis
+from lgnStudies.bitFlipStudy.study import SUPPORTED_MODEL_HIDDEN_DIMS
+from models.registry import REGISTRY
 from qkerasStudies.fault_injection import (
     sample_unique_fault_indices as sample_qkeras_indices,
 )
@@ -49,6 +51,10 @@ class SelectedInputFaultCampaignTest(unittest.TestCase):
         self.assertEqual(MODELS[0].input_fault_sites, 1400)
         self.assertEqual(MODELS[1].input_fault_sites, 112)
 
+    def test_selected_lgn_is_supported_by_inference_evaluator(self):
+        model_class = REGISTRY[MODELS[0].registry_name]["class"]
+        self.assertIn(tuple(model_class.hidden_dims), SUPPORTED_MODEL_HIDDEN_DIMS)
+
     def test_high_fraction_samplers_are_unique(self):
         lgn = sample_lgn_indices(4, 100, 60, "cpu")
         self.assertEqual(tuple(lgn.shape), (4, 60))
@@ -75,6 +81,7 @@ class SelectedInputFaultCampaignTest(unittest.TestCase):
         root = Path(__file__).resolve().parent
         training_slurm = (root / "run_training.slurm").read_text()
         evaluation_slurm = (root / "run_evaluation.slurm").read_text()
+        resume_launcher = (root / "resume_failed_evaluation.sh").read_text()
         self.assertIn(
             f"#SBATCH --array=0-{len(training_tasks()) - 1}",
             training_slurm,
@@ -83,6 +90,7 @@ class SelectedInputFaultCampaignTest(unittest.TestCase):
             f"#SBATCH --array=0-{len(evaluation_tasks()) - 1}",
             evaluation_slurm,
         )
+        self.assertIn('FAILED_TASKS="${2:-0-43,84-87}"', resume_launcher)
 
 
 if __name__ == "__main__":
