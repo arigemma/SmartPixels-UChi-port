@@ -15,6 +15,7 @@ from utils import get_device
 import pandas as pd
 from models.registry import REGISTRY
 from datetime import datetime
+import signal
 
 
 def save_model(model, model_name, path):
@@ -272,11 +273,25 @@ def main(args):
     }
 
     step, running_loss, running_n, stop = 0, 0.0, 0, False
+
+    def request_stop(signum, _frame):
+        nonlocal stop
+        print(
+            f"[SIGNAL] Received {signum}; stopping after the current batch.",
+            flush=True,
+        )
+        stop = True
+
+    signal.signal(signal.SIGUSR1, request_stop)
+    signal.signal(signal.SIGTERM, request_stop)
+
     epoch = 0
     while not stop and (args.epochs == 0 or epoch < args.epochs):
         train_loader.dataset.shuffle_indices()  # Shuffle the dataset at the beginning of each epoch
         pbar = tqdm(train_loader, desc=f"Training (Epoch {epoch})", unit="batch", leave=True)
         for inputs, labels in pbar:
+            if stop:
+                break
             step += 1
             inputs = inputs.to(device)
             labels = labels.to(device)
@@ -285,14 +300,17 @@ def main(args):
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
-            running_loss += loss
+            # Accumulate a scalar, not the loss tensor. Retaining every loss
+            # tensor also retains its autograd graph and causes memory to grow
+            # until Slurm kills long-running sweeps for OOM.
+            running_loss += loss.detach().item()
             running_n += 1
             if step % 100 == 0:
                 preds = outputs.argmax(dim=1)  # Get the class with highest probability
                 truth = labels.argmax(dim=1)  # Get the true class
                 acc = (preds == truth).float().mean().item()
                 pbar.set_postfix({
-                    "running loss": f"{running_loss.item() / running_n:.3f}",
+                    "running loss": f"{running_loss / running_n:.3f}",
                     "acc": f"{acc:.3f}",
                     "loss": f"{loss.item():.3f}"
                 })
@@ -331,6 +349,12 @@ def main(args):
         epoch += 1
 
     save_model(model, args.model, f"{args.output}/final_model.pth")
+    writer.close()
+    print(
+        f"[DONE] Saved final model after {step} steps to "
+        f"{args.output}/final_model.pth",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

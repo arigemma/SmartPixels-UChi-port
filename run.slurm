@@ -7,6 +7,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16G
 #SBATCH --array=0-50
+#SBATCH --signal=B:USR1@300
 
 # One array entry per architecture/tau pair:
 #   7 dense left-extension sizes x 3 taus = 21 jobs
@@ -68,11 +69,18 @@ SIZE_LABEL="${SIZE_LABELS[$SIZE_INDEX]}"
 MODEL="${MODEL_PREFIXES[$SIZE_INDEX]}_${TAU}"
 
 if [[ "$FAMILY" == "dense" ]]; then
-  OUTPUT_BASE="results/SLURM/2026_08_13_model2lgnFull_left_extension"
+  OUTPUT_BASE="${PARETO_DENSE_OUTPUT_BASE:-results/SLURM/2026_08_13_model2lgnFull_left_extension}"
 else
-  OUTPUT_BASE="results/SLURM/2026_08_13_model3lgnConv_curve_extension"
+  OUTPUT_BASE="${PARETO_CONV_OUTPUT_BASE:-results/SLURM/2026_08_13_model3lgnConv_curve_extension}"
 fi
 OUTPUT_DIR="${OUTPUT_BASE}/${SIZE_LABEL}/tau_${TAU}"
+
+BATCH_SIZE=1024
+if [[ "$FAMILY" == "conv" && "$SIZE_LABEL" == "s10_p2623M" ]]; then
+  # This architecture exceeds 40 GB at batch 1024. Use the same safe batch
+  # size for all three taus so their comparison remains internally consistent.
+  BATCH_SIZE=512
+fi
 
 mkdir -p logs "$OUTPUT_DIR"
 
@@ -80,14 +88,15 @@ echo "Running ${MODEL}"
 echo "Family: ${FAMILY}"
 echo "Size: ${SIZE_LABEL}"
 echo "Tau: ${TAU}"
+echo "Batch size: ${BATCH_SIZE}"
 echo "Output: ${OUTPUT_DIR}"
 echo "TensorBoard: ${OUTPUT_DIR}/logs"
 
-python train.py \
+exec python train.py \
   -c config/10783560/v3.yml \
   --balance-classes \
   --device cuda \
-  -bs 1024 \
+  -bs "$BATCH_SIZE" \
   -lf cross_entropy \
   -lr 0.01 \
   --disable-early-stopping \
