@@ -135,3 +135,29 @@ qkeras_y256_64_w4a8_input_bit_flip_robustness_linear_refined_0to10pct.pdf
 Per-condition merged data are written as
 `bit_flip_results_refined_0to10pct.csv`; the original
 `bit_flip_results.csv` files are not modified.
+
+## Paper-ready five-point extension
+
+After the 2.5% and 7.5% refinement has completed, add five more inference-only
+points at targets 1.25%, 3.75%, 12.5%, 17.5%, and 22.5%:
+
+```bash
+bash inputBitFlipStudy/submit_paper_refinement.sh
+```
+
+This again reuses all 22 trained checkpoints. It retains the base and first
+refinement data, evaluates only the five new points, and plots the combined
+curves over 0--50% with enlarged paper typography, legend, lines, and markers.
+QKeras x-values use its nearest exactly representable counts.
+
+The paper outputs are:
+
+```text
+s02_p163M_tau20_input_bit_flip_robustness_paper_0to50pct.png
+s02_p163M_tau20_input_bit_flip_robustness_paper_0to50pct.pdf
+qkeras_y256_64_w4a8_input_bit_flip_robustness_paper_0to50pct.png
+qkeras_y256_64_w4a8_input_bit_flip_robustness_paper_0to50pct.pdf
+```
+
+The fully merged per-condition tables are named
+`bit_flip_results_paper_0to50pct.csv`. Earlier tables and plots are unchanged.

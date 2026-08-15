@@ -25,8 +25,19 @@ REFINEMENT_PERCENTAGES = (2.5, 7.5)
 REFINED_EVALUATION_PERCENTAGES = tuple(
     sorted((*EVALUATION_PERCENTAGES, *REFINEMENT_PERCENTAGES))
 )
+PAPER_REFINEMENT_PERCENTAGES = (1.25, 3.75, 12.5, 17.5, 22.5)
+PAPER_REFINED_EVALUATION_PERCENTAGES = tuple(
+    sorted(
+        (
+            *EVALUATION_PERCENTAGES,
+            *REFINEMENT_PERCENTAGES,
+            *PAPER_REFINEMENT_PERCENTAGES,
+        )
+    )
+)
 COUNTS_PER_CHUNK = 3
 REFINEMENT_DIRECTORY = "refinement_0to10pct"
+PAPER_REFINEMENT_DIRECTORY = "paper_refinement_0to25pct"
 
 
 @dataclass(frozen=True)
@@ -123,11 +134,13 @@ def evaluation_flip_count_chunks(
     )
 
 
-def refinement_flip_counts(total_fault_sites: int) -> tuple[int, ...]:
-    """Return unique exact counts for the 2.5% and 7.5% refinement."""
+def _additional_flip_counts(
+    total_fault_sites: int,
+    percentages: tuple[float, ...],
+    excluded_counts: tuple[int, ...],
+) -> tuple[int, ...]:
     if total_fault_sites < 1:
         raise ValueError("The input fault space must contain at least one site.")
-    base_counts = set(evaluation_flip_counts(total_fault_sites))
     counts = tuple(
         sorted(
             {
@@ -135,17 +148,43 @@ def refinement_flip_counts(total_fault_sites: int) -> tuple[int, ...]:
                     total_fault_sites,
                     max(1, int(round(total_fault_sites * percentage / 100.0))),
                 )
-                for percentage in REFINEMENT_PERCENTAGES
+                for percentage in percentages
             }
         )
     )
-    overlap = base_counts.intersection(counts)
-    if len(counts) != len(REFINEMENT_PERCENTAGES) or overlap:
+    overlap = set(excluded_counts).intersection(counts)
+    if len(counts) != len(percentages) or overlap:
         raise ValueError(
-            f"Refinement grid is not distinct for {total_fault_sites} sites: "
+            f"Additional grid is not distinct for {total_fault_sites} sites: "
             f"counts={counts}, overlap={sorted(overlap)}"
         )
     return counts
+
+
+def refinement_flip_counts(total_fault_sites: int) -> tuple[int, ...]:
+    """Return unique exact counts for the 2.5% and 7.5% refinement."""
+    return _additional_flip_counts(
+        total_fault_sites,
+        REFINEMENT_PERCENTAGES,
+        evaluation_flip_counts(total_fault_sites),
+    )
+
+
+def paper_refinement_flip_counts(total_fault_sites: int) -> tuple[int, ...]:
+    """Return the five new exact counts used by the 0--50% paper plot."""
+    excluded = tuple(
+        sorted(
+            (
+                *evaluation_flip_counts(total_fault_sites),
+                *refinement_flip_counts(total_fault_sites),
+            )
+        )
+    )
+    return _additional_flip_counts(
+        total_fault_sites,
+        PAPER_REFINEMENT_PERCENTAGES,
+        excluded,
+    )
 
 
 def training_tasks() -> list[dict]:
@@ -226,6 +265,33 @@ def refinement_tasks() -> list[dict]:
     return tasks
 
 
+def paper_refinement_tasks() -> list[dict]:
+    """One five-point paper-refinement task per trained checkpoint."""
+    tasks = []
+    for model in MODELS:
+        for percentage in (None, *TRAINING_PERCENTAGES):
+            tasks.append(
+                {
+                    "family": model.family,
+                    "condition": (
+                        "clean_baseline"
+                        if percentage is None
+                        else "fault_aware_training"
+                    ),
+                    "tag": percentage_tag(percentage),
+                    "percentage": percentage,
+                    "model_alias": model.alias,
+                    "registry_name": model.registry_name,
+                    "flip_counts": paper_refinement_flip_counts(
+                        model.input_fault_sites
+                    ),
+                    "minimum_training_hours": model.minimum_training_hours,
+                    "minimum_training_steps": model.minimum_training_steps,
+                }
+            )
+    return tasks
+
+
 def _task_at(tasks: list[dict], task_id: int, label: str) -> dict:
     if task_id < 0 or task_id >= len(tasks):
         raise ValueError(f"{label} task ID must lie in [0, {len(tasks) - 1}].")
@@ -242,6 +308,10 @@ def evaluation_configuration(task_id: int) -> dict:
 
 def refinement_configuration(task_id: int) -> dict:
     return _task_at(refinement_tasks(), task_id, "Refinement")
+
+
+def paper_refinement_configuration(task_id: int) -> dict:
+    return _task_at(paper_refinement_tasks(), task_id, "Paper refinement")
 
 
 def _model_root(root: Path, model: ModelSpec, tag: str) -> Path:
@@ -338,62 +408,52 @@ def _validate_result_grid(
         raise ValueError(f"Wrong count/repeat identities in {source}.")
 
 
-def _combine_refined_source(
-    root: Path,
+def _merge_additional_result_source(
     model: ModelSpec,
-    tag: str,
-) -> list[dict]:
-    model_root = _model_root(root, model, tag)
-    base_csv = model_root / "bit_flip_results.csv"
-    refinement_root = model_root / REFINEMENT_DIRECTORY
-    refinement_csv = refinement_root / "bit_flip_results.csv"
+    base_csv: Path,
+    base_counts: tuple[int, ...],
+    base_predictions: Path,
+    additional_csv: Path,
+    additional_counts: tuple[int, ...],
+    additional_predictions: Path,
+    merged_csv: Path,
+    context: str,
+) -> tuple[list[dict], tuple[int, ...]]:
     base_rows = _read_result_rows(base_csv)
-    refinement_rows = _read_result_rows(refinement_csv)
+    additional_rows = _read_result_rows(additional_csv)
 
-    base_counts = evaluation_flip_counts(model.input_fault_sites)
-    extra_counts = refinement_flip_counts(model.input_fault_sites)
     _validate_result_grid(base_rows, model, base_counts, base_csv)
     _validate_result_grid(
-        refinement_rows,
+        additional_rows,
         model,
-        (0, *extra_counts),
-        refinement_csv,
+        (0, *additional_counts),
+        additional_csv,
     )
 
     base_clean = next(
         row for row in base_rows if int(row["flip_count_per_event"]) == 0
     )
-    refinement_clean = next(
+    additional_clean = next(
         row
-        for row in refinement_rows
+        for row in additional_rows
         if int(row["flip_count_per_event"]) == 0
     )
-    if base_clean != refinement_clean:
-        raise ValueError(
-            f"K=0 metrics differ between the base and refinement for "
-            f"{model.family}/{tag}/{model.alias}."
-        )
+    if base_clean != additional_clean:
+        raise ValueError(f"K=0 metrics differ for {context}.")
 
-    base_predictions = model_root / "clean_predictions.npy"
-    refinement_predictions = refinement_root / "clean_predictions.npy"
-    if not base_predictions.is_file() or not refinement_predictions.is_file():
-        raise ValueError(
-            f"Missing clean predictions for {model.family}/{tag}/{model.alias}."
-        )
+    if not base_predictions.is_file() or not additional_predictions.is_file():
+        raise ValueError(f"Missing clean predictions for {context}.")
     if not np.array_equal(
         np.load(base_predictions),
-        np.load(refinement_predictions),
+        np.load(additional_predictions),
     ):
-        raise ValueError(
-            f"K=0 predictions differ between the base and refinement for "
-            f"{model.family}/{tag}/{model.alias}."
-        )
+        raise ValueError(f"K=0 predictions differ for {context}.")
 
     merged_rows = [
         *base_rows,
         *(
             row
-            for row in refinement_rows
+            for row in additional_rows
             if int(row["flip_count_per_event"]) > 0
         ),
     ]
@@ -403,10 +463,34 @@ def _combine_refined_source(
             int(row["repeat"]),
         )
     )
-    refined_counts = tuple(sorted((*base_counts, *extra_counts)))
+    merged_counts = tuple(sorted((*base_counts, *additional_counts)))
+    _validate_result_grid(merged_rows, model, merged_counts, merged_csv)
+    write_rows(merged_csv, merged_rows)
+    return merged_rows, merged_counts
+
+
+def _combine_refined_source(
+    root: Path,
+    model: ModelSpec,
+    tag: str,
+) -> list[dict]:
+    model_root = _model_root(root, model, tag)
+    base_csv = model_root / "bit_flip_results.csv"
+    refinement_root = model_root / REFINEMENT_DIRECTORY
+    refinement_csv = refinement_root / "bit_flip_results.csv"
     refined_csv = model_root / "bit_flip_results_refined_0to10pct.csv"
-    _validate_result_grid(merged_rows, model, refined_counts, refined_csv)
-    write_rows(refined_csv, merged_rows)
+    extra_counts = refinement_flip_counts(model.input_fault_sites)
+    merged_rows, refined_counts = _merge_additional_result_source(
+        model,
+        base_csv,
+        evaluation_flip_counts(model.input_fault_sites),
+        model_root / "clean_predictions.npy",
+        refinement_csv,
+        extra_counts,
+        refinement_root / "clean_predictions.npy",
+        refined_csv,
+        f"{model.family}/{tag}/{model.alias} low-percentage refinement",
+    )
 
     metadata = {
         "study": "selected_models_input_bit_flip_0to10pct_refinement",
@@ -429,6 +513,67 @@ def _combine_refined_source(
         "repeats_per_nonzero_point": REPEATS,
     }
     (model_root / "bit_flip_metadata_refined_0to10pct.json").write_text(
+        json.dumps(metadata, indent=2) + "\n"
+    )
+    return merged_rows
+
+
+def _combine_paper_refined_source(
+    root: Path,
+    model: ModelSpec,
+    tag: str,
+) -> list[dict]:
+    model_root = _model_root(root, model, tag)
+    base_csv = model_root / "bit_flip_results_refined_0to10pct.csv"
+    paper_root = model_root / PAPER_REFINEMENT_DIRECTORY
+    paper_csv = paper_root / "bit_flip_results.csv"
+    merged_csv = model_root / "bit_flip_results_paper_0to50pct.csv"
+    base_counts = tuple(
+        sorted(
+            (
+                *evaluation_flip_counts(model.input_fault_sites),
+                *refinement_flip_counts(model.input_fault_sites),
+            )
+        )
+    )
+    extra_counts = paper_refinement_flip_counts(model.input_fault_sites)
+    merged_rows, merged_counts = _merge_additional_result_source(
+        model,
+        base_csv,
+        base_counts,
+        model_root / "clean_predictions.npy",
+        paper_csv,
+        extra_counts,
+        paper_root / "clean_predictions.npy",
+        merged_csv,
+        f"{model.family}/{tag}/{model.alias} paper refinement",
+    )
+
+    metadata = {
+        "study": "selected_models_input_bit_flip_paper_refinement",
+        "complete": True,
+        "model_alias": model.alias,
+        "registry_name": model.registry_name,
+        "fault_scope": "input",
+        "training_tag": tag,
+        "base_refined_result_csv": str(base_csv),
+        "paper_refinement_result_csv": str(paper_csv),
+        "merged_result_csv": str(merged_csv),
+        "additional_target_percentages": list(
+            PAPER_REFINEMENT_PERCENTAGES
+        ),
+        "paper_target_percentages": list(
+            PAPER_REFINED_EVALUATION_PERCENTAGES
+        ),
+        "additional_flip_counts": list(extra_counts),
+        "merged_flip_counts": list(merged_counts),
+        "realized_merged_percentages": [
+            100 * count / model.input_fault_sites for count in merged_counts
+        ],
+        "plot_x_range_percent": [0, 50],
+        "repeats_per_nonzero_point": REPEATS,
+    }
+    (model_root / "bit_flip_metadata_paper_0to50pct.json").write_text(
         json.dumps(metadata, indent=2) + "\n"
     )
     return merged_rows
@@ -580,6 +725,89 @@ def combine_refined_campaign(root: Path) -> None:
     print(f"[DONE] Wrote low-percentage refinement under {root}")
 
 
+def combine_paper_refined_campaign(root: Path) -> None:
+    """Merge all refinement points and write the 0--50% paper plots."""
+    from lgnStudies.bitFlipStudy.plots import plot_training_percentage_sweep_2d
+
+    prerequisite = (
+        root / "input_bit_flip_campaign_refined_0to10pct_summary.json"
+    )
+    if not root.is_dir() or not prerequisite.is_file():
+        raise ValueError(
+            "The completed 0--10% refinement is required before the paper "
+            f"refinement: {prerequisite}"
+        )
+
+    model_summaries = []
+    for model in MODELS:
+        baseline_rows = _combine_paper_refined_source(
+            root, model, percentage_tag(None)
+        )
+        fault_aware_rows = {
+            percentage: _combine_paper_refined_source(
+                root, model, percentage_tag(percentage)
+            )
+            for percentage in TRAINING_PERCENTAGES
+        }
+        output_stem = root / (
+            f"{model.alias}_input_bit_flip_robustness_paper_0to50pct"
+        )
+        plot_training_percentage_sweep_2d(
+            baseline_rows,
+            fault_aware_rows,
+            output_stem,
+            model.alias,
+            title=f"{model.display_name}: input-bit-flip robustness",
+            x_limit=50.0,
+            x_label="Random input bit flips per event [%]",
+            linear_x_axis=True,
+            large_paper_style=True,
+        )
+        counts = tuple(
+            sorted(
+                (
+                    *evaluation_flip_counts(model.input_fault_sites),
+                    *refinement_flip_counts(model.input_fault_sites),
+                    *paper_refinement_flip_counts(model.input_fault_sites),
+                )
+            )
+        )
+        model_summaries.append(
+            {
+                **asdict(model),
+                "additional_target_percentages": list(
+                    PAPER_REFINEMENT_PERCENTAGES
+                ),
+                "additional_flip_counts": list(
+                    paper_refinement_flip_counts(model.input_fault_sites)
+                ),
+                "paper_flip_counts": list(counts),
+                "realized_paper_percentages": [
+                    100 * count / model.input_fault_sites for count in counts
+                ],
+                "plot_x_range_percent": [0, 50],
+                "plot_png": str(output_stem.with_suffix(".png")),
+                "plot_pdf": str(output_stem.with_suffix(".pdf")),
+            }
+        )
+
+    summary = {
+        "study": "selected_models_input_bit_flip_paper_refinement",
+        "prerequisite_summary": str(prerequisite),
+        "fault_scope": "input",
+        "training_reused": True,
+        "additional_target_percentages": list(PAPER_REFINEMENT_PERCENTAGES),
+        "all_target_percentages": list(PAPER_REFINED_EVALUATION_PERCENTAGES),
+        "repeats_per_nonzero_evaluation_point": REPEATS,
+        "x_axis_scale": "linear",
+        "plot_x_range_percent": [0, 50],
+        "models": model_summaries,
+    }
+    summary_path = root / "input_bit_flip_campaign_paper_0to50pct_summary.json"
+    summary_path.write_text(json.dumps(summary, indent=2) + "\n")
+    print(f"[DONE] Wrote paper-ready 0--50% plots under {root}")
+
+
 def write_campaign_config(root: Path, git_commit: str) -> None:
     root.mkdir(parents=True, exist_ok=False)
     model_grids = []
@@ -622,12 +850,17 @@ def main() -> None:
     actions.add_argument("--training-task-id", type=int)
     actions.add_argument("--evaluation-task-id", type=int)
     actions.add_argument("--refinement-task-id", type=int)
+    actions.add_argument("--paper-refinement-task-id", type=int)
     actions.add_argument("--print-training-task-count", action="store_true")
     actions.add_argument("--print-evaluation-task-count", action="store_true")
     actions.add_argument("--print-refinement-task-count", action="store_true")
+    actions.add_argument(
+        "--print-paper-refinement-task-count", action="store_true"
+    )
     actions.add_argument("--print-model-grids", action="store_true")
     actions.add_argument("--combine", action="store_true")
     actions.add_argument("--combine-refinement", action="store_true")
+    actions.add_argument("--combine-paper-refinement", action="store_true")
     actions.add_argument("--write-campaign-config", action="store_true")
     parser.add_argument("--root", type=Path)
     parser.add_argument("--git-commit")
@@ -686,12 +919,33 @@ def main() -> None:
                     )
                 )
             )
+        elif args.paper_refinement_task_id is not None:
+            task = paper_refinement_configuration(
+                args.paper_refinement_task_id
+            )
+            print(
+                "\t".join(
+                    (
+                        task["family"],
+                        task["condition"],
+                        task["tag"],
+                        _format_percentage(task["percentage"]),
+                        task["model_alias"],
+                        task["registry_name"],
+                        " ".join(map(str, task["flip_counts"])),
+                        f"{task['minimum_training_hours']:g}",
+                        str(task["minimum_training_steps"]),
+                    )
+                )
+            )
         elif args.print_training_task_count:
             print(len(training_tasks()))
         elif args.print_evaluation_task_count:
             print(len(evaluation_tasks()))
         elif args.print_refinement_task_count:
             print(len(refinement_tasks()))
+        elif args.print_paper_refinement_task_count:
+            print(len(paper_refinement_tasks()))
         elif args.print_model_grids:
             for model in MODELS:
                 print(
@@ -712,6 +966,12 @@ def main() -> None:
             if args.root is None:
                 parser.error("--root is required with --combine-refinement.")
             combine_refined_campaign(args.root)
+        elif args.combine_paper_refinement:
+            if args.root is None:
+                parser.error(
+                    "--root is required with --combine-paper-refinement."
+                )
+            combine_paper_refined_campaign(args.root)
         elif args.write_campaign_config:
             if args.root is None or args.git_commit is None:
                 parser.error(

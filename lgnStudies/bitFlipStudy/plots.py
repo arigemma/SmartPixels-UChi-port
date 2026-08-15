@@ -685,6 +685,7 @@ def plot_training_percentage_sweep_2d(
     show_title: bool = True,
     paper_style: bool = False,
     linear_x_axis: bool = False,
+    large_paper_style: bool = False,
 ) -> None:
     """Plot only the 2D accuracy curves across training/inference percentages."""
     inference_values = _aggregate(inference_rows)
@@ -704,12 +705,23 @@ def plot_training_percentage_sweep_2d(
     )
 
     colors = plt.cm.viridis(np.linspace(0.18, 0.85, len(training_items)))
-    fig, axis = plt.subplots(figsize=(8.6, 5.0), constrained_layout=True)
-    axis_labelsize = 15 if paper_style else None
-    tick_labelsize = 11 if paper_style else None
-    legend_fontsize = 9.5 if paper_style else 8
-    linewidth = 2.35 if paper_style else 2.0
-    markersize = 5.4 if paper_style else 4.5
+    if large_paper_style:
+        figure_size = (12.8, 8.2)
+        axis_labelsize = 20
+        tick_labelsize = 16
+        legend_fontsize = 13
+        title_fontsize = 21
+        linewidth = 2.8
+        markersize = 7.0
+    else:
+        figure_size = (8.6, 5.0)
+        axis_labelsize = 15 if paper_style else None
+        tick_labelsize = 11 if paper_style else None
+        legend_fontsize = 9.5 if paper_style else 8
+        title_fontsize = 14 if paper_style else None
+        linewidth = 2.35 if paper_style else 2.0
+        markersize = 5.4 if paper_style else 4.5
+    fig, axis = plt.subplots(figsize=figure_size, constrained_layout=True)
     _plot_training_sweep_line(
         axis,
         inference_values,
@@ -738,10 +750,21 @@ def plot_training_percentage_sweep_2d(
     if show_title:
         axis.set_title(
             title or f"{model_alias}: robustness vs training fault percentage",
-            fontsize=14 if paper_style else None,
+            fontsize=title_fontsize,
         )
     axis.tick_params(axis="y", labelsize=tick_labelsize)
-    axis.legend(loc="best", fontsize=legend_fontsize, ncol=2)
+    if large_paper_style:
+        axis.legend(
+            loc="upper center",
+            bbox_to_anchor=(0.5, -0.17),
+            fontsize=legend_fontsize,
+            ncol=3,
+            frameon=False,
+            columnspacing=1.25,
+            handlelength=2.4,
+        )
+    else:
+        axis.legend(loc="best", fontsize=legend_fontsize, ncol=2)
     _configure_x_axis(
         axis,
         all_x,
@@ -754,7 +777,11 @@ def plot_training_percentage_sweep_2d(
     if x_limit is not None:
         axis.set_xlim(left=0.0, right=x_limit)
     for suffix in (".png", ".pdf"):
-        fig.savefig(output_stem.with_suffix(suffix), dpi=300)
+        fig.savefig(
+            output_stem.with_suffix(suffix),
+            dpi=300,
+            bbox_inches="tight" if large_paper_style else None,
+        )
     plt.close(fig)
 
 

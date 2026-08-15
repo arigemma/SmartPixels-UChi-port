@@ -14,18 +14,31 @@ export MPLCONFIGDIR="${MPLCONFIGDIR:-/tmp/smartpixels-matplotlib}"
 
 : "${INPUT_FAULT_ROOT:?Missing campaign output root}"
 
+REFINEMENT_MODE="${INPUT_FAULT_REFINEMENT_MODE:-low}"
+if [[ "$REFINEMENT_MODE" == "low" ]]; then
+  TASK_ACTION="--refinement-task-id"
+  OUTPUT_SUBDIRECTORY="refinement_0to10pct"
+elif [[ "$REFINEMENT_MODE" == "paper" ]]; then
+  TASK_ACTION="--paper-refinement-task-id"
+  OUTPUT_SUBDIRECTORY="paper_refinement_0to25pct"
+else
+  echo "Unknown refinement mode: ${REFINEMENT_MODE}" >&2
+  exit 2
+fi
+
 IFS=$'\t' read -r FAMILY CONDITION TAG TRAINING_PERCENTAGE MODEL REGISTRY_NAME FLIP_COUNT_TEXT MINIMUM_HOURS MINIMUM_STEPS <<< "$(
   python -m inputBitFlipStudy.campaign \
-    --refinement-task-id "$SLURM_ARRAY_TASK_ID"
+    "$TASK_ACTION" "$SLURM_ARRAY_TASK_ID"
 )"
 read -r -a FLIP_COUNTS <<< "$FLIP_COUNT_TEXT"
 
 MODEL_ROOT="${INPUT_FAULT_ROOT}/${FAMILY}/${TAG}/${MODEL}"
 TRAINING_DIR="${MODEL_ROOT}/training"
-OUTPUT_DIR="${MODEL_ROOT}/refinement_0to10pct"
+OUTPUT_DIR="${MODEL_ROOT}/${OUTPUT_SUBDIRECTORY}"
 mkdir -p logs "$OUTPUT_DIR"
 
-echo "Evaluating additional low-percentage random input-bit faults"
+echo "Evaluating additional random input-bit faults"
+echo "Refinement mode: ${REFINEMENT_MODE}"
 echo "Family: ${FAMILY}"
 echo "Condition: ${CONDITION}"
 echo "Training input-bit fault percentage: ${TRAINING_PERCENTAGE}"

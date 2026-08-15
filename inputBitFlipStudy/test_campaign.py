@@ -13,17 +13,22 @@ import torch
 from inputBitFlipStudy.campaign import (
     EVALUATION_PERCENTAGES,
     MODELS,
+    PAPER_REFINED_EVALUATION_PERCENTAGES,
+    PAPER_REFINEMENT_PERCENTAGES,
     REFINED_EVALUATION_PERCENTAGES,
     REFINEMENT_PERCENTAGES,
     TRAINING_PERCENTAGES,
     _combine_refined_source,
     _combine_qkeras_source,
     combine_refined_campaign,
+    combine_paper_refined_campaign,
     evaluation_flip_count_chunks,
     evaluation_flip_counts,
     evaluation_tasks,
     refinement_flip_counts,
     refinement_tasks,
+    paper_refinement_flip_counts,
+    paper_refinement_tasks,
     percentage_tag,
     training_tasks,
 )
@@ -69,6 +74,35 @@ class SelectedInputFaultCampaignTest(unittest.TestCase):
                 set(refinement_flip_counts(model.input_fault_sites)).isdisjoint(
                     evaluation_flip_counts(model.input_fault_sites)
                 )
+            )
+
+    def test_five_point_paper_refinement_grid(self):
+        self.assertEqual(
+            PAPER_REFINEMENT_PERCENTAGES,
+            (1.25, 3.75, 12.5, 17.5, 22.5),
+        )
+        self.assertEqual(len(paper_refinement_tasks()), 22)
+        self.assertEqual(
+            PAPER_REFINED_EVALUATION_PERCENTAGES[:7],
+            (0.0, 1.25, 2.5, 3.75, 5.0, 7.5, 10.0),
+        )
+        self.assertEqual(
+            paper_refinement_flip_counts(1400),
+            (18, 52, 175, 245, 315),
+        )
+        self.assertEqual(
+            paper_refinement_flip_counts(112),
+            (1, 4, 14, 20, 25),
+        )
+        for model in MODELS:
+            previous = {
+                *evaluation_flip_counts(model.input_fault_sites),
+                *refinement_flip_counts(model.input_fault_sites),
+            }
+            self.assertTrue(
+                set(
+                    paper_refinement_flip_counts(model.input_fault_sites)
+                ).isdisjoint(previous)
             )
 
     def test_refinement_merge_preserves_base_and_adds_only_new_points(self):
@@ -226,6 +260,43 @@ class SelectedInputFaultCampaignTest(unittest.TestCase):
                 stem = root / (
                     f"{model.alias}_input_bit_flip_robustness_linear_"
                     "refined_0to10pct"
+                )
+                self.assertTrue(stem.with_suffix(".png").is_file())
+                self.assertTrue(stem.with_suffix(".pdf").is_file())
+
+            for model in MODELS:
+                paper_counts = paper_refinement_flip_counts(
+                    model.input_fault_sites
+                )
+                for percentage in (None, *TRAINING_PERCENTAGES):
+                    model_root = (
+                        root
+                        / model.family
+                        / percentage_tag(percentage)
+                        / model.alias
+                    )
+                    paper_root = model_root / "paper_refinement_0to25pct"
+                    write_csv(
+                        paper_root / "bit_flip_results.csv",
+                        rows_for_counts(model, (0, *paper_counts)),
+                    )
+                    np.save(
+                        paper_root / "clean_predictions.npy",
+                        predictions,
+                    )
+
+            combine_paper_refined_campaign(root)
+
+            self.assertTrue(
+                (
+                    root
+                    / "input_bit_flip_campaign_paper_0to50pct_summary.json"
+                ).is_file()
+            )
+            for model in MODELS:
+                stem = root / (
+                    f"{model.alias}_input_bit_flip_robustness_"
+                    "paper_0to50pct"
                 )
                 self.assertTrue(stem.with_suffix(".png").is_file())
                 self.assertTrue(stem.with_suffix(".pdf").is_file())
