@@ -108,3 +108,30 @@ bash inputBitFlipStudy/resume_failed_evaluation.sh \
 For the 2026-08-13 campaign, indices `0-43` are the LGN chunks and `84-87`
 are the QKeras 10%-trained chunks. The launcher refuses to run unless all 22
 training completion records exist.
+
+## Refining the 0--10% evaluation region
+
+The completed 22 checkpoints can be evaluated at two additional target
+percentages, 2.5% and 7.5%, without retraining:
+
+```bash
+bash inputBitFlipStudy/submit_0to10pct_refinement.sh
+```
+
+This submits one two-point evaluation task per checkpoint and a dependent
+validation/combine/plot job. It retains every original result and plot. LGN
+uses the exact counts 35 and 105 of 1,400 input sites. QKeras uses the nearest
+representable exact counts, 3 and 8 of 112 input bits (2.68% and 7.14%).
+
+The new plots are:
+
+```text
+s02_p163M_tau20_input_bit_flip_robustness_linear_refined_0to10pct.png
+s02_p163M_tau20_input_bit_flip_robustness_linear_refined_0to10pct.pdf
+qkeras_y256_64_w4a8_input_bit_flip_robustness_linear_refined_0to10pct.png
+qkeras_y256_64_w4a8_input_bit_flip_robustness_linear_refined_0to10pct.pdf
+```
+
+Per-condition merged data are written as
+`bit_flip_results_refined_0to10pct.csv`; the original
+`bit_flip_results.csv` files are not modified.
