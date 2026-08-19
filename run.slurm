@@ -5,9 +5,13 @@
 #SBATCH --time=5:59:59
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=16G
+# Compiled large-convolution validation can exceed 16 GB of host RAM even
+# when CUDA memory is healthy.  Match the evaluation jobs' safe allocation.
+#SBATCH --mem=48G
 #SBATCH --array=0-50
-#SBATCH --signal=B:USR1@300
+# Leave enough time for an in-progress discrete + relaxed validation pair to
+# finish before train.py saves the final checkpoint.
+#SBATCH --signal=B:USR1@900
 
 # One array entry per architecture/tau pair:
 #   7 dense left-extension sizes x 3 taus = 21 jobs
@@ -76,13 +80,33 @@ fi
 OUTPUT_DIR="${OUTPUT_BASE}/${SIZE_LABEL}/tau_${TAU}"
 
 BATCH_SIZE=1024
-if [[ "$FAMILY" == "conv" && "$SIZE_LABEL" == "s10_p2623M" ]]; then
-  # This architecture exceeds 40 GB at batch 1024. Use the same safe batch
-  # size for all three taus so their comparison remains internally consistent.
-  BATCH_SIZE=512
+if [[ "$FAMILY" == "conv" ]]; then
+  case "$SIZE_LABEL" in
+    s07_p1608M|s08_p1919M|s09_p2257M|s10_p2623M)
+      # These compiled architectures exceed the safe validation memory at
+      # batch 1024.  Keep all three taus for each size on the same batch size
+      # so the per-architecture tau comparison remains fair.
+      BATCH_SIZE=512
+      ;;
+  esac
 fi
 
 mkdir -p logs "$OUTPUT_DIR"
+
+if [[ "${PARETO_FRESH_RETRY:-0}" == "1" ]]; then
+  RETRY_SUFFIX="before_retry_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
+  for ARTIFACT in best_model.pth final_model.pth; do
+    if [[ -e "$OUTPUT_DIR/$ARTIFACT" ]]; then
+      BACKUP="$OUTPUT_DIR/${ARTIFACT}.${RETRY_SUFFIX}"
+      if [[ -e "$BACKUP" ]]; then
+        echo "[ERROR] Retry backup already exists: $BACKUP" >&2
+        exit 2
+      fi
+      mv -- "$OUTPUT_DIR/$ARTIFACT" "$BACKUP"
+      echo "Backed up $OUTPUT_DIR/$ARTIFACT -> $BACKUP"
+    fi
+  done
+fi
 
 echo "Running ${MODEL}"
 echo "Family: ${FAMILY}"
