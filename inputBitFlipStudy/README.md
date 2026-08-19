@@ -155,9 +155,21 @@ The paper outputs are:
 ```text
 s02_p163M_tau20_input_bit_flip_robustness_paper_0to50pct.png
 s02_p163M_tau20_input_bit_flip_robustness_paper_0to50pct.pdf
+s02_p163M_tau20_input_bit_flip_robustness_paper_0to50pct_points.json
 qkeras_y256_64_w4a8_input_bit_flip_robustness_paper_0to50pct.png
 qkeras_y256_64_w4a8_input_bit_flip_robustness_paper_0to50pct.pdf
+qkeras_y256_64_w4a8_input_bit_flip_robustness_paper_0to50pct_points.json
 ```
 
 The fully merged per-condition tables are named
 `bit_flip_results_paper_0to50pct.csv`. Earlier tables and plots are unchanged.
+The legend is placed to the right of the plot. Each points JSON contains the
+actual x coordinate, mean balanced accuracy, 95% confidence half-width, exact
+flip count, repeat count, label, and matching line style for all 11 curves.
+
+To restyle or regenerate these final plots from completed evaluations without
+submitting Slurm jobs, run:
+
+```bash
+bash inputBitFlipStudy/replot_paper.sh
+```

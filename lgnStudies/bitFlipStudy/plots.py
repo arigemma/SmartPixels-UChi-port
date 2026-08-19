@@ -10,6 +10,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.colors import to_hex
 from matplotlib.ticker import FuncFormatter
 import numpy as np
 
@@ -755,13 +756,14 @@ def plot_training_percentage_sweep_2d(
     axis.tick_params(axis="y", labelsize=tick_labelsize)
     if large_paper_style:
         axis.legend(
-            loc="upper center",
-            bbox_to_anchor=(0.5, -0.17),
+            loc="center left",
+            bbox_to_anchor=(1.02, 0.5),
             fontsize=legend_fontsize,
-            ncol=3,
+            ncol=1,
             frameon=False,
-            columnspacing=1.25,
+            borderaxespad=0.0,
             handlelength=2.4,
+            labelspacing=0.7,
         )
     else:
         axis.legend(loc="best", fontsize=legend_fontsize, ncol=2)
@@ -783,6 +785,113 @@ def plot_training_percentage_sweep_2d(
             bbox_inches="tight" if large_paper_style else None,
         )
     plt.close(fig)
+
+
+def training_percentage_sweep_point_payload(
+    inference_rows: list[dict],
+    fault_aware_rows_by_percentage: dict[float, list[dict]],
+    model_alias: str,
+    display_name: str,
+    x_limit: float = 50.0,
+) -> dict:
+    """Return plot-ready x/y locations and styles for a training sweep."""
+    training_items = sorted(fault_aware_rows_by_percentage.items())
+    if not training_items:
+        raise ValueError("No fault-aware training curves supplied.")
+    colors = plt.cm.viridis(np.linspace(0.18, 0.85, len(training_items)))
+
+    def curve(
+        rows: list[dict],
+        training_percentage: float | None,
+        label: str,
+        color: str,
+        linestyle: str,
+        marker: str,
+    ) -> dict:
+        values = _aggregate(rows)
+        repeat_counts: dict[int, int] = defaultdict(int)
+        for row in rows:
+            repeat_counts[int(row["flip_count_per_event"])] += 1
+
+        points = []
+        for index, x_percent in enumerate(values["percentage"]):
+            if float(x_percent) > x_limit + 1e-12:
+                continue
+            flip_count = int(values["count"][index])
+            points.append(
+                {
+                    "flip_count_per_event": flip_count,
+                    "x_percent": float(x_percent),
+                    "y_balanced_accuracy_percent": float(
+                        100 * values["balanced_accuracy_mean"][index]
+                    ),
+                    "y_ci95_percent": float(
+                        100 * values["balanced_accuracy_ci95"][index]
+                    ),
+                    "repeat_count": repeat_counts[flip_count],
+                }
+            )
+        return {
+            "training_condition": (
+                "baseline_clean"
+                if training_percentage is None
+                else "fault_aware"
+            ),
+            "training_fault_percentage": training_percentage,
+            "label": label,
+            "style": {
+                "color": color,
+                "linestyle": linestyle,
+                "marker": marker,
+            },
+            "points": points,
+        }
+
+    curves = [
+        curve(
+            inference_rows,
+            None,
+            "Baseline clean training",
+            "#333333",
+            "-",
+            "o",
+        )
+    ]
+    curves.extend(
+        curve(
+            rows,
+            float(percentage),
+            f"Fault-aware training {percentage:g}%",
+            to_hex(color, keep_alpha=False),
+            "--",
+            "s",
+        )
+        for color, (percentage, rows) in zip(colors, training_items)
+    )
+    return {
+        "schema_version": 1,
+        "model": {
+            "alias": model_alias,
+            "display_name": display_name,
+        },
+        "axes": {
+            "x": {
+                "field": "x_percent",
+                "label": "Random input bit flips per event [%]",
+                "unit": "percent",
+                "scale": "linear",
+                "range": [0.0, float(x_limit)],
+            },
+            "y": {
+                "field": "y_balanced_accuracy_percent",
+                "error_field": "y_ci95_percent",
+                "label": "Balanced accuracy [%]",
+                "unit": "percent",
+                "error_definition": "95% Student-t confidence half-width",
+            },
+        },
+        "curves": curves,
+    }
 
 
 def plot_fault_scope_training_percentage_comparison(

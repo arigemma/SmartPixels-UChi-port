@@ -727,7 +727,10 @@ def combine_refined_campaign(root: Path) -> None:
 
 def combine_paper_refined_campaign(root: Path) -> None:
     """Merge all refinement points and write the 0--50% paper plots."""
-    from lgnStudies.bitFlipStudy.plots import plot_training_percentage_sweep_2d
+    from lgnStudies.bitFlipStudy.plots import (
+        plot_training_percentage_sweep_2d,
+        training_percentage_sweep_point_payload,
+    )
 
     prerequisite = (
         root / "input_bit_flip_campaign_refined_0to10pct_summary.json"
@@ -763,6 +766,20 @@ def combine_paper_refined_campaign(root: Path) -> None:
             linear_x_axis=True,
             large_paper_style=True,
         )
+        points_path = output_stem.with_name(output_stem.name + "_points.json")
+        points_path.write_text(
+            json.dumps(
+                training_percentage_sweep_point_payload(
+                    baseline_rows,
+                    fault_aware_rows,
+                    model.alias,
+                    model.display_name,
+                    x_limit=50.0,
+                ),
+                indent=2,
+            )
+            + "\n"
+        )
         counts = tuple(
             sorted(
                 (
@@ -788,6 +805,7 @@ def combine_paper_refined_campaign(root: Path) -> None:
                 "plot_x_range_percent": [0, 50],
                 "plot_png": str(output_stem.with_suffix(".png")),
                 "plot_pdf": str(output_stem.with_suffix(".pdf")),
+                "plot_points_json": str(points_path),
             }
         )
 

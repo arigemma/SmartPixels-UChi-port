@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import inspect
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -300,6 +301,28 @@ class SelectedInputFaultCampaignTest(unittest.TestCase):
                 )
                 self.assertTrue(stem.with_suffix(".png").is_file())
                 self.assertTrue(stem.with_suffix(".pdf").is_file())
+                points_path = stem.with_name(stem.name + "_points.json")
+                self.assertTrue(points_path.is_file())
+                payload = json.loads(points_path.read_text())
+                self.assertEqual(payload["schema_version"], 1)
+                self.assertEqual(payload["model"]["alias"], model.alias)
+                self.assertEqual(payload["axes"]["x"]["range"], [0.0, 50.0])
+                self.assertEqual(len(payload["curves"]), 11)
+                self.assertEqual(
+                    payload["curves"][0]["style"],
+                    {"color": "#333333", "linestyle": "-", "marker": "o"},
+                )
+                self.assertEqual(
+                    payload["curves"][1]["training_fault_percentage"],
+                    1.0,
+                )
+                self.assertTrue(
+                    all(
+                        point["x_percent"] <= 50.0
+                        for curve in payload["curves"]
+                        for point in curve["points"]
+                    )
+                )
 
     def test_exact_model_selection(self):
         self.assertEqual(MODELS[0].alias, "s02_p163M_tau20")
