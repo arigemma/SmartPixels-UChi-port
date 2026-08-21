@@ -14,6 +14,11 @@ N_Y = 13
 N_X = 21
 LAST_FRAME = N_TIME - 1
 N_SLICES = 8
+ADC_THRESHOLDS = {
+    # Three thresholds produce the four ADC codes used by the original
+    # QKeras Model-2 ``adc2a`` operating points.
+    "adc2a": [400.0, 1600.0, 2400.0],
+}
 
 
 class MaskFeaturesDataset(Dataset):
@@ -71,6 +76,20 @@ def _y_profile_over_time(x: torch.Tensor) -> torch.Tensor:
     """Mean over x-dimension for all time steps."""
     return x.mean(axis=-1)
 
+
+def _adc_y_profile(raw_x: np.ndarray, mapping: str) -> np.ndarray:
+    """Apply an ADC mapping per pixel and sum the last-frame codes by row."""
+    if mapping not in ADC_THRESHOLDS:
+        raise ValueError(
+            f"Unknown ADC mapping '{mapping}'. "
+            f"Available mappings: {sorted(ADC_THRESHOLDS)}"
+        )
+    raw_x_reshaped = np.asarray(raw_x).reshape(N_TIME, N_Y, N_X)
+    last_frame = raw_x_reshaped[LAST_FRAME]
+    codes = np.digitize(last_frame, ADC_THRESHOLDS[mapping], right=False)
+    return codes.sum(axis=-1).astype(np.float32)
+
+
 def _get_scale_function(mean, std):
     # avoid division by zero
     std = np.where(np.isclose(std, 0.0), 1.0, std)
@@ -116,6 +135,11 @@ def get_transform(
 
         elif input_type == "y-profile":
             y_profile = _y_profile_last_frame(x)
+            features = np.concatenate(([y0], y_profile))
+
+        elif input_type.startswith("y-profile-adc"):
+            adc_mapping = input_type[len("y-profile-"):]
+            y_profile = scale_x(SymLogTransform()(_adc_y_profile(raw_x, adc_mapping)))
             features = np.concatenate(([y0], y_profile))
 
         elif input_type == "y-profile-timing":
