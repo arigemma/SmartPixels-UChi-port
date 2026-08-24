@@ -19,8 +19,31 @@ python -m visualizingLGN.visualize_lgn_paper \
 ```
 
 No training, radiation model, GPU, or SLURM allocation is used. The launcher
-accepts only the requested `s08_p1202M_tau40` architecture and runs the same
-regular-versus-compacted equivalence checks before publishing figures.
+accepts sequential dense LGN checkpoints and runs the same
+regular-versus-compacted equivalence checks before publishing figures. Use
+`--require-s08` or `--require-s02` to verify one of the two named architectures
+before any figures are written.
+
+## Generate the selected input-study s02 figures
+
+The selected LGN--QKeras input-bit-flip study uses the clean
+`s02_p163M_tau20` baseline, not s08. From the repository root:
+
+```bash
+ROOT=results/SLURM/2026_08_13_selected_input_bit_flip_1to10pct_eval60_linear
+S02="$ROOT/lgn/baseline_clean/s02_p163M_tau20/training/final_model.pth"
+
+python -m visualizingLGN.visualize_lgn_paper \
+  "$S02" \
+  --require-s02 \
+  --output-dir results/LGN_visualization/s02_input_study_clean/paper_overviews \
+  --font-scale 1.35 \
+  --dpi 600
+```
+
+The strict check expects seven `LogicDense` widths
+`6300/6300/6300/4200/4200/4200/3150`, totaling 34,650 regular logic gates,
+with 1,400 threshold inputs, three output classes, and tau 20.
 
 ## Output files
 

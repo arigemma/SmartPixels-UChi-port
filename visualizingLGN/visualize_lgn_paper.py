@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate large standalone paper plots for the non-atlas s08 overview."""
+"""Generate large standalone paper plots for a dense LGN circuit overview."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from visualizingLGN.circuit import (
     compact_summary,
     extract_dense_circuit,
     regular_summary,
+    require_s02,
     require_s08,
     run_equivalence_suite,
 )
@@ -46,7 +47,7 @@ def _feature_bits(metadata: dict, input_width: int) -> tuple[int, int] | None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Split the regular and compacted non-atlas s08 circuit overviews "
+            "Split regular and compacted non-atlas dense-LGN circuit overviews "
             "into large-text standalone PNG/PDF paper figures."
         )
     )
@@ -55,6 +56,20 @@ def main() -> None:
         "--output-dir",
         type=Path,
         default=Path("results/LGN_visualization/s08_clean/paper_overviews"),
+    )
+    architecture = parser.add_mutually_exclusive_group()
+    architecture.add_argument(
+        "--require-s02",
+        action="store_true",
+        help=(
+            "Reject checkpoints other than the tau-20 s02 dense LGN used by "
+            "the selected input-bit-flip study."
+        ),
+    )
+    architecture.add_argument(
+        "--require-s08",
+        action="store_true",
+        help="Reject checkpoints other than the tau-40 s08 dense LGN.",
     )
     parser.add_argument(
         "--formats",
@@ -96,8 +111,18 @@ def main() -> None:
     print(f"[LOAD] {args.checkpoint}", flush=True)
     model = load_registered_model(args.checkpoint, map_location="cpu")
     circuit, model_metadata = extract_dense_circuit(model)
-    require_s08(circuit)
-    print("[MODEL] verified s08_p1202M_tau40 architecture", flush=True)
+    if args.require_s02:
+        require_s02(circuit)
+        print("[MODEL] verified s02_p163M_tau20 architecture", flush=True)
+    elif args.require_s08:
+        require_s08(circuit)
+        print("[MODEL] verified s08_p1202M_tau40 architecture", flush=True)
+    else:
+        print(
+            f"[MODEL] dense LGN with {len(circuit.layers)} LogicDense layers, "
+            f"{circuit.raw_gate_count:,} regular gates, tau={circuit.tau:g}",
+            flush=True,
+        )
 
     compact = build_compact_circuit(circuit)
     equivalence = run_equivalence_suite(

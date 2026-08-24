@@ -1,5 +1,8 @@
 import itertools
 import json
+from types import SimpleNamespace
+
+import pytest
 
 import numpy as np
 
@@ -10,6 +13,7 @@ from visualizingLGN.circuit import (
     build_compact_circuit,
     compact_summary,
     regular_summary,
+    require_s02,
     run_equivalence_suite,
 )
 from visualizingLGN.plotting import plot_compact_circuit, plot_regular_circuit
@@ -109,3 +113,17 @@ def test_summaries_and_pngs_are_written(tmp_path):
     plot_compact_circuit(compact, compact_data, compact_png)
     assert regular_png.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
     assert compact_png.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+
+
+def test_require_s02_checks_widths_classes_and_tau():
+    expected = SimpleNamespace(
+        input_width=1_400,
+        layer_widths=(6_300, 6_300, 6_300, 4_200, 4_200, 4_200, 3_150),
+        num_classes=3,
+        tau=20.0,
+    )
+    require_s02(expected)
+
+    wrong_tau = SimpleNamespace(**{**vars(expected), "tau": 40.0})
+    with pytest.raises(ValueError, match="tau-20"):
+        require_s02(wrong_tau)

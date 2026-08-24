@@ -536,6 +536,23 @@ def require_s08(circuit: DenseCircuit) -> None:
         )
 
 
+def require_s02(circuit: DenseCircuit) -> None:
+    """Require the tau-20 s02 dense LGN used by the selected input-bit study."""
+    expected = (6_300, 6_300, 6_300, 4_200, 4_200, 4_200, 3_150)
+    if circuit.input_width != 1_400 or circuit.layer_widths != expected:
+        raise ValueError(
+            "Checkpoint is not s02: expected 1,400 binary inputs and layer "
+            f"widths {expected}, got {circuit.input_width} and "
+            f"{circuit.layer_widths}."
+        )
+    if circuit.num_classes != 3 or circuit.tau != 20.0:
+        raise ValueError(
+            "Checkpoint is not the selected s02 tau-20 classifier: expected "
+            f"3 classes and tau=20, got {circuit.num_classes} and "
+            f"tau={circuit.tau}."
+        )
+
+
 def make_test_cases(
     input_width: int,
     *,
