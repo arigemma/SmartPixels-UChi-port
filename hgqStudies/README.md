@@ -65,3 +65,30 @@ The TSV and JSON contain the absolute checkpoint paths, balanced accuracy,
 class recalls, learned EBOP proxy, architecture, beta, and corresponding
 QKeras point. They are the transfer inventory for the later Wisc synthesis
 step; the campaign does not duplicate checkpoints into a staging directory.
+
+## Required WRAP-range calibration
+
+HGQ's `WRAP` activation quantizers must be calibrated with `trace_minmax`
+before discrete inference or synthesis. Calibration is non-destructive: it
+keeps the original checkpoints, calibrates both the saved best and final
+models, chooses the lower-cross-entropy model using validation data, and only
+then evaluates the selected model on the test set.
+
+First calibrate one pilot (`task 9`, the y-profile 128-unit model with the
+weakest beta):
+
+```bash
+ROOT=results/SLURM/YYYY_MM_DD_hgq2_model2_pareto_qkeras_matched_6k
+HGQ_CALIBRATION_TASKS=9 bash hgqStudies/submit_calibration.sh "$ROOT"
+```
+
+The calibration task fails if held-out balanced accuracy remains below 60%.
+If the pilot passes, launch the full calibration array; the completed pilot is
+detected and skipped:
+
+```bash
+bash hgqStudies/submit_calibration.sh "$ROOT"
+```
+
+Transfer and synthesize only the checkpoints listed in
+`$ROOT/calibrated_summary/balanced_accuracy_summary.tsv`.

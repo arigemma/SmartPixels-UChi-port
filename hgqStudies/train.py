@@ -138,14 +138,25 @@ def best_checkpoint_callback(output: Path):
 
 def evaluate(model, loader) -> dict:
     confusion = np.zeros((3, 3), dtype=np.int64)
+    cross_entropy_sum = 0.0
+    sample_count = 0
     with torch.no_grad():
         for inputs, labels in loader:
             logits = model(to_numpy(inputs).astype(np.float32), training=False)
-            predictions = np.argmax(to_numpy(logits), axis=-1)
-            truth = np.argmax(to_numpy(labels), axis=-1)
+            logits = to_numpy(logits).astype(np.float64, copy=False)
+            labels = to_numpy(labels)
+            predictions = np.argmax(logits, axis=-1)
+            truth = np.argmax(labels, axis=-1)
             confusion += confusion_from_predictions(truth, predictions)
+            shifted = logits - logits.max(axis=-1, keepdims=True)
+            log_normalizer = np.log(np.exp(shifted).sum(axis=-1))
+            cross_entropy_sum += float(
+                (-shifted[np.arange(len(truth)), truth] + log_normalizer).sum()
+            )
+            sample_count += len(truth)
     metrics = balanced_accuracy_from_confusion(confusion)
     metrics["categorical_accuracy"] = float(np.trace(confusion) / confusion.sum())
+    metrics["cross_entropy"] = float(cross_entropy_sum / sample_count)
     return metrics
 
 
