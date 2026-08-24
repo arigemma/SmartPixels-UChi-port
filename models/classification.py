@@ -1511,6 +1511,236 @@ class ConvLGNModel3DeepS05P895M__60(_ConvLGNModel3DeepS05P895M):
     tau = 60.0
 
 
+class _ConvLGNModel3FrontierS01P003M(_ConvLGNModel3DeepSized):
+    """Compact width point with 2.964M dense/conv connectivity proxy parameters."""
+
+    k1, k2, k3, k4 = 16, 32, 64, 60
+    fc_base = 300
+    extra_dense_layers = 0
+
+
+class _ConvLGNModel3FrontierS02P007M(_ConvLGNModel3DeepSized):
+    """Compact width point with 6.568M dense/conv connectivity proxy parameters."""
+
+    k1, k2, k3, k4 = 24, 48, 96, 90
+    fc_base = 450
+    extra_dense_layers = 0
+
+
+class _ConvLGNModel3FrontierS03P012M(_ConvLGNModel3DeepSized):
+    """Compact width point with 11.587M dense/conv connectivity proxy parameters."""
+
+    k1, k2, k3, k4 = 32, 64, 128, 120
+    fc_base = 600
+    extra_dense_layers = 0
+
+
+class _ConvLGNModel3FrontierS04P018M(_ConvLGNModel3DeepSized):
+    """Compact width point with 18.021M dense/conv connectivity proxy parameters."""
+
+    k1, k2, k3, k4 = 40, 80, 160, 150
+    fc_base = 750
+    extra_dense_layers = 0
+
+
+class _ConvLGNModel3FrontierS05P026M(_ConvLGNModel3DeepSized):
+    """Compact width point with 25.870M dense/conv connectivity proxy parameters."""
+
+    k1, k2, k3, k4 = 48, 96, 192, 180
+    fc_base = 900
+    extra_dense_layers = 0
+
+
+class _ConvLGNModel3FrontierS06P039M(_ConvLGNModel3DeepSized):
+    """First depth-assisted point with 38.830M connectivity proxy parameters."""
+
+    k1, k2, k3, k4 = 48, 96, 192, 180
+    fc_base = 900
+    extra_dense_layers = 1
+
+
+class _ConvLGNModel3FrontierS07P069M(_ConvLGNModel3DeepSized):
+    """Depth-assisted point with 68.851M connectivity proxy parameters."""
+
+    k1, k2, k3, k4 = 64, 128, 256, 240
+    fc_base = 1200
+    extra_dense_layers = 1
+
+
+class _ConvLGNModel3FrontierS08P110M(_ConvLGNModel3DeepSized):
+    """Depth-assisted point with 110.220M connectivity proxy parameters."""
+
+    k1, k2, k3, k4 = 96, 192, 384, 360
+    fc_base = 1500
+    extra_dense_layers = 1
+
+
+class _ConvLGNModel3FrontierS09P213M(_ConvLGNModel3DeepSized):
+    """Two-extra-layer point with 213.178M connectivity proxy parameters."""
+
+    k1, k2, k3, k4 = 128, 256, 512, 480
+    fc_base = 1800
+    extra_dense_layers = 2
+
+
+class _ConvLGNModel3FrontierS10P385M(_ConvLGNModel3DeepSized):
+    """Two-extra-layer point with 384.979M connectivity proxy parameters."""
+
+    k1, k2, k3, k4 = 192, 384, 768, 720
+    fc_base = 2400
+    extra_dense_layers = 2
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s01_p003M_10", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS01P003M__10(_ConvLGNModel3FrontierS01P003M):
+    tau = 10.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s01_p003M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS01P003M__20(_ConvLGNModel3FrontierS01P003M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s01_p003M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS01P003M__40(_ConvLGNModel3FrontierS01P003M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s02_p007M_10", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS02P007M__10(_ConvLGNModel3FrontierS02P007M):
+    tau = 10.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s02_p007M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS02P007M__20(_ConvLGNModel3FrontierS02P007M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s02_p007M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS02P007M__40(_ConvLGNModel3FrontierS02P007M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s03_p012M_10", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS03P012M__10(_ConvLGNModel3FrontierS03P012M):
+    tau = 10.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s03_p012M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS03P012M__20(_ConvLGNModel3FrontierS03P012M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s03_p012M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS03P012M__40(_ConvLGNModel3FrontierS03P012M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s04_p018M_10", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS04P018M__10(_ConvLGNModel3FrontierS04P018M):
+    tau = 10.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s04_p018M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS04P018M__20(_ConvLGNModel3FrontierS04P018M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s04_p018M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS04P018M__40(_ConvLGNModel3FrontierS04P018M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s05_p026M_10", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS05P026M__10(_ConvLGNModel3FrontierS05P026M):
+    tau = 10.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s05_p026M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS05P026M__20(_ConvLGNModel3FrontierS05P026M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s05_p026M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS05P026M__40(_ConvLGNModel3FrontierS05P026M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s06_p039M_10", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS06P039M__10(_ConvLGNModel3FrontierS06P039M):
+    tau = 10.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s06_p039M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS06P039M__20(_ConvLGNModel3FrontierS06P039M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s06_p039M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS06P039M__40(_ConvLGNModel3FrontierS06P039M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s07_p069M_10", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS07P069M__10(_ConvLGNModel3FrontierS07P069M):
+    tau = 10.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s07_p069M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS07P069M__20(_ConvLGNModel3FrontierS07P069M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s07_p069M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS07P069M__40(_ConvLGNModel3FrontierS07P069M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s08_p110M_10", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS08P110M__10(_ConvLGNModel3FrontierS08P110M):
+    tau = 10.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s08_p110M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS08P110M__20(_ConvLGNModel3FrontierS08P110M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s08_p110M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS08P110M__40(_ConvLGNModel3FrontierS08P110M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s09_p213M_10", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS09P213M__10(_ConvLGNModel3FrontierS09P213M):
+    tau = 10.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s09_p213M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS09P213M__20(_ConvLGNModel3FrontierS09P213M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s09_p213M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS09P213M__40(_ConvLGNModel3FrontierS09P213M):
+    tau = 40.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s10_p385M_10", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS10P385M__10(_ConvLGNModel3FrontierS10P385M):
+    tau = 10.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s10_p385M_20", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS10P385M__20(_ConvLGNModel3FrontierS10P385M):
+    tau = 20.0
+
+
+@register("lgn-conv-3-100-orpool-model3Frontier_s10_p385M_40", input_type="y-profile-timing", task_type="classification")
+class ConvLGNModel3FrontierS10P385M__40(_ConvLGNModel3FrontierS10P385M):
+    tau = 40.0
+
+
 
 
 @register("lgn-dense-2-dense-100_128_-lessFeat_20", input_type="y-profile", task_type="classification")
