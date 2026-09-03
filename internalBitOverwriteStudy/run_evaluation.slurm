@@ -40,6 +40,7 @@ if [[ "$FAMILY" == "lnn" ]]; then
     --clean-model "$CHECKPOINT" --training-status "$STATUS" \
     -o "$OUTPUT_DIR"
 elif [[ "$FAMILY" == "qkeras" ]]; then
+  source internalBitOverwriteStudy/qkeras_runtime.sh
   CHECKPOINT="${TRAINING_DIR}/final_model.keras"
   STATUS="${TRAINING_DIR}/training_complete.json"
   python -m qkerasStudies.training_completion \

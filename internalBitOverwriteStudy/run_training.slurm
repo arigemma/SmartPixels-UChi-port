@@ -40,6 +40,7 @@ if [[ "$FAMILY" == "lnn" ]]; then
     --model "$MODEL" \
     -o "$OUTPUT_DIR"
 elif [[ "$FAMILY" == "qkeras" ]]; then
+  source internalBitOverwriteStudy/qkeras_runtime.sh
   python -m qkerasStudies.bitFlipTrainingStudy.train \
     -c config/10783560/v3.yml \
     --device cuda \

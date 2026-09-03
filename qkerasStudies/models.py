@@ -64,14 +64,26 @@ CONFIG_BY_REGISTRY = {config.registry_name: config for config in MODEL_CONFIGS}
 
 def _import_qkeras_layers():
     try:
+        import qkeras
         from qkeras import QActivation, QBatchNormalization, QDense, quantized_bits
-    except ImportError:
-        # Some QKeras installations do not re-export these public classes from
-        # qkeras.__init__, even though their standard implementation modules
-        # are present. Support both package layouts.
-        from qkeras.qlayers import QActivation, QDense
-        from qkeras.qnormalization import QBatchNormalization
-        from qkeras.quantizers import quantized_bits
+    except ImportError as error:
+        raise ImportError(
+            "Google QKeras 0.9.0 is required. The imported 'qkeras' package "
+            "does not provide its API and is probably HGQ2's incompatible "
+            "Keras-3 compatibility namespace. Run "
+            "internalBitOverwriteStudy/prepare_qkeras_runtime.sh and make "
+            "sure its PYTHONPATH overlay is active."
+        ) from error
+
+    qkeras_root = Path(qkeras.__file__).resolve().parent
+    if getattr(qkeras, "__version__", None) != "0.9.0" or not (
+        qkeras_root / "qlayers.py"
+    ).is_file():
+        raise ImportError(
+            "Expected the isolated Google QKeras 0.9.0 package with a "
+            f"qlayers.py module, but imported {qkeras.__file__}. Run "
+            "internalBitOverwriteStudy/prepare_qkeras_runtime.sh."
+        )
 
     return QActivation, QBatchNormalization, QDense, quantized_bits
 

@@ -45,6 +45,12 @@ conda activate smart_pixels
 bash internalBitOverwriteStudy/submit.sh
 ```
 
+The launcher installs the pinned Google `QKeras==0.9.0` wheel without
+dependencies into `.runtime/google-qkeras-0.9.0` and prepends only that small
+directory to `PYTHONPATH`. This process-level overlay is necessary when HGQ2
+is installed in the same Conda environment because HGQ2 also provides an
+incompatible package named `qkeras`. It does not uninstall or modify HGQ2.
+
 You may supply a new campaign root as the first argument. The launcher refuses
 to overwrite an existing root. It submits eight training jobs, 40 dependent
 evaluation jobs, and one final validation/combine/plot job. The final job runs

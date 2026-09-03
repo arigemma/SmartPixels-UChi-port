@@ -13,6 +13,8 @@ if [[ -e "$INTERNAL_OVERWRITE_ROOT" ]]; then
   exit 2
 fi
 
+bash internalBitOverwriteStudy/prepare_qkeras_runtime.sh
+source internalBitOverwriteStudy/qkeras_runtime.sh
 python -m internalBitOverwriteStudy.campaign --qkeras-preflight
 
 TRAINING_TASKS="$(python -m internalBitOverwriteStudy.campaign --print-training-task-count)"

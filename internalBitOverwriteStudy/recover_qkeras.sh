@@ -24,6 +24,8 @@ if [[ ! "$ORIGINAL_TRAINING_JOB_ID" =~ ^[0-9]+$ ]]; then
   exit 2
 fi
 
+bash internalBitOverwriteStudy/prepare_qkeras_runtime.sh
+source internalBitOverwriteStudy/qkeras_runtime.sh
 python -m internalBitOverwriteStudy.campaign --qkeras-preflight
 
 EXPECTED_TRAINING_TASKS="$(
