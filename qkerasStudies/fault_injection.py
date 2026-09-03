@@ -10,7 +10,8 @@ import numpy as np
 from qkerasStudies.models import QKerasModelConfig
 
 
-FAULT_SCOPES = ("all", "input")
+FAULT_SCOPES = ("all", "input", "internal")
+FAULT_OPERATIONS = ("flip", "random_set")
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,15 @@ def validate_fault_scope(fault_scope: str) -> str:
             f"Fault scope must be one of {FAULT_SCOPES}, got {fault_scope!r}."
         )
     return fault_scope
+
+
+def validate_fault_operation(fault_operation: str) -> str:
+    if fault_operation not in FAULT_OPERATIONS:
+        raise ValueError(
+            f"Fault operation must be one of {FAULT_OPERATIONS}, "
+            f"got {fault_operation!r}."
+        )
+    return fault_operation
 
 
 def validate_fault_probability(probability: float) -> float:
@@ -56,6 +66,8 @@ def eligible_stage_indices(number_stages: int, fault_scope: str) -> tuple[int, .
     fault_scope = validate_fault_scope(fault_scope)
     if fault_scope == "input":
         return (0,)
+    if fault_scope == "internal":
+        return tuple(range(1, number_stages))
     return tuple(range(number_stages))
 
 
@@ -135,10 +147,17 @@ def _stage_ranges(
     config: QKerasModelConfig,
     input_quantization_range: QuantizationRange,
 ) -> tuple[QuantizationRange, ...]:
+    # quantized_relu(bits, 0) is unsigned fixed point with a 2**-bits step:
+    # for A8 its representable range is [0, 255/256], not [0, 1].  Expressing
+    # that exact maximum here makes the generic min/max uint conversion an
+    # identity for every fault-free hidden activation.  This is essential:
+    # otherwise merely enabling the fault path requantizes all unselected
+    # QActivation outputs onto an incorrect 1/255 grid.
+    hidden_maximum = 1.0 - 2.0 ** (-config.activation_bits)
     return (
         input_quantization_range,
         *[
-            QuantizationRange(0.0, 1.0)
+            QuantizationRange(0.0, hidden_maximum)
             for _ in config.hidden_units
         ],
     )
@@ -177,10 +196,12 @@ def _apply_bernoulli_bit_faults(
     probability: float,
     bits: int,
     value_range: QuantizationRange,
+    fault_operation: str = "flip",
 ):
     import tensorflow as tf
 
     probability = validate_fault_probability(probability)
+    fault_operation = validate_fault_operation(fault_operation)
     if probability == 0.0:
         return values
 
@@ -190,7 +211,18 @@ def _apply_bernoulli_bit_faults(
         tf.concat([tf.shape(integers), [bits]], axis=0),
         dtype=tf.float32,
     ) < probability
-    masks = tf.reduce_sum(tf.cast(selected, tf.int32) * bit_values, axis=-1)
+    if fault_operation == "flip":
+        changed = selected
+    else:
+        current = tf.not_equal(
+            tf.bitwise.bitwise_and(tf.expand_dims(integers, -1), bit_values),
+            0,
+        )
+        targets = tf.random.uniform(
+            tf.shape(selected), minval=0, maxval=2, dtype=tf.int32
+        )
+        changed = selected & tf.not_equal(current, tf.cast(targets, tf.bool))
+    masks = tf.reduce_sum(tf.cast(changed, tf.int32) * bit_values, axis=-1)
     faulted = tf.bitwise.bitwise_xor(integers, masks)
     dequantized = _dequantize_from_uint(faulted, bits, value_range)
     return values + tf.stop_gradient(dequantized - values)
@@ -202,11 +234,25 @@ def _apply_exact_stage_bit_faults(
     stage_offset: int,
     bits: int,
     value_range: QuantizationRange,
+    *,
+    fault_operation: str = "flip",
+    fault_values=None,
 ):
     import tensorflow as tf
 
     if fault_indices is None:
         return values
+    fault_operation = validate_fault_operation(fault_operation)
+    if fault_operation == "random_set":
+        if fault_values is None:
+            raise ValueError("random_set requires target values for selected bits.")
+        fault_values = tf.convert_to_tensor(fault_values, dtype=tf.int32)
+        if fault_values.shape != fault_indices.shape:
+            raise ValueError(
+                "Random-set target shape must equal exact fault-index shape."
+            )
+        if bool(tf.reduce_any((fault_values != 0) & (fault_values != 1)).numpy()):
+            raise ValueError("Random-set targets must contain only 0 and 1.")
     integers = _quantize_to_uint(values, bits, value_range)
     stage_bit_width = tf.cast(tf.shape(integers)[1] * bits, tf.int64)
     local = fault_indices - stage_offset
@@ -230,6 +276,22 @@ def _apply_exact_stage_bit_faults(
         tf.ones_like(selected_bit, dtype=tf.int32),
         tf.cast(selected_bit, tf.int32),
     )
+    if fault_operation == "random_set":
+        selected_targets = tf.boolean_mask(fault_values, in_stage)
+        current_targets = tf.cast(
+            tf.not_equal(
+                tf.bitwise.bitwise_and(
+                    tf.gather_nd(integers, scatter_indices), bit_masks
+                ),
+                0,
+            ),
+            tf.int32,
+        )
+        bit_masks = tf.where(
+            tf.not_equal(current_targets, selected_targets),
+            bit_masks,
+            tf.zeros_like(bit_masks),
+        )
     masks = tf.scatter_nd(
         scatter_indices,
         bit_masks,
@@ -249,16 +311,21 @@ def forward_with_faults(
     input_quantization_range: QuantizationRange,
     training_fault_probability: float = 0.0,
     exact_fault_indices=None,
+    exact_fault_values=None,
+    fault_operation: str = "flip",
 ):
     """Run a selected dense QKeras model with optional transient bit faults."""
     import tensorflow as tf
 
     validate_fault_scope(fault_scope)
+    fault_operation = validate_fault_operation(fault_operation)
     training_fault_probability = validate_fault_probability(
         training_fault_probability
     )
     if exact_fault_indices is not None:
         exact_fault_indices = tf.convert_to_tensor(exact_fault_indices, dtype=tf.int64)
+    if exact_fault_values is not None:
+        exact_fault_values = tf.convert_to_tensor(exact_fault_values, dtype=tf.int32)
 
     eligible = eligible_stage_indices(len(config.model_stage_widths), fault_scope)
     ranges = _stage_ranges(config, input_quantization_range)
@@ -278,6 +345,8 @@ def forward_with_faults(
                 stage_offsets[model_stage_index],
                 config.activation_bits,
                 ranges[model_stage_index],
+                fault_operation=fault_operation,
+                fault_values=exact_fault_values,
             )
         if training:
             return _apply_bernoulli_bit_faults(
@@ -285,6 +354,7 @@ def forward_with_faults(
                 training_fault_probability,
                 config.activation_bits,
                 ranges[model_stage_index],
+                fault_operation=fault_operation,
             )
         return values
 
@@ -313,6 +383,11 @@ def stage_metadata(
         offsets.append(offsets[-1] + width)
     return {
         "activation_bits": config.activation_bits,
+        "hidden_activation_encoding": (
+            f"unsigned quantized_relu({config.activation_bits},0), "
+            f"step=2^-{config.activation_bits}, range=[0, "
+            f"1-2^-{config.activation_bits}]"
+        ),
         "model_stage_widths": config.model_stage_widths,
         "eligible_model_stage_indices": indices,
         "stage_widths": widths,

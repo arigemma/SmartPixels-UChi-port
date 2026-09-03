@@ -7,7 +7,10 @@ import math
 import torch
 
 from lgnStudies.bitFlipStudy.fault_injection import (
+    FAULT_OPERATIONS,
     FAULT_SCOPES,
+    _eligible_stage_indices,
+    validate_fault_operation,
     validate_fault_scope,
 )
 
@@ -27,20 +30,35 @@ def validate_fault_probability(probability: float) -> float:
 def apply_bernoulli_faults(
     values: torch.Tensor,
     probability: float,
+    fault_operation: str = "flip",
 ) -> torch.Tensor:
-    """Independently complement each activation with probability ``p``.
+    """Independently corrupt each activation with probability ``p``.
 
     ``torch.where`` keeps the operation out of place and differentiable.
     LogicDense activations are relaxed values in [0, 1] during training, so the
     differentiable analogue of a Boolean bit flip is ``x -> 1 - x``.
     """
     probability = validate_fault_probability(probability)
+    fault_operation = validate_fault_operation(fault_operation)
     if probability == 0.0:
         return values
-    if probability == 1.0:
+    if probability == 1.0 and fault_operation == "flip":
         return 1 - values
     selected = torch.rand(values.shape, device=values.device) < probability
-    return torch.where(selected, 1 - values, values)
+    if fault_operation == "flip":
+        return torch.where(selected, 1 - values, values)
+
+    targets = torch.randint(
+        0,
+        2,
+        values.shape,
+        dtype=torch.int64,
+        device=values.device,
+    ).to(values.dtype)
+    faulted = torch.where(selected, targets, values)
+    # Exact random 0/1 values in the forward pass with an identity
+    # straight-through gradient for the relaxed training activations.
+    return values + (faulted - values).detach()
 
 
 class FaultAwareTrainingModel(torch.nn.Module):
@@ -58,6 +76,7 @@ class FaultAwareTrainingModel(torch.nn.Module):
         base_model: torch.nn.Module,
         fault_probability: float,
         fault_scope: str = "all",
+        fault_operation: str = "flip",
     ):
         super().__init__()
         for attribute in ("bin", "layers", "group_sum"):
@@ -80,10 +99,10 @@ class FaultAwareTrainingModel(torch.nn.Module):
         self.fault_probability = validate_fault_probability(fault_probability)
         self.model_stage_widths = (input_width, *layer_widths)
         self.fault_scope = validate_fault_scope(fault_scope)
-        if self.fault_scope == "input":
-            self._eligible_stage_indices = (0,)
-        else:
-            self._eligible_stage_indices = tuple(range(len(self.model_stage_widths)))
+        self.fault_operation = validate_fault_operation(fault_operation)
+        self._eligible_stage_indices = _eligible_stage_indices(
+            len(self.model_stage_widths), self.fault_scope
+        )
         self.stage_widths = tuple(
             self.model_stage_widths[index] for index in self._eligible_stage_indices
         )
@@ -91,17 +110,40 @@ class FaultAwareTrainingModel(torch.nn.Module):
 
     @property
     def expected_flips_per_event(self) -> float:
+        return self.expected_changed_sites_per_event
+
+    @property
+    def expected_selected_sites_per_event(self) -> float:
         return self.fault_probability * self.total_fault_sites
 
     @property
+    def expected_changed_sites_per_event(self) -> float:
+        multiplier = 0.5 if self.fault_operation == "random_set" else 1.0
+        return multiplier * self.expected_selected_sites_per_event
+
+    @property
     def fault_count_standard_deviation(self) -> float:
+        p = self.fault_probability
+        changed_probability = p / 2 if self.fault_operation == "random_set" else p
+        return math.sqrt(
+            self.total_fault_sites
+            * changed_probability
+            * (1 - changed_probability)
+        )
+
+    @property
+    def selected_site_count_standard_deviation(self) -> float:
         p = self.fault_probability
         return math.sqrt(self.total_fault_sites * p * (1 - p))
 
     def _apply_training_faults(self, values: torch.Tensor) -> torch.Tensor:
         if not self.training:
             return values
-        return apply_bernoulli_faults(values, self.fault_probability)
+        return apply_bernoulli_faults(
+            values,
+            self.fault_probability,
+            self.fault_operation,
+        )
 
     def _should_fault_stage(self, model_stage_index: int) -> bool:
         return model_stage_index in self._eligible_stage_indices

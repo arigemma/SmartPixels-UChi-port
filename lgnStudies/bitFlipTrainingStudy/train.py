@@ -28,6 +28,7 @@ from models.registry import REGISTRY
 from utils import CreateFolder, get_device
 
 from lgnStudies.bitFlipTrainingStudy.fault_injection import (
+    FAULT_OPERATIONS,
     FAULT_SCOPES,
     FaultAwareTrainingModel,
     validate_fault_probability,
@@ -50,7 +51,12 @@ CSV_FIELDS = (
     "training_fault_probability",
     "training_fault_percentage",
     "training_fault_scope",
+    "training_fault_operation",
     "total_fault_sites_per_event",
+    "expected_training_selected_sites_per_event",
+    "expected_training_changed_sites_per_event",
+    "selected_site_count_standard_deviation",
+    "changed_site_count_standard_deviation",
     "expected_training_flips_per_event",
     "fault_count_standard_deviation",
     "clean_balanced_accuracy",
@@ -95,12 +101,13 @@ def plot_training_history(
     accuracy_axis.set_ylabel("Clean balanced accuracy [%]")
     probability = 100 * float(rows[0]["training_fault_probability"])
     scope = rows[0].get("training_fault_scope", "all")
+    operation = rows[0].get("training_fault_operation", "flip")
     if probability == 0.0:
         title = f"{model_alias}: clean baseline training (no injected faults)"
     else:
         title = (
             f"{model_alias}: fault-aware training "
-            f"({probability:g}% per site, {scope})"
+            f"({probability:g}% per site, {scope}, {operation})"
         )
     accuracy_axis.set_title(title)
     accuracy_axis.grid(True, alpha=0.25)
@@ -151,7 +158,20 @@ def record_clean_stage(
         "training_fault_probability": fault_model.fault_probability,
         "training_fault_percentage": 100 * fault_model.fault_probability,
         "training_fault_scope": fault_model.fault_scope,
+        "training_fault_operation": fault_model.fault_operation,
         "total_fault_sites_per_event": fault_model.total_fault_sites,
+        "expected_training_selected_sites_per_event": (
+            fault_model.expected_selected_sites_per_event
+        ),
+        "expected_training_changed_sites_per_event": (
+            fault_model.expected_changed_sites_per_event
+        ),
+        "selected_site_count_standard_deviation": (
+            fault_model.selected_site_count_standard_deviation
+        ),
+        "changed_site_count_standard_deviation": (
+            fault_model.fault_count_standard_deviation
+        ),
         "expected_training_flips_per_event": fault_model.expected_flips_per_event,
         "fault_count_standard_deviation": fault_model.fault_count_standard_deviation,
         "clean_balanced_accuracy": metrics["balanced_accuracy"],
@@ -186,7 +206,7 @@ def record_clean_stage(
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Train a model-2 LGN while independently flipping each eligible "
+            "Train a model-2 LGN while independently corrupting each eligible "
             "activation with probability p"
         )
     )
@@ -198,13 +218,22 @@ def main() -> None:
         help="Independent per-site training fault probability in [0, 1].",
     )
     parser.add_argument(
+        "--fault-operation",
+        choices=FAULT_OPERATIONS,
+        default="flip",
+        help=(
+            "flip complements every selected site; random_set assigns each "
+            "selected site an independent uniformly random 0 or 1."
+        ),
+    )
+    parser.add_argument(
         "--fault-scope",
         choices=FAULT_SCOPES,
         default="all",
         help=(
-            "Eligible activation space for training faults: all keeps the "
-            "FixedBinarization plus every LogicDense output; input uses only "
-            "the FixedBinarization output."
+            "Eligible activation space: all includes FixedBinarization plus "
+            "every LogicDense output; input includes only FixedBinarization; "
+            "internal includes only LogicDense outputs."
         ),
     )
     parser.add_argument("--data-config", "-c", default="config/10783560/v3.yml")
@@ -273,6 +302,7 @@ def main() -> None:
         base_model,
         fault_probability=fault_probability,
         fault_scope=args.fault_scope,
+        fault_operation=args.fault_operation,
     ).to(device)
 
     class_weights = get_class_weights(train_loader).to(device)
@@ -290,6 +320,7 @@ def main() -> None:
     print(
         "[FAULT MODEL] "
         f"scope={fault_model.fault_scope} "
+        f"operation={fault_model.fault_operation} "
         f"sites={fault_model.total_fault_sites} "
         f"p={fault_model.fault_probability:.8f} "
         f"expected_K={fault_model.expected_flips_per_event:.3f} "
@@ -397,7 +428,7 @@ def main() -> None:
         "study": (
             "clean_baseline_training"
             if fault_model.fault_probability == 0.0
-            else "fault_aware_activation_bit_flip_training"
+            else f"fault_aware_activation_{fault_model.fault_operation}_training"
         ),
         "training_condition": (
             "clean_baseline"
@@ -419,6 +450,7 @@ def main() -> None:
         "training_fault_probability": fault_model.fault_probability,
         "training_fault_percentage": 100 * fault_model.fault_probability,
         "training_fault_scope": fault_model.fault_scope,
+        "fault_operation": fault_model.fault_operation,
         "total_fault_sites_per_event": fault_model.total_fault_sites,
         "stage_widths": fault_model.stage_widths,
         "model_stage_widths": fault_model.model_stage_widths,
@@ -426,15 +458,28 @@ def main() -> None:
         "expected_training_flips_per_event": (
             fault_model.expected_flips_per_event
         ),
+        "expected_training_selected_sites_per_event": (
+            fault_model.expected_selected_sites_per_event
+        ),
+        "expected_training_changed_sites_per_event": (
+            fault_model.expected_changed_sites_per_event
+        ),
         "fault_count_standard_deviation": (
             fault_model.fault_count_standard_deviation
         ),
+        "selected_site_count_standard_deviation": (
+            fault_model.selected_site_count_standard_deviation
+        ),
         "training_fault_definition": (
             "On every training forward pass, independently select every "
-            "eligible activation with probability p and apply x -> 1-x. "
-            "Scope 'all' includes FixedBinarization and every LogicDense "
-            "output; scope 'input' includes only FixedBinarization. GroupSum "
-            "is excluded. Faults are disabled for clean stage evaluation."
+            "eligible activation with probability p. Operation 'flip' applies "
+            "x -> 1-x; operation 'random_set' independently assigns each "
+            "selected site a uniformly random 0 or 1, so half of selected "
+            "writes are unchanged in expectation. Scope 'all' includes "
+            "FixedBinarization and every LogicDense output; scope 'input' "
+            "includes only FixedBinarization; scope 'internal' includes only "
+            "LogicDense outputs. GroupSum is excluded. Faults are disabled "
+            "for clean stage evaluation."
         ),
         "stop_requested": stop_requested,
     }

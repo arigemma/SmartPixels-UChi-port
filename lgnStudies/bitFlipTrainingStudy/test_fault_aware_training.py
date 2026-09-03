@@ -78,6 +78,24 @@ class FaultAwareTrainingTest(unittest.TestCase):
         result.sum().backward()
         self.assertTrue(torch.equal(values.grad, -torch.ones_like(values)))
 
+    def test_random_set_has_binary_forward_values_and_identity_gradient(self):
+        torch.manual_seed(12)
+        values = torch.tensor([[0.2, 0.8, 0.4, 0.6]], requires_grad=True)
+        result = apply_bernoulli_faults(values, 1.0, "random_set")
+        self.assertTrue(torch.all((result == 0) | (result == 1)))
+        result.sum().backward()
+        self.assertTrue(torch.equal(values.grad, torch.ones_like(values)))
+
+    def test_internal_training_scope_excludes_input_stage(self):
+        model = FaultAwareTrainingModel(
+            FakeDenseLGN(),
+            fault_probability=1.0,
+            fault_scope="internal",
+        ).train()
+        values = torch.tensor([[0.0, 1.0, 1.0, 0.0]])
+        self.assertEqual(model.total_fault_sites, 8)
+        self.assertTrue(torch.equal(model(values), values))
+
     def test_faults_are_enabled_only_during_training(self):
         values = torch.tensor([[0.0, 1.0, 1.0, 0.0]])
         model = FaultAwareTrainingModel(FakeDenseLGN(), fault_probability=1.0)

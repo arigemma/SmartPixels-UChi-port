@@ -31,6 +31,7 @@ from qkerasStudies.common import (
     to_numpy,
 )
 from qkerasStudies.fault_injection import (
+    FAULT_OPERATIONS,
     FAULT_SCOPES,
     QuantizationRange,
     forward_with_faults,
@@ -81,6 +82,7 @@ def evaluate_complete_test_split(
     rng: np.random.Generator,
     reference_predictions: np.ndarray | None = None,
     collect_predictions: bool = False,
+    fault_operation: str = "flip",
 ) -> tuple[dict, np.ndarray | None]:
     fault_metadata = stage_metadata(config, fault_scope)
     total_fault_sites = int(fault_metadata["total_fault_sites_per_event"])
@@ -111,6 +113,11 @@ def evaluate_complete_test_split(
                 rng,
             )
         )
+        fault_values = (
+            rng.integers(0, 2, size=fault_indices.shape, dtype=np.int32)
+            if fault_indices is not None and fault_operation == "random_set"
+            else None
+        )
         logits = forward_with_faults(
             model,
             x_np,
@@ -119,6 +126,8 @@ def evaluate_complete_test_split(
             fault_scope=fault_scope,
             input_quantization_range=input_quantization_range,
             exact_fault_indices=fault_indices,
+            exact_fault_values=fault_values,
+            fault_operation=fault_operation,
         )
         predictions = np.argmax(to_numpy(logits), axis=-1).astype(np.int64)
         truth = np.argmax(y_np, axis=-1).astype(np.int64)
@@ -237,8 +246,8 @@ def make_result_row(
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "QKeras robustness to exactly K random transient activation-bit "
-            "faults per test event"
+            "QKeras robustness to exactly K selected transient activation-bit "
+            "fault sites per test event"
         )
     )
     parser.add_argument("--model-alias", required=True)
@@ -251,6 +260,15 @@ def main() -> None:
     parser.add_argument("-bs", "--batch-size", type=int, default=1024)
     parser.add_argument("--flip-counts", type=int, nargs="+", required=True)
     parser.add_argument("--fault-scope", choices=FAULT_SCOPES, default="all")
+    parser.add_argument(
+        "--fault-operation",
+        choices=FAULT_OPERATIONS,
+        default="flip",
+        help=(
+            "flip complements selected activation bits; random_set assigns "
+            "each selected bit an independent uniformly random 0 or 1."
+        ),
+    )
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--no-plots", action="store_true")
@@ -325,6 +343,7 @@ def main() -> None:
         flip_count=0,
         rng=rng,
         collect_predictions=True,
+        fault_operation=args.fault_operation,
     )
     if clean_predictions is None:
         raise RuntimeError("Clean reference predictions were not collected.")
@@ -334,7 +353,10 @@ def main() -> None:
         args.registry_name,
         clean_metrics,
     )
-    np.save(output / "clean_predictions.npy", clean_predictions)
+    np.save(
+        output / "clean_predictions.npy",
+        clean_predictions.astype(np.uint8, copy=False),
+    )
     rows.append(
         make_result_row(
             args.model_alias,
@@ -366,6 +388,7 @@ def main() -> None:
                 flip_count=flip_count,
                 rng=rng,
                 reference_predictions=clean_predictions,
+                fault_operation=args.fault_operation,
             )
             validate_transition_accounting(clean_metrics, metrics)
             rows.append(
@@ -404,6 +427,7 @@ def main() -> None:
         ),
         "flip_counts_per_event": flip_counts,
         "fault_scope": args.fault_scope,
+        "fault_operation": args.fault_operation,
         **fault_metadata,
         "input_quantization_range": input_range.to_dict(),
         "repeats_per_nonzero_count": args.repeats,
@@ -423,11 +447,19 @@ def main() -> None:
         "fault_model": (
             "For every test event, uniformly sample exactly K distinct activation "
             "bits without replacement from the eligible QKeras activation-bit "
-            "space. Scope 'input' includes the 14 y-profile input features after "
-            "training-set calibrated activation-bit quantization. Scope 'all' "
-            "adds every hidden QActivation output bit. Logits, weights, biases, "
-            "and batch-normalization state are unchanged."
+            "space. Operation 'flip' complements selected bits; operation "
+            "'random_set' assigns each selected bit an independent uniformly "
+            "random 0 or 1, so half of selected writes are unchanged in "
+            "expectation. Scope 'input' includes the 14 y-profile inputs after "
+            "training-set calibrated activation-bit quantization; scope 'all' "
+            "also includes every hidden QActivation output bit; scope 'internal' "
+            "contains only those hidden QActivation output bits. Logits, weights, "
+            "biases, and batch-normalization state are unchanged."
         ),
+        "expected_effective_changed_sites_per_event": {
+            str(count): count / 2 if args.fault_operation == "random_set" else count
+            for count in flip_counts
+        },
         "percentage_definition": (
             "100 * K / total_fault_sites_per_event; derived from the exact-K "
             "experiment, not independent Bernoulli fault injection."

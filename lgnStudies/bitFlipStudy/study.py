@@ -24,6 +24,7 @@ from models.registry import class_to_config, load_registered_model
 from utils import CreateFolder, get_device
 
 from lgnStudies.bitFlipStudy.fault_injection import (
+    FAULT_OPERATIONS,
     FAULT_SCOPES,
     ExactCountBitFlipModel,
 )
@@ -299,8 +300,8 @@ def make_result_row(
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Model-2 LGN robustness to exactly K random transient activation "
-            "bit flips per test event"
+            "Model-2 LGN robustness to exactly K selected transient activation "
+            "bit faults per test event"
         )
     )
     parser.add_argument("--model-alias", required=True)
@@ -316,16 +317,25 @@ def main() -> None:
         type=int,
         nargs="+",
         default=DEFAULT_FLIP_COUNTS,
-        help="Exact unique transient activation-bit flips per test event.",
+        help="Exact unique transient activation-bit sites selected per test event.",
+    )
+    parser.add_argument(
+        "--fault-operation",
+        choices=FAULT_OPERATIONS,
+        default="flip",
+        help=(
+            "flip complements selected sites; random_set assigns each "
+            "selected site an independent uniformly random 0 or 1."
+        ),
     )
     parser.add_argument(
         "--fault-scope",
         choices=FAULT_SCOPES,
         default="all",
         help=(
-            "Eligible activation space for inference faults: all keeps the "
-            "FixedBinarization plus every LogicDense output; input uses only "
-            "the FixedBinarization output."
+            "Eligible activation space: all includes FixedBinarization plus "
+            "every LogicDense output; input includes only FixedBinarization; "
+            "internal includes only LogicDense outputs."
         ),
     )
     parser.add_argument(
@@ -378,6 +388,7 @@ def main() -> None:
     fault_model = ExactCountBitFlipModel(
         clean_model,
         fault_scope=args.fault_scope,
+        fault_operation=args.fault_operation,
     ).to(device)
     if flip_counts[-1] > fault_model.total_fault_sites:
         parser.error(
@@ -415,7 +426,10 @@ def main() -> None:
         args.registry_name,
         clean_metrics,
     )
-    np.save(output / "clean_predictions.npy", clean_predictions)
+    np.save(
+        output / "clean_predictions.npy",
+        clean_predictions.astype(np.uint8, copy=False),
+    )
     rows.append(
         make_result_row(
             args.model_alias,
@@ -495,6 +509,7 @@ def main() -> None:
         ),
         "flip_counts_per_event": flip_counts,
         "fault_scope": fault_model.fault_scope,
+        "fault_operation": fault_model.fault_operation,
         "total_fault_sites_per_event": fault_model.total_fault_sites,
         "stage_widths": fault_model.stage_widths,
         "model_stage_widths": fault_model.model_stage_widths,
@@ -516,12 +531,23 @@ def main() -> None:
         ),
         "fault_model": (
             "For every test event, uniformly sample exactly K distinct sites "
-            "without replacement from the eligible Boolean activation outputs, "
-            "then apply x -> 1-x. Scope 'all' includes FixedBinarization and "
-            "every LogicDense layer; scope 'input' includes only "
-            "FixedBinarization. Faults are transient and resampled on each "
-            "forward pass. GroupSum and all model parameters are unchanged."
+            "without replacement from the eligible Boolean activation outputs. "
+            "Operation 'flip' applies x -> 1-x; operation 'random_set' assigns "
+            "each selected site an independent uniformly random 0 or 1, so "
+            "half of selected writes are unchanged in expectation. Scope 'all' "
+            "includes FixedBinarization and every LogicDense layer; scope "
+            "'input' includes only FixedBinarization; scope 'internal' includes "
+            "only LogicDense outputs. Faults are transient and resampled on "
+            "each forward pass. GroupSum and all model parameters are unchanged."
         ),
+        "expected_effective_changed_sites_per_event": {
+            str(count): (
+                count / 2
+                if fault_model.fault_operation == "random_set"
+                else count
+            )
+            for count in flip_counts
+        },
         "percentage_definition": (
             "100 * K / total_fault_sites_per_event; derived from the exact-K "
             "experiment, not independent Bernoulli fault injection."

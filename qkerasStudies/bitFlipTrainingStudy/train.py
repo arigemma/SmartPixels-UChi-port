@@ -41,6 +41,7 @@ from qkerasStudies.common import (
     to_numpy,
 )
 from qkerasStudies.fault_injection import (
+    FAULT_OPERATIONS,
     FAULT_SCOPES,
     QuantizationRange,
     forward_with_faults,
@@ -63,7 +64,12 @@ CSV_FIELDS = (
     "training_fault_probability",
     "training_fault_percentage",
     "training_fault_scope",
+    "training_fault_operation",
     "total_fault_sites_per_event",
+    "expected_training_selected_sites_per_event",
+    "expected_training_changed_sites_per_event",
+    "selected_site_count_standard_deviation",
+    "changed_site_count_standard_deviation",
     "expected_training_flips_per_event",
     "fault_count_standard_deviation",
     "clean_balanced_accuracy",
@@ -109,13 +115,14 @@ def plot_training_history(
     accuracy_axis.plot(steps, accuracy, color="#3366a6", marker="o")
     probability = 100 * float(rows[0]["training_fault_probability"])
     scope = rows[0].get("training_fault_scope", "all")
+    operation = rows[0].get("training_fault_operation", "flip")
     accuracy_axis.set_ylabel("Clean balanced accuracy [%]")
     if probability == 0.0:
         title = f"{model_alias}: QKeras clean baseline training"
     else:
         title = (
             f"{model_alias}: QKeras fault-aware training "
-            f"({probability:g}% per activation bit, {scope})"
+            f"({probability:g}% per activation bit, {scope}, {operation})"
         )
     accuracy_axis.set_title(title)
     accuracy_axis.grid(True, alpha=0.25)
@@ -189,6 +196,7 @@ def record_clean_stage(
     input_quantization_range: QuantizationRange,
     training_fault_probability: float,
     fault_scope: str,
+    fault_operation: str,
     output: Path,
     rows: list[dict],
 ) -> dict:
@@ -200,6 +208,11 @@ def record_clean_stage(
     )
     fault_metadata = stage_metadata(config, fault_scope)
     total_fault_sites = int(fault_metadata["total_fault_sites_per_event"])
+    changed_probability = (
+        training_fault_probability / 2
+        if fault_operation == "random_set"
+        else training_fault_probability
+    )
     confusion = metrics["confusion_matrix"]
     row = {
         "model_alias": model_alias,
@@ -208,14 +221,31 @@ def record_clean_stage(
         "training_fault_probability": training_fault_probability,
         "training_fault_percentage": 100 * training_fault_probability,
         "training_fault_scope": fault_scope,
+        "training_fault_operation": fault_operation,
         "total_fault_sites_per_event": total_fault_sites,
-        "expected_training_flips_per_event": (
+        "expected_training_selected_sites_per_event": (
             training_fault_probability * total_fault_sites
         ),
-        "fault_count_standard_deviation": math.sqrt(
+        "expected_training_changed_sites_per_event": (
+            changed_probability * total_fault_sites
+        ),
+        "selected_site_count_standard_deviation": math.sqrt(
             total_fault_sites
             * training_fault_probability
             * (1 - training_fault_probability)
+        ),
+        "changed_site_count_standard_deviation": math.sqrt(
+            total_fault_sites
+            * changed_probability
+            * (1 - changed_probability)
+        ),
+        "expected_training_flips_per_event": (
+            changed_probability * total_fault_sites
+        ),
+        "fault_count_standard_deviation": math.sqrt(
+            total_fault_sites
+            * changed_probability
+            * (1 - changed_probability)
         ),
         "clean_balanced_accuracy": metrics["balanced_accuracy"],
         **{
@@ -297,6 +327,15 @@ def main() -> None:
         help="Independent per-activation-bit training fault probability in [0, 1].",
     )
     parser.add_argument("--fault-scope", choices=FAULT_SCOPES, default="all")
+    parser.add_argument(
+        "--fault-operation",
+        choices=FAULT_OPERATIONS,
+        default="flip",
+        help=(
+            "flip complements selected activation bits; random_set assigns "
+            "each selected bit an independent uniformly random 0 or 1."
+        ),
+    )
     parser.add_argument("--data-config", "-c", default="config/10783560/v3.yml")
     parser.add_argument("--output", "-o", action=CreateFolder, type=Path, required=True)
     parser.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
@@ -404,6 +443,7 @@ def main() -> None:
                         fault_scope=args.fault_scope,
                         input_quantization_range=input_quantization_range,
                         training_fault_probability=fault_probability,
+                        fault_operation=args.fault_operation,
                     )
                     per_event_loss = loss_fn(y_np, logits)
                     truth = tf.argmax(y_np, axis=-1, output_type=tf.int32)
@@ -435,6 +475,7 @@ def main() -> None:
                         input_quantization_range,
                         fault_probability,
                         args.fault_scope,
+                        args.fault_operation,
                         output,
                         rows,
                     )
@@ -499,6 +540,7 @@ def main() -> None:
             input_quantization_range,
             fault_probability,
             args.fault_scope,
+            args.fault_operation,
             output,
             rows,
         )
@@ -530,7 +572,34 @@ def main() -> None:
         "training_fault_probability": fault_probability,
         "training_fault_percentage": 100 * fault_probability,
         "training_fault_scope": args.fault_scope,
+        "fault_operation": args.fault_operation,
         "total_fault_sites_per_event": fault_metadata["total_fault_sites_per_event"],
+        "expected_training_selected_sites_per_event": (
+            fault_probability * fault_metadata["total_fault_sites_per_event"]
+        ),
+        "expected_training_changed_sites_per_event": (
+            fault_probability
+            * fault_metadata["total_fault_sites_per_event"]
+            * (0.5 if args.fault_operation == "random_set" else 1.0)
+        ),
+        "selected_site_count_standard_deviation": math.sqrt(
+            fault_metadata["total_fault_sites_per_event"]
+            * fault_probability
+            * (1 - fault_probability)
+        ),
+        "changed_site_count_standard_deviation": math.sqrt(
+            fault_metadata["total_fault_sites_per_event"]
+            * (
+                fault_probability / 2
+                if args.fault_operation == "random_set"
+                else fault_probability
+            )
+            * (
+                1 - fault_probability / 2
+                if args.fault_operation == "random_set"
+                else 1 - fault_probability
+            )
+        ),
         "stage_widths": fault_metadata["stage_widths"],
         "stage_bit_widths": fault_metadata["stage_bit_widths"],
         "model_stage_widths": fault_metadata["model_stage_widths"],
@@ -549,6 +618,14 @@ def main() -> None:
         "final_confusion_matrix": latest_metrics["confusion_matrix"],
         "number_test_events": latest_metrics["number_test_events"],
         "trainable_parameters": n_params,
+        "training_fault_definition": (
+            "Each eligible activation bit is selected independently with "
+            "probability p on each training forward pass. Operation 'flip' "
+            "complements selected bits; operation 'random_set' independently "
+            "assigns each selected bit a uniform random 0/1 target, so half "
+            "of selected writes are unchanged in expectation. Faults are "
+            "disabled during clean evaluations."
+        ),
     }
     completion_path.write_text(json.dumps(completion, indent=2) + "\n")
     print(

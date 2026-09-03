@@ -1,0 +1,736 @@
+#!/usr/bin/env python3
+"""Task mapping, validation, and plotting for internal random overwrites."""
+
+from __future__ import annotations
+
+import argparse
+from collections import Counter, defaultdict
+import csv
+from dataclasses import asdict, dataclass
+import json
+import os
+from pathlib import Path
+import shutil
+
+import numpy as np
+
+from models.registry import REGISTRY
+from qkerasStudies.fault_injection import stage_metadata
+from qkerasStudies.models import get_config
+
+
+DEFAULT_TRAINING_PERCENTAGES = (0.0, 1.0, 3.0, 10.0)
+EVALUATION_PERCENTAGES = (
+    0.0,
+    0.25,
+    0.5,
+    0.75,
+    1.0,
+    1.5,
+    2.0,
+    2.5,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0,
+    10.0,
+)
+REPEATS = 5
+COUNTS_PER_CHUNK = 3
+FAULT_SCOPE = "internal"
+FAULT_OPERATION = "random_set"
+
+
+def parse_training_percentages(text: str | None = None) -> tuple[float, ...]:
+    """Parse a configurable training grid while requiring a clean baseline."""
+    if text is None:
+        text = os.environ.get("INTERNAL_OVERWRITE_TRAINING_PERCENTAGES", "")
+    if not text.strip():
+        return DEFAULT_TRAINING_PERCENTAGES
+    tokens = text.replace(",", " ").split()
+    try:
+        percentages = tuple(sorted({float(token) for token in tokens}))
+    except ValueError as error:
+        raise ValueError(f"Invalid training-percentage list: {text!r}.") from error
+    if not percentages or percentages[0] != 0.0:
+        raise ValueError("Training percentages must include the 0% clean baseline.")
+    if any(not 0.0 <= value <= 100.0 for value in percentages):
+        raise ValueError("Training percentages must lie in [0, 100].")
+    return percentages
+
+
+TRAINING_PERCENTAGES = parse_training_percentages()
+
+
+@dataclass(frozen=True)
+class ModelSpec:
+    family: str
+    alias: str
+    registry_name: str
+    display_name: str
+    internal_fault_sites: int
+    internal_stage_widths: tuple[int, ...]
+    activation_bits: int
+    minimum_training_hours: float
+    minimum_training_steps: int
+
+
+QKERAS_CONFIG = get_config("qkeras_y256_64_w4a8")
+QKERAS_INTERNAL_METADATA = stage_metadata(QKERAS_CONFIG, FAULT_SCOPE)
+LNN_REGISTRY_NAME = "lgn-dense-2-dense-100_128_-model2lgnFull_s02_p163M_20"
+LNN_INTERNAL_WIDTHS = tuple(REGISTRY[LNN_REGISTRY_NAME]["class"].hidden_dims)
+MODELS = (
+    ModelSpec(
+        family="lnn",
+        alias="s02_p163M_tau20",
+        registry_name=LNN_REGISTRY_NAME,
+        display_name="Dense LNN: s02 p0.163M, tau=20",
+        internal_fault_sites=sum(LNN_INTERNAL_WIDTHS),
+        internal_stage_widths=LNN_INTERNAL_WIDTHS,
+        activation_bits=1,
+        minimum_training_hours=5.0,
+        minimum_training_steps=20_000,
+    ),
+    ModelSpec(
+        family="qkeras",
+        alias=QKERAS_CONFIG.alias,
+        registry_name=QKERAS_CONFIG.registry_name,
+        display_name="Dense QKeras: Y256/64 W4/A8",
+        internal_fault_sites=int(
+            QKERAS_INTERNAL_METADATA["total_fault_sites_per_event"]
+        ),
+        internal_stage_widths=tuple(QKERAS_CONFIG.hidden_units),
+        activation_bits=QKERAS_CONFIG.activation_bits,
+        minimum_training_hours=3.0,
+        minimum_training_steps=6_000,
+    ),
+)
+
+
+def percentage_tag(percentage: float) -> str:
+    if percentage == 0:
+        return "baseline_clean"
+    return f"train_{percentage:g}pct".replace(".", "p")
+
+
+def evaluation_counts(total_sites: int) -> tuple[int, ...]:
+    counts = tuple(
+        sorted(
+            {
+                min(total_sites, max(0, round(total_sites * value / 100.0)))
+                for value in EVALUATION_PERCENTAGES
+            }
+        )
+    )
+    if counts[0] != 0 or len(counts) != len(EVALUATION_PERCENTAGES):
+        raise ValueError(
+            f"Evaluation percentages are not uniquely representable for {total_sites} sites."
+        )
+    return counts
+
+
+def evaluation_chunks(total_sites: int) -> tuple[tuple[int, ...], ...]:
+    nonzero = evaluation_counts(total_sites)[1:]
+    return tuple(
+        tuple(nonzero[index : index + COUNTS_PER_CHUNK])
+        for index in range(0, len(nonzero), COUNTS_PER_CHUNK)
+    )
+
+
+def training_tasks() -> list[dict]:
+    return [
+        {
+            **asdict(model),
+            "training_percentage": percentage,
+            "training_probability": percentage / 100.0,
+            "tag": percentage_tag(percentage),
+        }
+        for model in MODELS
+        for percentage in TRAINING_PERCENTAGES
+    ]
+
+
+def evaluation_tasks() -> list[dict]:
+    tasks = []
+    for model in MODELS:
+        for percentage in TRAINING_PERCENTAGES:
+            for chunk_index, counts in enumerate(
+                evaluation_chunks(model.internal_fault_sites)
+            ):
+                tasks.append(
+                    {
+                        **asdict(model),
+                        "training_percentage": percentage,
+                        "tag": percentage_tag(percentage),
+                        "chunk_index": chunk_index,
+                        "selected_site_counts": counts,
+                    }
+                )
+    return tasks
+
+
+def _task_at(tasks: list[dict], task_id: int, kind: str) -> dict:
+    if task_id < 0 or task_id >= len(tasks):
+        raise ValueError(f"{kind} task ID must lie in [0, {len(tasks) - 1}].")
+    return tasks[task_id]
+
+
+def training_configuration(task_id: int) -> dict:
+    return _task_at(training_tasks(), task_id, "Training")
+
+
+def evaluation_configuration(task_id: int) -> dict:
+    return _task_at(evaluation_tasks(), task_id, "Evaluation")
+
+
+def _condition_root(root: Path, model: ModelSpec, percentage: float) -> Path:
+    return root / model.family / percentage_tag(percentage) / model.alias
+
+
+def write_campaign_config(root: Path, git_commit: str) -> None:
+    root.mkdir(parents=True, exist_ok=False)
+    config = {
+        "schema_version": 1,
+        "study": "selected_models_internal_activation_random_overwrite",
+        "git_commit": git_commit,
+        "fault_scope": FAULT_SCOPE,
+        "fault_operation": FAULT_OPERATION,
+        "fault_operation_definition": (
+            "Selected sites are independently assigned uniformly random 0/1 "
+            "targets. A selected write leaves the stored bit unchanged with "
+            "probability 1/2."
+        ),
+        "training_percentages": list(TRAINING_PERCENTAGES),
+        "evaluation_target_percentages": list(EVALUATION_PERCENTAGES),
+        "plot_x_range_percent": [0.0, 10.0],
+        "evaluation_repeats_per_nonzero_point": REPEATS,
+        "counts_per_evaluation_chunk": COUNTS_PER_CHUNK,
+        "training_task_count": len(training_tasks()),
+        "evaluation_task_count": len(evaluation_tasks()),
+        "models": [
+            {
+                **asdict(model),
+                "evaluation_selected_site_counts": list(
+                    evaluation_counts(model.internal_fault_sites)
+                ),
+                "realized_evaluation_percentages": [
+                    100 * count / model.internal_fault_sites
+                    for count in evaluation_counts(model.internal_fault_sites)
+                ],
+            }
+            for model in MODELS
+        ],
+    }
+    (root / "campaign_config.json").write_text(json.dumps(config, indent=2) + "\n")
+
+
+def _load_json(path: Path) -> dict:
+    if not path.is_file():
+        raise ValueError(f"Missing required artifact: {path}")
+    return json.loads(path.read_text())
+
+
+def _validate_training(
+    root: Path, model: ModelSpec, training_percentage: float
+) -> dict:
+    condition_root = _condition_root(root, model, training_percentage)
+    status = _load_json(condition_root / "training" / "training_complete.json")
+    expected = {
+        "complete": True,
+        "model_alias": model.alias,
+        "registry_name": model.registry_name,
+        "training_fault_scope": FAULT_SCOPE,
+        "fault_operation": FAULT_OPERATION,
+        "total_fault_sites_per_event": model.internal_fault_sites,
+    }
+    for key, value in expected.items():
+        if status.get(key) != value:
+            raise ValueError(
+                f"Training metadata mismatch for {model.family}/{percentage_tag(training_percentage)}: "
+                f"{key}={status.get(key)!r}, expected {value!r}."
+            )
+    if not np.isclose(
+        float(status["training_fault_percentage"]),
+        training_percentage,
+        rtol=0.0,
+        atol=1e-12,
+    ):
+        raise ValueError(f"Wrong training percentage in {condition_root}.")
+    checkpoint_name = "final_model.pth" if model.family == "lnn" else "final_model.keras"
+    if not (condition_root / "training" / checkpoint_name).exists():
+        raise ValueError(f"Missing completed checkpoint in {condition_root / 'training'}.")
+    return status
+
+
+def _read_rows(path: Path) -> list[dict]:
+    if not path.is_file():
+        raise ValueError(f"Missing evaluation table: {path}")
+    with path.open(newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    if not rows:
+        raise ValueError(f"Empty evaluation table: {path}")
+    return rows
+
+
+def _validate_chunk(
+    rows: list[dict],
+    metadata: dict,
+    model: ModelSpec,
+    expected_nonzero_counts: tuple[int, ...],
+    source: Path,
+) -> None:
+    expected_counts = (0, *expected_nonzero_counts)
+    expected_repetitions = {
+        0: 1,
+        **{count: REPEATS for count in expected_nonzero_counts},
+    }
+    observed = Counter(int(row["flip_count_per_event"]) for row in rows)
+    if dict(observed) != expected_repetitions:
+        raise ValueError(
+            f"Incomplete count/repeat grid in {source}: {dict(observed)}; "
+            f"expected {expected_repetitions}."
+        )
+    if {row["model_alias"] for row in rows} != {model.alias}:
+        raise ValueError(f"Wrong model alias in {source}.")
+    if {row["registry_name"] for row in rows} != {model.registry_name}:
+        raise ValueError(f"Wrong registry in {source}.")
+    if {int(row["total_fault_sites_per_event"]) for row in rows} != {
+        model.internal_fault_sites
+    }:
+        raise ValueError(f"Wrong internal-site total in {source}.")
+    metadata_expected = {
+        "complete": True,
+        "model_alias": model.alias,
+        "registry_name": model.registry_name,
+        "fault_scope": FAULT_SCOPE,
+        "fault_operation": FAULT_OPERATION,
+        "total_fault_sites_per_event": model.internal_fault_sites,
+        "flip_counts_per_event": list(expected_counts),
+        "repeats_per_nonzero_count": REPEATS,
+    }
+    for key, value in metadata_expected.items():
+        if metadata.get(key) != value:
+            raise ValueError(
+                f"Evaluation metadata mismatch in {source}: "
+                f"{key}={metadata.get(key)!r}, expected {value!r}."
+            )
+
+
+def _combine_condition(
+    root: Path,
+    model: ModelSpec,
+    training_percentage: float,
+) -> list[dict]:
+    status = _validate_training(root, model, training_percentage)
+    condition_root = _condition_root(root, model, training_percentage)
+    clean_rows = []
+    nonzero_rows = []
+    reference_predictions = None
+    prediction_source = None
+    chunks = evaluation_chunks(model.internal_fault_sites)
+    for chunk_index, expected_counts in enumerate(chunks):
+        chunk_root = condition_root / "chunks" / f"chunk_{chunk_index:02d}"
+        csv_path = chunk_root / "bit_flip_results.csv"
+        rows = _read_rows(csv_path)
+        metadata = _load_json(chunk_root / "bit_flip_metadata.json")
+        _validate_chunk(rows, metadata, model, expected_counts, csv_path)
+        clean_rows.extend(
+            row for row in rows if int(row["flip_count_per_event"]) == 0
+        )
+        nonzero_rows.extend(
+            row for row in rows if int(row["flip_count_per_event"]) > 0
+        )
+        predictions_path = chunk_root / "clean_predictions.npy"
+        if not predictions_path.is_file():
+            raise ValueError(f"Missing clean predictions: {predictions_path}")
+        predictions = np.load(predictions_path)
+        if reference_predictions is None:
+            reference_predictions = predictions
+            prediction_source = predictions_path
+        elif not np.array_equal(reference_predictions, predictions):
+            raise ValueError(
+                f"Clean predictions differ between chunks in {condition_root}."
+            )
+
+    if not clean_rows or any(row != clean_rows[0] for row in clean_rows[1:]):
+        raise ValueError(f"Clean evaluation differs between chunks in {condition_root}.")
+    keys = [
+        (int(row["flip_count_per_event"]), int(row["repeat"]))
+        for row in nonzero_rows
+    ]
+    if len(keys) != len(set(keys)):
+        raise ValueError(f"Duplicate evaluation rows in {condition_root}.")
+    nonzero_rows.sort(
+        key=lambda row: (
+            int(row["flip_count_per_event"]),
+            int(row["repeat"]),
+        )
+    )
+    combined = [clean_rows[0], *nonzero_rows]
+    expected_grid = {
+        count: 1 if count == 0 else REPEATS
+        for count in evaluation_counts(model.internal_fault_sites)
+    }
+    if dict(Counter(int(row["flip_count_per_event"]) for row in combined)) != expected_grid:
+        raise ValueError(f"Combined grid is incomplete in {condition_root}.")
+
+    translated = [
+        _translate_raw_row(row, model, training_percentage) for row in combined
+    ]
+    _write_dict_rows(condition_root / "random_overwrite_results.csv", translated)
+    if prediction_source is None:
+        raise ValueError(f"No clean prediction source in {condition_root}.")
+    shutil.copyfile(prediction_source, condition_root / "clean_predictions.npy")
+    metadata = {
+        "complete": True,
+        "fault_scope": FAULT_SCOPE,
+        "fault_operation": FAULT_OPERATION,
+        "model": asdict(model),
+        "training_percentage": training_percentage,
+        "training_status": status,
+        "evaluation_selected_site_counts": list(
+            evaluation_counts(model.internal_fault_sites)
+        ),
+        "source_chunks": [
+            f"chunks/chunk_{index:02d}" for index in range(len(chunks))
+        ],
+        "percentage_definition": (
+            "100 * selected internal sites / total eligible internal bit sites."
+        ),
+        "effective_change_note": (
+            "Each selected site receives a uniform random 0/1 target; therefore "
+            "the expected number of bits whose value actually changes is K/2."
+        ),
+    }
+    (condition_root / "random_overwrite_metadata.json").write_text(
+        json.dumps(metadata, indent=2) + "\n"
+    )
+    return translated
+
+
+def _translate_raw_row(
+    row: dict, model: ModelSpec, training_percentage: float
+) -> dict:
+    selected = int(row["flip_count_per_event"])
+    total = int(row["total_fault_sites_per_event"])
+    output = {
+        "family": model.family,
+        "display_name": model.display_name,
+        "model_alias": row["model_alias"],
+        "registry_name": row["registry_name"],
+        "fault_scope": FAULT_SCOPE,
+        "fault_operation": FAULT_OPERATION,
+        "training_overwrite_percentage": training_percentage,
+        "selected_sites_per_event": selected,
+        "total_internal_bit_sites": total,
+        "selected_site_fraction": selected / total,
+        "selected_site_percentage": 100 * selected / total,
+        "expected_changed_sites_per_event": selected / 2,
+        "expected_changed_site_count_std": float(np.sqrt(selected) / 2),
+        "expected_changed_fraction": selected / (2 * total),
+        "expected_changed_percentage": 50 * selected / total,
+        "repeat": int(row["repeat"]),
+        "fault_seed": int(row["fault_seed"]),
+    }
+    for key, value in row.items():
+        if key in {
+            "model_alias",
+            "registry_name",
+            "flip_count_per_event",
+            "total_fault_sites_per_event",
+            "equivalent_fault_fraction",
+            "equivalent_fault_percentage",
+            "repeat",
+            "fault_seed",
+        }:
+            continue
+        output[key] = value
+    return output
+
+
+def _write_dict_rows(path: Path, rows: list[dict]) -> None:
+    if not rows:
+        raise ValueError(f"Refusing to write empty table: {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    temporary.replace(path)
+
+
+def _ci95(values: np.ndarray) -> float:
+    if len(values) < 2:
+        return 0.0
+    critical = 2.776 if len(values) == 5 else 1.96
+    return float(critical * values.std(ddof=1) / np.sqrt(len(values)))
+
+
+def _curve_points(
+    rows: list[dict], model: ModelSpec, training_percentage: float, style: dict
+) -> list[dict]:
+    grouped = defaultdict(list)
+    for row in rows:
+        grouped[int(row["selected_sites_per_event"])].append(row)
+    points = []
+    for selected in sorted(grouped):
+        group = grouped[selected]
+        accuracy = np.asarray(
+            [float(row["balanced_accuracy"]) for row in group], dtype=float
+        )
+        points.append(
+            {
+                "family": model.family,
+                "display_name": model.display_name,
+                "model_alias": model.alias,
+                "registry_name": model.registry_name,
+                "training_overwrite_percentage": training_percentage,
+                "training_condition": (
+                    "clean_baseline" if training_percentage == 0 else "fault_aware"
+                ),
+                "fault_scope": FAULT_SCOPE,
+                "fault_operation": FAULT_OPERATION,
+                "total_internal_bit_sites": model.internal_fault_sites,
+                "selected_sites_per_event": selected,
+                "selected_site_percentage": 100 * selected / model.internal_fault_sites,
+                "expected_changed_sites_per_event": selected / 2,
+                "expected_changed_site_count_std": float(np.sqrt(selected) / 2),
+                "expected_changed_percentage": 50 * selected / model.internal_fault_sites,
+                "repeat_count": len(group),
+                "balanced_accuracy_mean": float(accuracy.mean()),
+                "balanced_accuracy_percent": float(100 * accuracy.mean()),
+                "balanced_accuracy_std": (
+                    float(accuracy.std(ddof=1)) if len(accuracy) > 1 else 0.0
+                ),
+                "balanced_accuracy_ci95": _ci95(accuracy),
+                "balanced_accuracy_ci95_percent": 100 * _ci95(accuracy),
+                **style,
+            }
+        )
+    return points
+
+
+def _styles() -> dict[float, dict]:
+    colors = ["#222222", "#0072B2", "#E69F00", "#CC79A7", "#009E73", "#D55E00"]
+    styles = {}
+    for index, percentage in enumerate(TRAINING_PERCENTAGES):
+        styles[percentage] = {
+            "color": colors[index % len(colors)],
+            "linestyle": "-" if percentage == 0 else "--",
+            "marker": "o" if percentage == 0 else ("s", "^", "D", "v", "P")[
+                (index - 1) % 5
+            ],
+        }
+    return styles
+
+
+def _plot(points: list[dict], output_stem: Path) -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    styles = _styles()
+    fig, axes = plt.subplots(1, 2, figsize=(14.8, 6.2), sharex=True, sharey=True)
+    for axis, model in zip(axes, MODELS):
+        for percentage in TRAINING_PERCENTAGES:
+            curve = sorted(
+                (
+                    row
+                    for row in points
+                    if row["family"] == model.family
+                    and float(row["training_overwrite_percentage"]) == percentage
+                ),
+                key=lambda row: float(row["selected_site_percentage"]),
+            )
+            style = styles[percentage]
+            x = np.asarray([row["selected_site_percentage"] for row in curve])
+            y = np.asarray([row["balanced_accuracy_percent"] for row in curve])
+            ci = np.asarray([row["balanced_accuracy_ci95_percent"] for row in curve])
+            label = (
+                "Clean training"
+                if percentage == 0
+                else f"{percentage:g}% overwrite training"
+            )
+            axis.plot(
+                x,
+                y,
+                label=label,
+                color=style["color"],
+                linestyle=style["linestyle"],
+                marker=style["marker"],
+                linewidth=2.5,
+                markersize=6.5,
+            )
+            axis.fill_between(x, y - ci, y + ci, color=style["color"], alpha=0.10)
+        axis.set_title("Dense LNN" if model.family == "lnn" else "Dense QKeras", fontsize=19)
+        axis.set_xlim(0, 10)
+        axis.set_xticks((0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10))
+        axis.set_xlabel("Selected internal bits overwritten [%]", fontsize=16)
+        axis.tick_params(axis="both", labelsize=14)
+        axis.grid(True, alpha=0.25)
+    axes[0].set_ylabel("Balanced accuracy [%]", fontsize=16)
+    handles, labels = axes[-1].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="center left",
+        bbox_to_anchor=(0.87, 0.5),
+        frameon=False,
+        fontsize=13,
+        handlelength=2.5,
+    )
+    fig.subplots_adjust(left=0.08, right=0.86, bottom=0.14, top=0.91, wspace=0.08)
+    for suffix in (".png", ".pdf"):
+        fig.savefig(
+            output_stem.with_suffix(suffix),
+            dpi=600,
+            bbox_inches="tight",
+        )
+    plt.close(fig)
+
+
+def combine_campaign(root: Path) -> None:
+    if not root.is_dir():
+        raise ValueError(f"Campaign root does not exist: {root}")
+    config = _load_json(root / "campaign_config.json")
+    if config.get("fault_scope") != FAULT_SCOPE or config.get("fault_operation") != FAULT_OPERATION:
+        raise ValueError("Campaign configuration does not describe this fault protocol.")
+    if tuple(config.get("training_percentages", ())) != TRAINING_PERCENTAGES:
+        raise ValueError(
+            "Training-percentage environment differs from campaign_config.json."
+        )
+
+    all_raw_rows = []
+    all_points = []
+    styles = _styles()
+    for model in MODELS:
+        for percentage in TRAINING_PERCENTAGES:
+            rows = _combine_condition(root, model, percentage)
+            all_raw_rows.extend(rows)
+            all_points.extend(_curve_points(rows, model, percentage, styles[percentage]))
+
+    _write_dict_rows(root / "internal_random_overwrite_raw_results.csv", all_raw_rows)
+    _write_dict_rows(root / "internal_random_overwrite_plot_points.csv", all_points)
+    output_stem = root / "lnn_vs_qkeras_internal_random_overwrite"
+    _plot(all_points, output_stem)
+    summary = {
+        "schema_version": 1,
+        "complete": True,
+        "study": "selected_models_internal_activation_random_overwrite",
+        "fault_scope": FAULT_SCOPE,
+        "fault_operation": FAULT_OPERATION,
+        "training_percentages": list(TRAINING_PERCENTAGES),
+        "evaluation_target_percentages": list(EVALUATION_PERCENTAGES),
+        "plot_x_range_percent": [0.0, 10.0],
+        "repeats_per_nonzero_point": REPEATS,
+        "x_axis": (
+            "Exact percentage of eligible internal bit sites selected for a "
+            "random 0/1 overwrite; expected effective changed-bit rate is half."
+        ),
+        "models": [asdict(model) for model in MODELS],
+        "raw_results_csv": str(root / "internal_random_overwrite_raw_results.csv"),
+        "plot_points_csv": str(root / "internal_random_overwrite_plot_points.csv"),
+        "plot_png": str(output_stem.with_suffix(".png")),
+        "plot_pdf": str(output_stem.with_suffix(".pdf")),
+    }
+    (root / "internal_random_overwrite_campaign_summary.json").write_text(
+        json.dumps(summary, indent=2) + "\n"
+    )
+    print(f"[DONE] Validated, combined, and plotted campaign under {root}")
+
+
+def status(root: Path) -> None:
+    training_expected = len(training_tasks())
+    evaluation_expected = len(evaluation_tasks())
+    training_found = len(list(root.glob("*/*/*/training/training_complete.json")))
+    evaluation_found = len(list(root.glob("*/*/*/chunks/chunk_*/bit_flip_metadata.json")))
+    print(f"Training completions:  {training_found} / {training_expected}")
+    print(f"Evaluation chunks:     {evaluation_found} / {evaluation_expected}")
+    final_plot = root / "lnn_vs_qkeras_internal_random_overwrite.png"
+    print(f"Final plot:            {'READY' if final_plot.is_file() else 'not yet produced'}")
+
+
+def _task_text(task: dict, evaluation: bool = False) -> str:
+    fields = [
+        task["family"],
+        task["tag"],
+        f"{task['training_percentage']:g}",
+        task["alias"],
+        task["registry_name"],
+    ]
+    if evaluation:
+        fields.extend(
+            (
+                f"{task['chunk_index']:02d}",
+                " ".join(map(str, task["selected_site_counts"])),
+            )
+        )
+    fields.extend(
+        (
+            f"{task['minimum_training_hours']:g}",
+            str(task["minimum_training_steps"]),
+        )
+    )
+    if not evaluation:
+        fields.insert(3, f"{task['training_probability']:.12g}")
+    return "\t".join(fields)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    actions = parser.add_mutually_exclusive_group(required=True)
+    actions.add_argument("--training-task-id", type=int)
+    actions.add_argument("--evaluation-task-id", type=int)
+    actions.add_argument("--print-training-task-count", action="store_true")
+    actions.add_argument("--print-evaluation-task-count", action="store_true")
+    actions.add_argument("--print-model-grids", action="store_true")
+    actions.add_argument("--write-campaign-config", action="store_true")
+    actions.add_argument("--combine", action="store_true")
+    actions.add_argument("--status", action="store_true")
+    parser.add_argument("--root", type=Path)
+    parser.add_argument("--git-commit")
+    args = parser.parse_args()
+    try:
+        if args.training_task_id is not None:
+            print(_task_text(training_configuration(args.training_task_id)))
+        elif args.evaluation_task_id is not None:
+            print(_task_text(evaluation_configuration(args.evaluation_task_id), True))
+        elif args.print_training_task_count:
+            print(len(training_tasks()))
+        elif args.print_evaluation_task_count:
+            print(len(evaluation_tasks()))
+        elif args.print_model_grids:
+            for model in MODELS:
+                print(
+                    "\t".join(
+                        (
+                            model.family,
+                            model.alias,
+                            str(model.internal_fault_sites),
+                            " ".join(map(str, evaluation_counts(model.internal_fault_sites))),
+                        )
+                    )
+                )
+        elif args.write_campaign_config:
+            if args.root is None or args.git_commit is None:
+                parser.error("--root and --git-commit are required.")
+            write_campaign_config(args.root, args.git_commit)
+        elif args.combine:
+            if args.root is None:
+                parser.error("--root is required.")
+            combine_campaign(args.root)
+        elif args.status:
+            if args.root is None:
+                parser.error("--root is required.")
+            status(args.root)
+    except (FileNotFoundError, ValueError) as error:
+        raise SystemExit(str(error)) from error
+
+
+if __name__ == "__main__":
+    main()
