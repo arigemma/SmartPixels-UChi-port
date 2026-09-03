@@ -16,7 +16,7 @@ import numpy as np
 
 from models.registry import REGISTRY
 from qkerasStudies.fault_injection import stage_metadata
-from qkerasStudies.models import get_config
+from qkerasStudies.models import _import_qkeras_layers, build_model, get_config
 
 
 DEFAULT_TRAINING_PERCENTAGES = (0.0, 1.0, 3.0, 10.0)
@@ -655,6 +655,34 @@ def status(root: Path) -> None:
     print(f"Final plot:            {'READY' if final_plot.is_file() else 'not yet produced'}")
 
 
+def qkeras_preflight() -> None:
+    """Fail before submission if this environment cannot construct QKeras."""
+    QActivation, QBatchNormalization, QDense, quantized_bits = (
+        _import_qkeras_layers()
+    )
+    model = build_model(QKERAS_CONFIG.registry_name)
+    imported = {
+        "QActivation": QActivation,
+        "QBatchNormalization": QBatchNormalization,
+        "QDense": QDense,
+        "quantized_bits": quantized_bits,
+    }
+    for expected_name, imported_object in imported.items():
+        if imported_object.__name__ != expected_name:
+            raise ValueError(
+                f"QKeras import mismatch: expected {expected_name}, "
+                f"got {imported_object.__name__}."
+            )
+    if tuple(model.input_shape) != (None, QKERAS_CONFIG.input_dim):
+        raise ValueError(f"Unexpected QKeras input shape: {model.input_shape}.")
+    if tuple(model.output_shape) != (None, 3):
+        raise ValueError(f"Unexpected QKeras output shape: {model.output_shape}.")
+    print(
+        "QKeras preflight passed: "
+        f"{QKERAS_CONFIG.registry_name} {model.input_shape} -> {model.output_shape}"
+    )
+
+
 def _task_text(task: dict, evaluation: bool = False) -> str:
     fields = [
         task["family"],
@@ -692,6 +720,7 @@ def main() -> None:
     actions.add_argument("--write-campaign-config", action="store_true")
     actions.add_argument("--combine", action="store_true")
     actions.add_argument("--status", action="store_true")
+    actions.add_argument("--qkeras-preflight", action="store_true")
     parser.add_argument("--root", type=Path)
     parser.add_argument("--git-commit")
     args = parser.parse_args()
@@ -728,6 +757,8 @@ def main() -> None:
             if args.root is None:
                 parser.error("--root is required.")
             status(args.root)
+        elif args.qkeras_preflight:
+            qkeras_preflight()
     except (FileNotFoundError, ValueError) as error:
         raise SystemExit(str(error)) from error
 

@@ -63,7 +63,15 @@ CONFIG_BY_REGISTRY = {config.registry_name: config for config in MODEL_CONFIGS}
 
 
 def _import_qkeras_layers():
-    from qkeras import QActivation, QBatchNormalization, QDense, quantized_bits
+    try:
+        from qkeras import QActivation, QBatchNormalization, QDense, quantized_bits
+    except ImportError:
+        # Some QKeras installations do not re-export these public classes from
+        # qkeras.__init__, even though their standard implementation modules
+        # are present. Support both package layouts.
+        from qkeras.qlayers import QActivation, QDense
+        from qkeras.qnormalization import QBatchNormalization
+        from qkeras.quantizers import quantized_bits
 
     return QActivation, QBatchNormalization, QDense, quantized_bits
 
@@ -148,7 +156,9 @@ def qkeras_custom_objects() -> dict[str, Any]:
         _add_supported_quantized_objects(custom_objects)
 
     try:
-        from qkeras import QBatchNormalization
+        _qactivation, QBatchNormalization, _qdense, _quantized_bits_cls = (
+            _import_qkeras_layers()
+        )
     except ImportError:
         pass
     else:

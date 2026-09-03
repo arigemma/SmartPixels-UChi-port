@@ -54,6 +54,17 @@ The three submitted SLURM job IDs are also written to
 `submitted_jobs.txt` inside the campaign root, so they do not need to be
 copied from the terminal output.
 
+If only QKeras training tasks 4--7 from an existing campaign failed before
+training began, retain the original LNN jobs and run:
+
+```bash
+bash internalBitOverwriteStudy/recover_qkeras.sh CAMPAIGN_ROOT ORIGINAL_TRAINING_JOB_ID
+```
+
+The recovery launcher runs a local QKeras import/model-build preflight,
+resubmits only tasks 4--7, and makes its new evaluation array wait for both
+the four original LNN tasks and the replacement QKeras array.
+
 The training grid is configuration-driven. A future fresh campaign can use a
 larger grid without code changes, for example:
 
