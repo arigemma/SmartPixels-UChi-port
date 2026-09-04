@@ -205,6 +205,83 @@ class InternalOverwriteCampaignTest(unittest.TestCase):
                     metadata["complete"] = False
                     metadata_path.write_text(json.dumps(metadata))
 
+                    csv_path = metadata_path.with_name("bit_flip_results.csv")
+                    with csv_path.open(newline="") as handle:
+                        timeout_rows = list(csv.DictReader(handle))
+                    for row in timeout_rows:
+                        selected = int(row["flip_count_per_event"])
+                        if selected > 0:
+                            row["fault_seed"] = str(
+                                42
+                                + 1_000_003 * selected
+                                + int(row["repeat"])
+                            )
+                    with csv_path.open("w", newline="") as handle:
+                        writer = csv.DictWriter(
+                            handle,
+                            fieldnames=list(timeout_rows[0]),
+                        )
+                        writer.writeheader()
+                        writer.writerows(timeout_rows)
+
+                # A timed-out artifact may contain two complete points and a
+                # partially written third point. Only the former are eligible
+                # for the explicitly preliminary plot.
+                chunk_four = (
+                    root
+                    / qkeras.family
+                    / tag
+                    / qkeras.alias
+                    / "chunks"
+                    / "chunk_04"
+                    / "bit_flip_results.csv"
+                )
+                with chunk_four.open(newline="") as handle:
+                    partial_rows = list(csv.DictReader(handle))
+                counts = sorted(
+                    {
+                        int(row["flip_count_per_event"])
+                        for row in partial_rows
+                        if int(row["flip_count_per_event"]) > 0
+                    }
+                )
+                partial_rows = [
+                    row
+                    for row in partial_rows
+                    if int(row["flip_count_per_event"]) != counts[-1]
+                    or int(row["repeat"]) < 2
+                ]
+                with chunk_four.open("w", newline="") as handle:
+                    writer = csv.DictWriter(
+                        handle,
+                        fieldnames=list(partial_rows[0]),
+                    )
+                    writer.writeheader()
+                    writer.writerows(partial_rows)
+
+            combine_campaign(root, preliminary=True)
+            preliminary_png = (
+                root / "lnn_vs_qkeras_internal_random_overwrite_preliminary.png"
+            )
+            preliminary_points = (
+                root / "internal_random_overwrite_preliminary_plot_points.csv"
+            )
+            self.assertTrue(preliminary_png.is_file())
+            with preliminary_points.open() as handle:
+                partial_points = list(csv.DictReader(handle))
+            self.assertEqual(
+                len(partial_points),
+                len(DEFAULT_TRAINING_PERCENTAGES)
+                * (len(EVALUATION_PERCENTAGES) + len(EVALUATION_PERCENTAGES) - 1),
+            )
+            self.assertTrue(
+                any(
+                    row["family"] == "qkeras"
+                    and row["source_artifact_complete"] == "False"
+                    for row in partial_points
+                )
+            )
+
             manifest_path = write_qkeras_retry_manifest(root)
             with manifest_path.open(newline="") as handle:
                 retry_rows = list(csv.DictReader(handle, delimiter="\t"))

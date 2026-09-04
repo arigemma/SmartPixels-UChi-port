@@ -84,6 +84,19 @@ and submits one missing corruption point per job with all five repetitions.
 The final combiner ignores incomplete timeout artifacts but requires exactly
 the complete configured point/repetition grid before producing a plot.
 
+A clearly labeled preliminary plot can be produced at any time without
+weakening the final validation:
+
+```bash
+python -m internalBitOverwriteStudy.campaign \
+  --combine-partial --root CAMPAIGN_ROOT
+```
+
+This includes completed chunks plus any exact corruption point for which all
+five full-test realizations were persisted before a timeout. Partly evaluated
+points are omitted. It writes separate files containing `preliminary` in their
+names and never overwrites the final campaign artifacts.
+
 The training grid is configuration-driven. A future fresh campaign can use a
 larger grid without code changes, for example:
 

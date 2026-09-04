@@ -426,6 +426,141 @@ def _combine_condition(
     return translated
 
 
+def _validate_preliminary_rows(
+    rows: list[dict],
+    model: ModelSpec,
+    source: Path,
+) -> None:
+    """Validate the fields available even when a timeout prevented metadata."""
+    if {row["model_alias"] for row in rows} != {model.alias}:
+        raise ValueError(f"Wrong model alias in {source}.")
+    if {row["registry_name"] for row in rows} != {model.registry_name}:
+        raise ValueError(f"Wrong registry in {source}.")
+    if {int(row["total_fault_sites_per_event"]) for row in rows} != {
+        model.internal_fault_sites
+    }:
+        raise ValueError(f"Wrong internal-site total in {source}.")
+    expected_counts = set(evaluation_counts(model.internal_fault_sites))
+    observed_counts = {int(row["flip_count_per_event"]) for row in rows}
+    if not observed_counts.issubset(expected_counts):
+        raise ValueError(f"Unexpected evaluation count in {source}.")
+
+
+def _preliminary_condition(
+    root: Path,
+    model: ModelSpec,
+    training_percentage: float,
+) -> list[dict]:
+    """Collect verified complete points, including those in timed-out chunks."""
+    _validate_training(root, model, training_percentage)
+    condition_root = _condition_root(root, model, training_percentage)
+    clean_row = None
+    reference_predictions = None
+    accepted: dict[int, tuple[list[dict], str, bool]] = {}
+
+    for chunk_root in sorted((condition_root / "chunks").glob("chunk_*")):
+        csv_path = chunk_root / "bit_flip_results.csv"
+        predictions_path = chunk_root / "clean_predictions.npy"
+        if not csv_path.is_file() or not predictions_path.is_file():
+            continue
+        rows = _read_rows(csv_path)
+        _validate_preliminary_rows(rows, model, csv_path)
+
+        predictions = np.load(predictions_path)
+        if reference_predictions is None:
+            reference_predictions = predictions
+        elif not np.array_equal(reference_predictions, predictions):
+            raise ValueError(
+                f"Clean predictions differ between chunks in {condition_root}."
+            )
+
+        chunk_clean = [
+            row for row in rows if int(row["flip_count_per_event"]) == 0
+        ]
+        if len(chunk_clean) != 1:
+            raise ValueError(f"Expected one clean row in {csv_path}.")
+        if clean_row is None:
+            clean_row = chunk_clean[0]
+        elif clean_row != chunk_clean[0]:
+            raise ValueError(
+                f"Clean evaluation differs between chunks in {condition_root}."
+            )
+
+        metadata_path = chunk_root / "bit_flip_metadata.json"
+        metadata = _load_json(metadata_path) if metadata_path.is_file() else {}
+        artifact_complete = metadata.get("complete") is True
+        if artifact_complete:
+            chunk_counts = tuple(
+                int(count)
+                for count in metadata.get("flip_counts_per_event", ())
+                if int(count) > 0
+            )
+            _validate_chunk(rows, metadata, model, chunk_counts, csv_path)
+
+        grouped = defaultdict(list)
+        for row in rows:
+            selected = int(row["flip_count_per_event"])
+            if selected > 0:
+                grouped[selected].append(row)
+        for selected, group in grouped.items():
+            # A preliminary marker is admitted only after all five independent
+            # full-test realizations for that exact point have been persisted.
+            repeats = {int(row["repeat"]) for row in group}
+            expected_seeds = {
+                42 + 1_000_003 * selected + repeat for repeat in range(REPEATS)
+            }
+            observed_seeds = {int(row["fault_seed"]) for row in group}
+            if (
+                len(group) != REPEATS
+                or repeats != set(range(REPEATS))
+                or (not artifact_complete and observed_seeds != expected_seeds)
+            ):
+                continue
+            relative_source = str(chunk_root.relative_to(condition_root))
+            previous = accepted.get(selected)
+            if previous is not None:
+                previous_rows, previous_source, previous_complete = previous
+                if previous_complete and artifact_complete:
+                    raise ValueError(
+                        f"Duplicate complete point K={selected} in "
+                        f"{previous_source} and {relative_source}."
+                    )
+                if previous_complete:
+                    continue
+                if not artifact_complete and previous_rows != group:
+                    raise ValueError(
+                        f"Conflicting unfinished point K={selected} in "
+                        f"{condition_root}."
+                    )
+            accepted[selected] = (group, relative_source, artifact_complete)
+
+    if clean_row is None or reference_predictions is None:
+        raise ValueError(f"No usable evaluation output in {condition_root}.")
+
+    translated_clean = _translate_raw_row(clean_row, model, training_percentage)
+    translated_clean.update(
+        {
+            "source_chunk": "clean reference (verified across available chunks)",
+            "source_artifact_complete": True,
+            "preliminary_point_complete": True,
+        }
+    )
+    translated = [translated_clean]
+    for selected in sorted(accepted):
+        group, source, artifact_complete = accepted[selected]
+        for row in sorted(group, key=lambda value: int(value["repeat"])):
+            output = _translate_raw_row(row, model, training_percentage)
+            output.update(
+                {
+                    "source_chunk": source,
+                    "source_artifact_complete": artifact_complete,
+                    "preliminary_point_complete": True,
+                }
+            )
+            translated.append(output)
+    return translated
+
+
 def _translate_raw_row(
     row: dict, model: ModelSpec, training_percentage: float
 ) -> dict:
@@ -501,35 +636,48 @@ def _curve_points(
         accuracy = np.asarray(
             [float(row["balanced_accuracy"]) for row in group], dtype=float
         )
-        points.append(
-            {
-                "family": model.family,
-                "display_name": model.display_name,
-                "model_alias": model.alias,
-                "registry_name": model.registry_name,
-                "training_overwrite_percentage": training_percentage,
-                "training_condition": (
-                    "clean_baseline" if training_percentage == 0 else "fault_aware"
-                ),
-                "fault_scope": FAULT_SCOPE,
-                "fault_operation": FAULT_OPERATION,
-                "total_internal_bit_sites": model.internal_fault_sites,
-                "selected_sites_per_event": selected,
-                "selected_site_percentage": 100 * selected / model.internal_fault_sites,
-                "expected_changed_sites_per_event": selected / 2,
-                "expected_changed_site_count_std": float(np.sqrt(selected) / 2),
-                "expected_changed_percentage": 50 * selected / model.internal_fault_sites,
-                "repeat_count": len(group),
-                "balanced_accuracy_mean": float(accuracy.mean()),
-                "balanced_accuracy_percent": float(100 * accuracy.mean()),
-                "balanced_accuracy_std": (
-                    float(accuracy.std(ddof=1)) if len(accuracy) > 1 else 0.0
-                ),
-                "balanced_accuracy_ci95": _ci95(accuracy),
-                "balanced_accuracy_ci95_percent": 100 * _ci95(accuracy),
-                **style,
-            }
-        )
+        point = {
+            "family": model.family,
+            "display_name": model.display_name,
+            "model_alias": model.alias,
+            "registry_name": model.registry_name,
+            "training_overwrite_percentage": training_percentage,
+            "training_condition": (
+                "clean_baseline" if training_percentage == 0 else "fault_aware"
+            ),
+            "fault_scope": FAULT_SCOPE,
+            "fault_operation": FAULT_OPERATION,
+            "total_internal_bit_sites": model.internal_fault_sites,
+            "selected_sites_per_event": selected,
+            "selected_site_percentage": 100 * selected / model.internal_fault_sites,
+            "expected_changed_sites_per_event": selected / 2,
+            "expected_changed_site_count_std": float(np.sqrt(selected) / 2),
+            "expected_changed_percentage": 50 * selected / model.internal_fault_sites,
+            "repeat_count": len(group),
+            "balanced_accuracy_mean": float(accuracy.mean()),
+            "balanced_accuracy_percent": float(100 * accuracy.mean()),
+            "balanced_accuracy_std": (
+                float(accuracy.std(ddof=1)) if len(accuracy) > 1 else 0.0
+            ),
+            "balanced_accuracy_ci95": _ci95(accuracy),
+            "balanced_accuracy_ci95_percent": 100 * _ci95(accuracy),
+            **style,
+        }
+        if all("source_chunk" in row for row in group):
+            point.update(
+                {
+                    "source_chunks": ";".join(
+                        sorted({str(row["source_chunk"]) for row in group})
+                    ),
+                    "source_artifact_complete": all(
+                        bool(row["source_artifact_complete"]) for row in group
+                    ),
+                    "preliminary_point_complete": all(
+                        bool(row["preliminary_point_complete"]) for row in group
+                    ),
+                }
+            )
+        points.append(point)
     return points
 
 
@@ -547,7 +695,7 @@ def _styles() -> dict[float, dict]:
     return styles
 
 
-def _plot(points: list[dict], output_stem: Path) -> None:
+def _plot(points: list[dict], output_stem: Path, preliminary: bool = False) -> None:
     import matplotlib
 
     matplotlib.use("Agg")
@@ -603,7 +751,19 @@ def _plot(points: list[dict], output_stem: Path) -> None:
         fontsize=13,
         handlelength=2.5,
     )
-    fig.subplots_adjust(left=0.08, right=0.86, bottom=0.14, top=0.91, wspace=0.08)
+    if preliminary:
+        fig.suptitle(
+            "PRELIMINARY — complete five-realization points available so far",
+            fontsize=16,
+            fontweight="bold",
+        )
+    fig.subplots_adjust(
+        left=0.08,
+        right=0.86,
+        bottom=0.14,
+        top=0.86 if preliminary else 0.91,
+        wspace=0.08,
+    )
     for suffix in (".png", ".pdf"):
         fig.savefig(
             output_stem.with_suffix(suffix),
@@ -613,7 +773,7 @@ def _plot(points: list[dict], output_stem: Path) -> None:
     plt.close(fig)
 
 
-def combine_campaign(root: Path) -> None:
+def combine_campaign(root: Path, preliminary: bool = False) -> None:
     if not root.is_dir():
         raise ValueError(f"Campaign root does not exist: {root}")
     config = _load_json(root / "campaign_config.json")
@@ -629,17 +789,36 @@ def combine_campaign(root: Path) -> None:
     styles = _styles()
     for model in MODELS:
         for percentage in TRAINING_PERCENTAGES:
-            rows = _combine_condition(root, model, percentage)
+            rows = (
+                _preliminary_condition(root, model, percentage)
+                if preliminary
+                else _combine_condition(root, model, percentage)
+            )
             all_raw_rows.extend(rows)
             all_points.extend(_curve_points(rows, model, percentage, styles[percentage]))
 
-    _write_dict_rows(root / "internal_random_overwrite_raw_results.csv", all_raw_rows)
-    _write_dict_rows(root / "internal_random_overwrite_plot_points.csv", all_points)
-    output_stem = root / "lnn_vs_qkeras_internal_random_overwrite"
-    _plot(all_points, output_stem)
+    prefix = (
+        "internal_random_overwrite_preliminary"
+        if preliminary
+        else "internal_random_overwrite"
+    )
+    raw_path = root / f"{prefix}_raw_results.csv"
+    points_path = root / f"{prefix}_plot_points.csv"
+    output_stem = root / (
+        "lnn_vs_qkeras_internal_random_overwrite_preliminary"
+        if preliminary
+        else "lnn_vs_qkeras_internal_random_overwrite"
+    )
+    _write_dict_rows(raw_path, all_raw_rows)
+    _write_dict_rows(points_path, all_points)
+    _plot(all_points, output_stem, preliminary=preliminary)
+    expected_point_count = (
+        len(MODELS) * len(TRAINING_PERCENTAGES) * len(EVALUATION_PERCENTAGES)
+    )
     summary = {
         "schema_version": 1,
-        "complete": True,
+        "complete": not preliminary,
+        "preliminary": preliminary,
         "study": "selected_models_internal_activation_random_overwrite",
         "fault_scope": FAULT_SCOPE,
         "fault_operation": FAULT_OPERATION,
@@ -652,15 +831,23 @@ def combine_campaign(root: Path) -> None:
             "random 0/1 overwrite; expected effective changed-bit rate is half."
         ),
         "models": [asdict(model) for model in MODELS],
-        "raw_results_csv": str(root / "internal_random_overwrite_raw_results.csv"),
-        "plot_points_csv": str(root / "internal_random_overwrite_plot_points.csv"),
+        "available_plot_point_count": len(all_points),
+        "expected_final_plot_point_count": expected_point_count,
+        "raw_results_csv": str(raw_path),
+        "plot_points_csv": str(points_path),
         "plot_png": str(output_stem.with_suffix(".png")),
         "plot_pdf": str(output_stem.with_suffix(".pdf")),
     }
-    (root / "internal_random_overwrite_campaign_summary.json").write_text(
+    summary_name = (
+        "internal_random_overwrite_preliminary_summary.json"
+        if preliminary
+        else "internal_random_overwrite_campaign_summary.json"
+    )
+    (root / summary_name).write_text(
         json.dumps(summary, indent=2) + "\n"
     )
-    print(f"[DONE] Validated, combined, and plotted campaign under {root}")
+    label = "preliminary available-point plot" if preliminary else "complete campaign"
+    print(f"[DONE] Validated and plotted {label} under {root}")
 
 
 def status(root: Path) -> None:
@@ -866,6 +1053,7 @@ def main() -> None:
     actions.add_argument("--print-model-grids", action="store_true")
     actions.add_argument("--write-campaign-config", action="store_true")
     actions.add_argument("--combine", action="store_true")
+    actions.add_argument("--combine-partial", action="store_true")
     actions.add_argument("--status", action="store_true")
     actions.add_argument("--qkeras-preflight", action="store_true")
     actions.add_argument("--write-qkeras-retry-manifest", action="store_true")
@@ -903,6 +1091,10 @@ def main() -> None:
             if args.root is None:
                 parser.error("--root is required.")
             combine_campaign(args.root)
+        elif args.combine_partial:
+            if args.root is None:
+                parser.error("--root is required.")
+            combine_campaign(args.root, preliminary=True)
         elif args.status:
             if args.root is None:
                 parser.error("--root is required.")
