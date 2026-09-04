@@ -18,8 +18,10 @@ from internalBitOverwriteStudy.campaign import (
     evaluation_tasks,
     combine_campaign,
     parse_training_percentages,
+    qkeras_retry_task_text,
     training_tasks,
     write_campaign_config,
+    write_qkeras_retry_manifest,
 )
 from qkerasStudies.fault_injection import (
     QuantizationRange,
@@ -181,6 +183,99 @@ class InternalOverwriteCampaignTest(unittest.TestCase):
                 {row["fault_operation"] for row in points},
                 {"random_set"},
             )
+
+            qkeras = next(model for model in MODELS if model.family == "qkeras")
+            for percentage in DEFAULT_TRAINING_PERCENTAGES:
+                tag = (
+                    "baseline_clean"
+                    if percentage == 0
+                    else f"train_{percentage:g}pct"
+                )
+                for chunk_index in (3, 4):
+                    metadata_path = (
+                        root
+                        / qkeras.family
+                        / tag
+                        / qkeras.alias
+                        / "chunks"
+                        / f"chunk_{chunk_index:02d}"
+                        / "bit_flip_metadata.json"
+                    )
+                    metadata = json.loads(metadata_path.read_text())
+                    metadata["complete"] = False
+                    metadata_path.write_text(json.dumps(metadata))
+
+            manifest_path = write_qkeras_retry_manifest(root)
+            with manifest_path.open(newline="") as handle:
+                retry_rows = list(csv.DictReader(handle, delimiter="\t"))
+            self.assertEqual(len(retry_rows), 24)
+            self.assertIn(qkeras.alias, qkeras_retry_task_text(root, 0))
+
+            for manifest_row in retry_rows:
+                count = int(manifest_row["selected_site_count"])
+                condition = (
+                    root
+                    / "qkeras"
+                    / manifest_row["tag"]
+                    / manifest_row["model_alias"]
+                )
+                chunk = (
+                    condition
+                    / "chunks"
+                    / (
+                        f"chunk_retry_{manifest_row['task_index']}_"
+                        f"count_{count}"
+                    )
+                )
+                chunk.mkdir(parents=True)
+                rows = []
+                for selected_count in (0, count):
+                    repeats = 1 if selected_count == 0 else 5
+                    for repeat in range(repeats):
+                        rows.append(
+                            {
+                                "model_alias": qkeras.alias,
+                                "registry_name": qkeras.registry_name,
+                                "flip_count_per_event": selected_count,
+                                "total_fault_sites_per_event": qkeras.internal_fault_sites,
+                                "equivalent_fault_fraction": selected_count
+                                / qkeras.internal_fault_sites,
+                                "equivalent_fault_percentage": 100
+                                * selected_count
+                                / qkeras.internal_fault_sites,
+                                "repeat": repeat,
+                                "fault_seed": 42 + repeat,
+                                "balanced_accuracy": 0.8
+                                - 0.3
+                                * selected_count
+                                / qkeras.internal_fault_sites,
+                            }
+                        )
+                with (chunk / "bit_flip_results.csv").open(
+                    "w", newline=""
+                ) as handle:
+                    writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+                    writer.writeheader()
+                    writer.writerows(rows)
+                metadata = {
+                    "complete": True,
+                    "model_alias": qkeras.alias,
+                    "registry_name": qkeras.registry_name,
+                    "fault_scope": FAULT_SCOPE,
+                    "fault_operation": FAULT_OPERATION,
+                    "total_fault_sites_per_event": qkeras.internal_fault_sites,
+                    "flip_counts_per_event": [0, count],
+                    "repeats_per_nonzero_count": 5,
+                }
+                (chunk / "bit_flip_metadata.json").write_text(
+                    json.dumps(metadata)
+                )
+                np.save(
+                    chunk / "clean_predictions.npy",
+                    np.asarray([0, 1, 2], dtype=np.uint8),
+                )
+
+            combine_campaign(root)
 
 
 if __name__ == "__main__":

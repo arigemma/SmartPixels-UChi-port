@@ -71,6 +71,19 @@ The recovery launcher runs a local QKeras import/model-build preflight,
 resubmits only tasks 4--7, and makes its new evaluation array wait for both
 the four original LNN tasks and the replacement QKeras array.
 
+If completed QKeras evaluations exist but high-corruption chunks reached the
+six-hour limit, do not repeat successful points. Run:
+
+```bash
+bash internalBitOverwriteStudy/retry_qkeras_evaluations.sh \
+  CAMPAIGN_ROOT PRIOR_EVALUATION_ARRAY_JOB_ID
+```
+
+The launcher validates completed artifacts, writes a frozen retry manifest,
+and submits one missing corruption point per job with all five repetitions.
+The final combiner ignores incomplete timeout artifacts but requires exactly
+the complete configured point/repetition grid before producing a plot.
+
 The training grid is configuration-driven. A future fresh campaign can use a
 larger grid without code changes, for example:
 

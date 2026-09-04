@@ -330,13 +330,25 @@ def _combine_condition(
     nonzero_rows = []
     reference_predictions = None
     prediction_source = None
-    chunks = evaluation_chunks(model.internal_fault_sites)
-    for chunk_index, expected_counts in enumerate(chunks):
-        chunk_root = condition_root / "chunks" / f"chunk_{chunk_index:02d}"
+    expected_nonzero_counts = set(evaluation_counts(model.internal_fault_sites)[1:])
+    source_chunks = []
+    for chunk_root in sorted((condition_root / "chunks").glob("chunk_*")):
+        metadata_path = chunk_root / "bit_flip_metadata.json"
+        if not metadata_path.is_file():
+            continue
+        metadata = _load_json(metadata_path)
+        if not metadata.get("complete"):
+            continue
+        chunk_counts = tuple(
+            int(count)
+            for count in metadata.get("flip_counts_per_event", ())
+            if int(count) > 0
+        )
+        if not chunk_counts or not set(chunk_counts).issubset(expected_nonzero_counts):
+            raise ValueError(f"Unexpected evaluation counts in {metadata_path}.")
         csv_path = chunk_root / "bit_flip_results.csv"
         rows = _read_rows(csv_path)
-        metadata = _load_json(chunk_root / "bit_flip_metadata.json")
-        _validate_chunk(rows, metadata, model, expected_counts, csv_path)
+        _validate_chunk(rows, metadata, model, chunk_counts, csv_path)
         clean_rows.extend(
             row for row in rows if int(row["flip_count_per_event"]) == 0
         )
@@ -354,7 +366,10 @@ def _combine_condition(
             raise ValueError(
                 f"Clean predictions differ between chunks in {condition_root}."
             )
+        source_chunks.append(str(chunk_root.relative_to(condition_root)))
 
+    if not source_chunks:
+        raise ValueError(f"No complete evaluation chunks in {condition_root}.")
     if not clean_rows or any(row != clean_rows[0] for row in clean_rows[1:]):
         raise ValueError(f"Clean evaluation differs between chunks in {condition_root}.")
     keys = [
@@ -395,7 +410,7 @@ def _combine_condition(
             evaluation_counts(model.internal_fault_sites)
         ),
         "source_chunks": [
-            f"chunks/chunk_{index:02d}" for index in range(len(chunks))
+            source for source in source_chunks
         ],
         "percentage_definition": (
             "100 * selected internal sites / total eligible internal bit sites."
@@ -457,7 +472,11 @@ def _write_dict_rows(path: Path, rows: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     with temporary.open("w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=list(rows[0]),
+            delimiter="\t" if path.suffix == ".tsv" else ",",
+        )
         writer.writeheader()
         writer.writerows(rows)
     temporary.replace(path)
@@ -646,13 +665,141 @@ def combine_campaign(root: Path) -> None:
 
 def status(root: Path) -> None:
     training_expected = len(training_tasks())
-    evaluation_expected = len(evaluation_tasks())
     training_found = len(list(root.glob("*/*/*/training/training_complete.json")))
-    evaluation_found = len(list(root.glob("*/*/*/chunks/chunk_*/bit_flip_metadata.json")))
+    evaluation_points_expected = len(MODELS) * len(TRAINING_PERCENTAGES) * (
+        len(EVALUATION_PERCENTAGES) - 1
+    )
+    evaluation_points_found = 0
+    complete_artifacts = 0
+    for metadata_path in root.glob("*/*/*/chunks/chunk_*/bit_flip_metadata.json"):
+        metadata = _load_json(metadata_path)
+        if not metadata.get("complete"):
+            continue
+        complete_artifacts += 1
+        evaluation_points_found += sum(
+            int(count) > 0 for count in metadata.get("flip_counts_per_event", ())
+        )
     print(f"Training completions:  {training_found} / {training_expected}")
-    print(f"Evaluation chunks:     {evaluation_found} / {evaluation_expected}")
+    print(
+        f"Evaluation points:     {evaluation_points_found} / "
+        f"{evaluation_points_expected} ({complete_artifacts} complete artifacts)"
+    )
     final_plot = root / "lnn_vs_qkeras_internal_random_overwrite.png"
     print(f"Final plot:            {'READY' if final_plot.is_file() else 'not yet produced'}")
+
+
+def _completed_evaluation_counts(
+    root: Path,
+    model: ModelSpec,
+    training_percentage: float,
+) -> set[int]:
+    """Return validated nonzero counts already completed for one condition."""
+    condition_root = _condition_root(root, model, training_percentage)
+    completed = set()
+    for chunk_root in sorted((condition_root / "chunks").glob("chunk_*")):
+        metadata_path = chunk_root / "bit_flip_metadata.json"
+        if not metadata_path.is_file():
+            continue
+        metadata = _load_json(metadata_path)
+        if not metadata.get("complete"):
+            continue
+        counts = tuple(
+            int(count)
+            for count in metadata.get("flip_counts_per_event", ())
+            if int(count) > 0
+        )
+        rows = _read_rows(chunk_root / "bit_flip_results.csv")
+        _validate_chunk(
+            rows,
+            metadata,
+            model,
+            counts,
+            chunk_root / "bit_flip_results.csv",
+        )
+        overlap = completed.intersection(counts)
+        if overlap:
+            raise ValueError(
+                f"Duplicate completed counts {sorted(overlap)} in {condition_root}."
+            )
+        completed.update(counts)
+    return completed
+
+
+def qkeras_retry_tasks(root: Path) -> list[dict]:
+    """Build one-point retry tasks for missing QKeras evaluations only."""
+    model = next(model for model in MODELS if model.family == "qkeras")
+    tasks = []
+    expected = set(evaluation_counts(model.internal_fault_sites)[1:])
+    for training_percentage in TRAINING_PERCENTAGES:
+        completed = _completed_evaluation_counts(
+            root,
+            model,
+            training_percentage,
+        )
+        for count in sorted(expected - completed):
+            tasks.append(
+                {
+                    **asdict(model),
+                    "training_percentage": training_percentage,
+                    "tag": percentage_tag(training_percentage),
+                    "selected_site_counts": (count,),
+                }
+            )
+    return tasks
+
+
+def write_qkeras_retry_manifest(root: Path) -> Path:
+    tasks = qkeras_retry_tasks(root)
+    path = root / "qkeras_evaluation_retry_manifest.tsv"
+    rows = [
+        {
+            "task_index": index,
+            "family": task["family"],
+            "tag": task["tag"],
+            "training_percentage": task["training_percentage"],
+            "model_alias": task["alias"],
+            "registry_name": task["registry_name"],
+            "selected_site_count": task["selected_site_counts"][0],
+            "minimum_training_hours": task["minimum_training_hours"],
+            "minimum_training_steps": task["minimum_training_steps"],
+        }
+        for index, task in enumerate(tasks)
+    ]
+    if rows:
+        _write_dict_rows(path, rows)
+    else:
+        path.write_text(
+            "task_index\tfamily\ttag\ttraining_percentage\tmodel_alias\t"
+            "registry_name\tselected_site_count\tminimum_training_hours\t"
+            "minimum_training_steps\n"
+        )
+    print(f"[RETRY] Missing QKeras evaluation points: {len(tasks)}")
+    print(f"[RETRY] Manifest: {path}")
+    return path
+
+
+def _read_qkeras_retry_manifest(root: Path) -> list[dict]:
+    path = root / "qkeras_evaluation_retry_manifest.tsv"
+    if not path.is_file():
+        raise ValueError(f"Missing retry manifest: {path}")
+    with path.open(newline="") as handle:
+        return list(csv.DictReader(handle, delimiter="\t"))
+
+
+def qkeras_retry_task_text(root: Path, task_id: int) -> str:
+    task = _task_at(_read_qkeras_retry_manifest(root), task_id, "QKeras retry")
+    return "\t".join(
+        (
+            task["family"],
+            task["tag"],
+            task["training_percentage"],
+            task["model_alias"],
+            task["registry_name"],
+            task["selected_site_count"],
+            task["minimum_training_hours"],
+            task["minimum_training_steps"],
+        )
+    )
 
 
 def qkeras_preflight() -> None:
@@ -721,6 +868,9 @@ def main() -> None:
     actions.add_argument("--combine", action="store_true")
     actions.add_argument("--status", action="store_true")
     actions.add_argument("--qkeras-preflight", action="store_true")
+    actions.add_argument("--write-qkeras-retry-manifest", action="store_true")
+    actions.add_argument("--print-qkeras-retry-task-count", action="store_true")
+    actions.add_argument("--qkeras-retry-task-id", type=int)
     parser.add_argument("--root", type=Path)
     parser.add_argument("--git-commit")
     args = parser.parse_args()
@@ -759,6 +909,18 @@ def main() -> None:
             status(args.root)
         elif args.qkeras_preflight:
             qkeras_preflight()
+        elif args.write_qkeras_retry_manifest:
+            if args.root is None:
+                parser.error("--root is required.")
+            write_qkeras_retry_manifest(args.root)
+        elif args.print_qkeras_retry_task_count:
+            if args.root is None:
+                parser.error("--root is required.")
+            print(len(_read_qkeras_retry_manifest(args.root)))
+        elif args.qkeras_retry_task_id is not None:
+            if args.root is None:
+                parser.error("--root is required.")
+            print(qkeras_retry_task_text(args.root, args.qkeras_retry_task_id))
     except (FileNotFoundError, ValueError) as error:
         raise SystemExit(str(error)) from error
 
