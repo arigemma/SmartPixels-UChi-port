@@ -1,6 +1,0 @@
-# HGQ2 uses standalone Keras 3. The older QKeras studies explicitly use
-# legacy tf_keras, so these additions can live in the existing environment.
-numpy==1.26.4
-keras>=3.11,<4
-hgq2==0.1.9
-quantizers>=1.2.2,<2

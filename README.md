@@ -1,65 +1,89 @@
-# Welcome to our SmartPixels ML project
-## Usage
-### Setup environment (w/ optional GPU support)
-```
-source setup.sh
-```
-Look at the notebook `playground.ipynb` for data exploration.
+# SmartPixels MAIA signal-versus-BIB LNN study
 
-### Optional: Generate dataset configs
-```
-python generate_ds_configs.py --data-root /path/to/datasets --output-dir config --test-ratio 0.2
-```
-This derives data splits feature scaling params (linear mapping to `mean=0` and `std=1` after symlog transform on `X`.)
+This branch is intentionally scoped to the Muon Collider dataset published as
+[Zenodo record 22016562](https://doi.org/10.5281/zenodo.22016562). It does not
+train the former CMS signed-\(p_T\) task.
 
-### Train a model
-```
-python train.py -c config/v3.yml -a conv2d --task regression
-```
-### Evaluate a model
-```
-python evaluate.py --input /path/to/model.pt -c config/v3.yml
+## Classification task
+
+The binary target is defined by dataset provenance:
+
+| Class | Index | Source files |
+|---|---:|---|
+| Beam-induced background (BIB) | 0 | `bib_mp`, `bib_mm` |
+| PV/collision signal muon | 1 | `signal` |
+
+All BIB rows are retained. Before splitting, the signal collection is
+deterministically undersampled to match the combined number of `bib_mp` and
+`bib_mm` rows. Each source is then split 80%/10%/10% into train, validation,
+and test sets with seed 42.
+
+No label/truth quantity is supplied to a classifier. In particular,
+`adjusted_hit_time`, position, direction, and momentum are not model inputs.
+The collaborator-provided \([-0.5,15]\) ns cut on `adjusted_hit_time` is applied
+only as a second, post-training evaluation selection. Every model is reported
+both before and after that cut.
+
+## Inputs and models
+
+The 5,460 reconstruction columns are reshaped to `(20,13,21)` =
+`(time,y,x)`.
+
+- Dense/Model 2: integrate raw deposited charge over all 20 time bins, apply
+  symmetric-log scaling, project over x, and classify the resulting 13-bin
+  y-profile.
+- Convolutional/Model 3: apply symmetric-log scaling per time bin, project over
+  x, and classify the full `13 x 20` y/time profile.
+
+Both families use 100 fixed empirical-quantile thresholds derived exclusively
+from training data, `lut_rank=2`, residual logic initialization, and a binary
+`GroupSum`. The final logic width is even in every model. Five increasing
+architectures per family are trained at `tau = 10, 20, 40`, giving 30 jobs.
+
+The campaign requires at least 20,000 optimizer steps **and** five hours of
+training per model. The best checkpoint is selected by discrete validation
+balanced accuracy. Final output additionally reports signal efficiency, BIB
+acceptance/rejection, ROC AUC, average precision, and BIB rejection at
+validation-derived 90%, 95%, and 99% signal-efficiency operating points.
+
+The reported `logic_node_proxy` is an architecture count, not a synthesized
+LUT+FF result.
+
+## Launch on Della
+
+```bash
+cd ~/SmartPixels
+git fetch origin
+git switch maia-studies 2>/dev/null || git switch --track origin/maia-studies
+git pull --ff-only origin maia-studies
+
+module load anaconda3/2025.12
+conda activate smart_pixels
+
+export MAIA_DATA_ROOT=/scratch/gpfs/IOJALVO/mb7126/SmartPixels/22016562
+bash maiaStudies/submit.sh
 ```
 
-### Model-2 LGN studies
+The one-time projected cache defaults to
+`$MAIA_DATA_ROOT/derived/maia_lnn_v1`. A completed cache is detected and safely
+reused. Override `MAIA_CACHE_ROOT` or `MAIA_RESULT_ROOT` before submission if
+needed.
 
-The model-2 resource/accuracy, inference-time bit-flip robustness, and
-fault-aware bit-flip training campaigns are documented in
-[`lgnStudies/README.md`](lgnStudies/README.md).
+Monitor with:
 
-## The data
-There are two datasets on zenodo: https://zenodo.org/records/10783560 (3 versions) and https://zenodo.org/records/17180303 (1 version).
-The latest versions of both contain charge deposits shape `(t, y, x) = (20, 13, 21)` (or permutations thereof). Meaning short videos with 20 frames of 13x21 (x,y) each. There are 13 labels (w/ example values):
+```bash
+squeue -u "$USER"
+bash maiaStudies/status.sh
 ```
-x-entry              129.128448
-y-entry              -13.157045
-z-entry              100.000000
-n_x                   -1.716407
-n_y                    0.092777
-n_z                   -0.630184
-number_eh_pairs    15612.000000
-y-local                2.733230
-pt                    -0.637653
-cotAlpha               2.723660
-cotBeta               -0.147222
-y-midplane            -5.795941
-x-midplane            -7.054556
-```
-### Remarks
-For the dataset `17180303`, the first few files of each dataset seem to have a different pT distribution than the rest. In particular, the first 3 files of each barrel-phys-pt dataset and the first 5 files of each endcap-phys-pt and irradiated-phys-pt dataset are off:
-![alt text](image.png)
-## Existing Papers & Code
-"Smartpixels: Towards on-sensor ..." (https://arxiv.org/pdf/2312.11676) uses mixture density network to regress 4 variables (x, y, alpha, beta) and their covariance matrix. They use a 2D depth-seperable conv that treats the 20 time slices as independent channels. In their code, they seem to also experiment with using only a subset of time slices, e.g. first and last (`use_time_stamps = [0, 19]`).
 
-"Sensor Co-design for smartpixels" (https://arxiv.org/pdf/2510.06588v1) analyzes the y-profile of the data. reduces the data to 14-dim arrays (y0 and 13 y-pixels). I believe it only considers the last frame and sums over x (`x[19, :, :].mean(axis=2)`). But I cannot yet find this in the code.
+Expected final products:
 
-In their code, they als reference a `16x16` model. But I dont know what data that takes. In general, I believe the codebase here https://github.com/smart-pix/smart-pixels-ml/ is only used for the `towards` paper, as important keywords (such as `128` for number of neurons according to the other paper) dont appear anywhere.
+- `performance_summary.tsv`: one full-test and one timing-cut row per model;
+- `maia_lnn_screening.png` and `.pdf`;
+- one `evaluation_complete.json`, `roc_full.csv`, and `roc_timing_cut.csv` per
+  model;
+- `best_model.pth` state-dict checkpoints with embedded architecture and fixed
+  thresholds.
 
-## Open Questions
-- Where is the source code for the `Co-design` paper?
-- Why the different `pT` spectrum for the first files? (Not so important as not used for training)
-- Usage of `y0` in input `y`-profile: this is a *label*, right? Is it legit to use this in the input? Would it be available in real-world deployment?
-- Paper says 800,000 clusters. We have 8,000,000 events.
-- Why train a 3-class classifier and then evaluate as binary classifier?
-- About the 200 MeV vs 2 GeV thing: why not train a regressor and cut on the prediction? Why not control precision / recall via weight?
-- Are you discarding some high-pT events to achieve a balanced dataset? If so, why not used weighted samples instead for higher data variance?
+See [maiaStudies/README.md](maiaStudies/README.md) for recovery and metric
+details.
