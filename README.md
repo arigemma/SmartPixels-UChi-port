@@ -67,7 +67,9 @@ bash maiaStudies/submit.sh
 The one-time projected cache defaults to
 `$MAIA_DATA_ROOT/derived/maia_lnn_v1`. A completed cache is detected and safely
 reused. Override `MAIA_CACHE_ROOT` or `MAIA_RESULT_ROOT` before submission if
-needed.
+needed. The timing selection defaults to `adjusted_hit_time`. To study one of
+the smeared timing definitions instead, set `MAIA_TIMING_COLUMN` and use a
+distinct `MAIA_CACHE_ROOT` before launching.
 
 Monitor with:
 

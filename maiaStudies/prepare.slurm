@@ -17,7 +17,7 @@ mkdir -p logs "$MAIA_CACHE_ROOT"
 python -m maiaStudies.prepare \
   --data-root "$MAIA_DATA_ROOT" \
   --cache-dir "$MAIA_CACHE_ROOT" \
-  --timing-column adjusted_hit_time \
+  --timing-column "${MAIA_TIMING_COLUMN:-adjusted_hit_time}" \
   --batch-size 4096 \
   --thresholds 100 \
   --threshold-sample-rows 50000 \

@@ -294,11 +294,16 @@ def prepare_cache(
     if complete_path.is_file() and not overwrite:
         with complete_path.open() as handle:
             metadata = json.load(handle)
-        if metadata.get("cache_version") == CACHE_VERSION:
+        if (
+            metadata.get("cache_version") == CACHE_VERSION
+            and metadata.get("timing_column") == timing_column
+        ):
             print(f"[SKIP] Existing complete cache: {cache_dir}")
             return metadata
         raise RuntimeError(
-            f"Cache version mismatch at {cache_dir}; use --overwrite-cache intentionally."
+            f"Cache metadata mismatch at {cache_dir}: requested timing column "
+            f"{timing_column!r}, cached {metadata.get('timing_column')!r}. Use a "
+            "different MAIA_CACHE_ROOT or --overwrite-cache intentionally."
         )
     if not 0 < train_fraction < 1 or not 0 <= validation_fraction < 1:
         raise ValueError("Invalid split fractions")

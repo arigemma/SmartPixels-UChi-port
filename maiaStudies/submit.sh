@@ -12,6 +12,7 @@ fi
 export MAIA_DATA_ROOT="${MAIA_DATA_ROOT:-/scratch/gpfs/IOJALVO/mb7126/SmartPixels/22016562}"
 export MAIA_CACHE_ROOT="${MAIA_CACHE_ROOT:-$MAIA_DATA_ROOT/derived/maia_lnn_v1}"
 export MAIA_RESULT_ROOT="${MAIA_RESULT_ROOT:-$PWD/results/SLURM/2026_10_07_maia_signal_vs_bib_lnn_5h_20k}"
+export MAIA_TIMING_COLUMN="${MAIA_TIMING_COLUMN:-adjusted_hit_time}"
 
 mkdir -p logs "$MAIA_RESULT_ROOT"
 python -m unittest discover -s maiaStudies/tests -p 'test_*.py'
@@ -28,7 +29,7 @@ for source in SOURCES:
 PY
 
 PREPARE_JOB="$(sbatch --parsable --chdir="$PWD" \
-  --export="ALL,MAIA_DATA_ROOT=$MAIA_DATA_ROOT,MAIA_CACHE_ROOT=$MAIA_CACHE_ROOT" \
+  --export="ALL,MAIA_DATA_ROOT=$MAIA_DATA_ROOT,MAIA_CACHE_ROOT=$MAIA_CACHE_ROOT,MAIA_TIMING_COLUMN=$MAIA_TIMING_COLUMN" \
   maiaStudies/prepare.slurm)"
 PREPARE_JOB="${PREPARE_JOB%%;*}"
 
@@ -55,6 +56,7 @@ summary_job_id=$SUMMARY_JOB
 git_commit=$(git rev-parse HEAD)
 data_root=$MAIA_DATA_ROOT
 cache_root=$MAIA_CACHE_ROOT
+timing_column=$MAIA_TIMING_COLUMN
 result_root=$MAIA_RESULT_ROOT
 EOF
 
