@@ -10,4 +10,4 @@
 set -euo pipefail
 
 : "${MAIA_RESULT_ROOT:?MAIA_RESULT_ROOT is required}"
-python -m maiaStudies.summarize --result-root "$MAIA_RESULT_ROOT"
+bash maiaStudies/plot_summary.sh "$MAIA_RESULT_ROOT"

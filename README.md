@@ -80,12 +80,27 @@ bash maiaStudies/status.sh
 
 Expected final products:
 
-- `performance_summary.tsv`: one full-test and one timing-cut row per model;
-- `maia_lnn_screening.png` and `.pdf`;
+- `performance_summary.tsv`, `.csv`, and `.json`: one full-test and one
+  timing-cut row per model;
+- `model_comparison_wide.tsv`: one row per model with all performance and
+  architecture fields;
+- `best_models.tsv` and `SUMMARY.md`: ranked configurations and a concise
+  digest;
+- `summary_plots/`: 18 PNG/PDF comparison figures, with Model 2 in blue,
+  Model 3 in orange, and marker shape encoding `tau`;
+- `maia_lnn_screening.png` and `.pdf`: compatibility copies of the campaign
+  dashboard;
 - one `evaluation_complete.json`, `roc_full.csv`, and `roc_timing_cut.csv` per
   model;
 - `best_model.pth` state-dict checkpoints with embedded architecture and fixed
   thresholds.
+
+The complete plot package can be regenerated at any time, without retraining:
+
+```bash
+ROOT="$PWD/results/SLURM/2026_10_07_maia_signal_vs_bib_lnn_5h_20k"
+bash maiaStudies/plot_summary.sh "$ROOT"
+```
 
 See [maiaStudies/README.md](maiaStudies/README.md) for recovery and metric
 details.
