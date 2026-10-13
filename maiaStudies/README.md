@@ -43,6 +43,10 @@ The mandatory pilot chain is:
 prepare + cache audit -> 2 pilot training tasks -> 2 pilot evaluations -> gate
 ```
 
+Each training task performs an exact checkpoint round-trip test: the selected
+checkpoint is loaded into a freshly constructed model and must reproduce the
+stored validation metrics before `training_complete.json` is written.
+
 Only after that gate passes is the full chain enabled:
 
 ```text

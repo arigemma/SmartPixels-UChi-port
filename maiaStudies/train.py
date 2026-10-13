@@ -43,6 +43,24 @@ def _atomic_torch_save(path: Path, payload: dict) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _snapshot_to_cpu(value):
+    """Recursively detach and clone checkpoint tensors onto CPU.
+
+    ``state_dict()`` returns tensors that share storage with the live model.
+    Materializing an immutable CPU snapshot makes the checkpoint independent
+    of subsequent optimizer steps and CUDA serialization details.
+    """
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu().clone()
+    if isinstance(value, dict):
+        return {key: _snapshot_to_cpu(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_snapshot_to_cpu(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_snapshot_to_cpu(item) for item in value)
+    return value
+
+
 def _seed_everything(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
@@ -104,11 +122,9 @@ def checkpoint_payload(
         "format": "maia_lnn_state_dict_v2",
         "input_schema": INPUT_SCHEMA,
         "campaign_config": config.to_dict(),
-        "thresholds": {
-            name: values.detach().cpu() for name, values in thresholds.items()
-        },
-        "model_state_dict": model.state_dict(),
-        "optimizer_state_dict": optimizer.state_dict(),
+        "thresholds": _snapshot_to_cpu(thresholds),
+        "model_state_dict": _snapshot_to_cpu(model.state_dict()),
+        "optimizer_state_dict": _snapshot_to_cpu(optimizer.state_dict()),
         "step": int(step),
         "elapsed_training_hours": float(elapsed_hours),
         "validation": validation,
@@ -255,6 +271,36 @@ def main() -> None:
     if not (args.output / "best_model.pth").is_file():
         _atomic_torch_save(args.output / "best_model.pth", final_payload)
 
+    # A checkpoint is not complete merely because torch.load succeeds. Rebuild
+    # a fresh model, load the selected checkpoint, and require it to reproduce
+    # the exact validation subset and metrics used during training.
+    best_checkpoint = torch.load(
+        args.output / "best_model.pth", map_location="cpu", weights_only=False
+    )
+    reloaded_thresholds = {
+        name: values.float() for name, values in best_checkpoint["thresholds"].items()
+    }
+    reloaded_model = build_model(config, reloaded_thresholds, device).to(device)
+    reloaded_model.load_state_dict(best_checkpoint["model_state_dict"], strict=True)
+    roundtrip_validation = validation_metrics(
+        reloaded_model, validation_loader, device
+    )
+    stored_validation = best_checkpoint["validation"]
+    roundtrip_deltas = {
+        metric: abs(float(roundtrip_validation[metric]) - float(stored_validation[metric]))
+        for metric in ("balanced_accuracy", "roc_auc", "cross_entropy")
+    }
+    if (
+        roundtrip_deltas["balanced_accuracy"] > 1e-6
+        or roundtrip_deltas["roc_auc"] > 1e-6
+        or roundtrip_deltas["cross_entropy"] > 1e-5
+    ):
+        raise RuntimeError(
+            "Saved best checkpoint failed exact round-trip validation: "
+            f"stored={stored_validation}, reloaded={roundtrip_validation}, "
+            f"deltas={roundtrip_deltas}"
+        )
+
     completed = step >= args.minimum_steps and elapsed_hours >= args.minimum_training_hours
     metadata = {
         "alias": config.alias,
@@ -268,6 +314,13 @@ def main() -> None:
         "trainable_parameters": parameter_count,
         "best_validation_balanced_accuracy": best_balanced_accuracy,
         "last_validation": last_validation,
+        "checkpoint_roundtrip_validation": {
+            "passed": True,
+            "checkpoint_step": int(best_checkpoint["step"]),
+            "stored": stored_validation,
+            "reloaded": roundtrip_validation,
+            "absolute_deltas": roundtrip_deltas,
+        },
         **resource_proxies(config),
     }
     completion_name = "training_complete.json" if completed else "training_incomplete.json"

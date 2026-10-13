@@ -75,7 +75,10 @@ distinct `MAIA_CACHE_ROOT` before launching.
 
 The pilot prepares and audits the cache, then trains/evaluates one middle-size
 Model 2 and one middle-size Model 3. It writes `pilot_gate_complete.json` only
-if both learn above chance. After that marker exists, launch the 30-model run:
+if both learn above chance. Training also reloads the selected checkpoint into
+a fresh model and requires exact reproduction of its stored validation metrics
+before marking the task complete. After that marker exists, launch the
+30-model run:
 
 ```bash
 bash maiaStudies/submit.sh
