@@ -14,7 +14,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from .campaign import get_config
-from .data import MaiaDataset
+from .data import INPUT_SCHEMA, MaiaDataset, deterministic_subset
 from .metrics import evaluate_binary_scores, roc_rows
 from .models import build_model, resource_proxies
 
@@ -82,6 +82,9 @@ def main() -> None:
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--timing-min-ns", type=float, default=-0.5)
     parser.add_argument("--timing-max-ns", type=float, default=15.0)
+    parser.add_argument("--maximum-validation-examples", type=int, default=0)
+    parser.add_argument("--maximum-test-examples", type=int, default=0)
+    parser.add_argument("--subset-seed", type=int, default=314159)
     args = parser.parse_args()
 
     config = get_config(args.task_index)
@@ -93,11 +96,18 @@ def main() -> None:
         )
     device = torch.device(args.device)
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    if checkpoint.get("format") != "maia_lnn_state_dict_v1":
+    if checkpoint.get("format") != "maia_lnn_state_dict_v2":
         raise ValueError(f"Unexpected checkpoint format in {checkpoint_path}")
+    if checkpoint.get("input_schema") != INPUT_SCHEMA:
+        raise ValueError(
+            f"Checkpoint input schema is {checkpoint.get('input_schema')!r}, "
+            f"expected {INPUT_SCHEMA!r}"
+        )
     if checkpoint["campaign_config"]["alias"] != config.alias:
         raise ValueError("Checkpoint/config alias mismatch")
-    thresholds = checkpoint["thresholds"].float()
+    thresholds = {
+        name: values.float() for name, values in checkpoint["thresholds"].items()
+    }
     model = build_model(config, thresholds, device)
     model.load_state_dict(checkpoint["model_state_dict"], strict=True)
     model.to(device)
@@ -106,8 +116,16 @@ def main() -> None:
     )
 
     batch_size = args.batch_size or (2048 if config.family == "dense" else 256)
-    validation = MaiaDataset(args.cache_dir, "validation", config.family)
-    test = MaiaDataset(args.cache_dir, "test", config.family)
+    validation = deterministic_subset(
+        MaiaDataset(args.cache_dir, "validation", config.family),
+        args.maximum_validation_examples,
+        args.subset_seed,
+    )
+    test = deterministic_subset(
+        MaiaDataset(args.cache_dir, "test", config.family),
+        args.maximum_test_examples,
+        args.subset_seed + 1,
+    )
     val_scores, val_labels, val_timing = collect_scores(
         model, validation, batch_size, args.num_workers, device
     )
@@ -132,6 +150,7 @@ def main() -> None:
         "family": config.family,
         "size": config.size,
         "tau": config.tau,
+        "input_schema": INPUT_SCHEMA,
         "checkpoint": str(checkpoint_path.resolve()),
         "checkpoint_step": int(checkpoint["step"]),
         "trainable_parameters": int(trainable_parameters),

@@ -14,9 +14,10 @@ from pathlib import Path
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
+from sklearn.metrics import roc_auc_score
 
 from .campaign import get_config
-from .data import MaiaDataset, deterministic_subset, load_thresholds
+from .data import INPUT_SCHEMA, MaiaDataset, deterministic_subset, load_thresholds
 from .models import build_model, resource_proxies
 
 
@@ -59,6 +60,8 @@ def validation_metrics(
     confusion = np.zeros((2, 2), dtype=np.int64)
     loss_sum = 0.0
     count = 0
+    all_scores = []
+    all_labels = []
     criterion = torch.nn.CrossEntropyLoss(reduction="sum")
     for inputs, labels, _ in loader:
         inputs = inputs.to(device, non_blocking=True)
@@ -66,10 +69,14 @@ def validation_metrics(
         logits = model(inputs)
         loss_sum += float(criterion(logits, labels).item())
         predictions = logits.argmax(dim=1)
+        all_scores.append((logits[:, 1] - logits[:, 0]).cpu().numpy())
+        all_labels.append(labels.cpu().numpy())
         for truth, prediction in zip(labels.cpu().numpy(), predictions.cpu().numpy()):
             confusion[int(truth), int(prediction)] += 1
         count += len(labels)
     recalls = confusion.diagonal() / np.maximum(confusion.sum(axis=1), 1)
+    scores = np.concatenate(all_scores)
+    truth = np.concatenate(all_labels)
     if was_training:
         model.train()
     return {
@@ -77,6 +84,10 @@ def validation_metrics(
         "balanced_accuracy": float(recalls.mean()),
         "bib_recall": float(recalls[0]),
         "signal_efficiency": float(recalls[1]),
+        "roc_auc": float(roc_auc_score(truth, scores)),
+        "prediction_signal_fraction": float(np.mean(scores >= 0.0)),
+        "score_mean": float(scores.mean()),
+        "score_std": float(scores.std()),
     }
 
 
@@ -84,15 +95,18 @@ def checkpoint_payload(
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
     config,
-    thresholds: torch.Tensor,
+    thresholds: dict[str, torch.Tensor],
     step: int,
     elapsed_hours: float,
     validation: dict,
 ) -> dict:
     return {
-        "format": "maia_lnn_state_dict_v1",
+        "format": "maia_lnn_state_dict_v2",
+        "input_schema": INPUT_SCHEMA,
         "campaign_config": config.to_dict(),
-        "thresholds": thresholds.detach().cpu(),
+        "thresholds": {
+            name: values.detach().cpu() for name, values in thresholds.items()
+        },
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
         "step": int(step),

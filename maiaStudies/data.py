@@ -6,8 +6,9 @@ than any truth column:
 * ``signal`` -> 1 (PV/collision muon)
 * ``bib_mp`` and ``bib_mm`` -> 0 (beam-induced background)
 
-Truth timing is retained only as evaluation metadata. It is never returned as
-an input feature.
+Truth timing is retained only as evaluation metadata. The only label-table
+columns used as model inputs are detector-position coordinates. They are not
+class labels and are part of the deployed MAIA feature definition.
 """
 
 from __future__ import annotations
@@ -24,13 +25,24 @@ import pyarrow.parquet as pq
 import torch
 from torch.utils.data import Dataset, Subset
 
+from .campaign import (
+    N_CONV_CLUSTER_FEATURES,
+    N_CONV_INPUT_FEATURES,
+    N_DENSE_INPUT_FEATURES,
+    N_X,
+    N_Y,
+)
 
-CACHE_VERSION = 1
+
+CACHE_VERSION = 2
+INPUT_SCHEMA = "maia_model2_model3_spatial_v2"
 SOURCES = ("signal", "bib_mp", "bib_mm")
 SOURCE_LABEL = {"signal": 1, "bib_mp": 0, "bib_mm": 0}
-N_TIME, N_Y, N_X = 20, 13, 21
+N_TIME = 20
 N_RECON_COLUMNS = N_TIME * N_Y * N_X
 DEFAULT_TIMING_COLUMN = "adjusted_hit_time"
+POSITION_COLUMNS = ("z-global", "y-local")
+MODULE_LENGTH_MM = 13.0
 
 
 def _atomic_json(path: Path, payload: dict) -> None:
@@ -62,26 +74,76 @@ def locate_source_files(data_root: Path, source: str) -> tuple[Path, Path]:
     raise FileNotFoundError(f"Could not locate {source} Parquet pair. Checked:\n{checked}")
 
 
-def _read_timing(labels_path: Path, column: str, expected_rows: int) -> np.ndarray:
+def _read_label_columns(
+    labels_path: Path, columns: Iterable[str], expected_rows: int
+) -> dict[str, np.ndarray]:
     parquet = pq.ParquetFile(labels_path)
-    if column not in parquet.schema_arrow.names:
+    columns = tuple(columns)
+    missing = [column for column in columns if column not in parquet.schema_arrow.names]
+    if missing:
         raise ValueError(
-            f"Timing column {column!r} is absent from {labels_path}. Available: "
+            f"Required label columns {missing!r} are absent from {labels_path}. Available: "
             f"{parquet.schema_arrow.names}"
         )
-    values = (
-        pq.read_table(labels_path, columns=[column])
-        .column(0)
-        .combine_chunks()
-        .to_numpy(zero_copy_only=False)
-    )
-    values = np.asarray(values, dtype=np.float32)
-    if len(values) != expected_rows:
+    table = pq.read_table(labels_path, columns=list(columns))
+    if table.num_rows != expected_rows:
         raise ValueError(
             f"Label/reconstruction row mismatch for {labels_path}: "
-            f"{len(values)} != {expected_rows}"
+            f"{table.num_rows} != {expected_rows}"
         )
-    return values
+    return {
+        column: np.asarray(
+            table.column(index).combine_chunks().to_numpy(zero_copy_only=False),
+            dtype=np.float32,
+        )
+        for index, column in enumerate(columns)
+    }
+
+
+def _symmetric_log(values: np.ndarray) -> np.ndarray:
+    """Monotone dynamic-range compression for non-normal charge and coordinates."""
+    return np.sign(values) * np.log1p(np.abs(values))
+
+
+def _position_features(z_global: np.ndarray, y_local: np.ndarray) -> np.ndarray:
+    """Split global z into the coarse module and within-module coordinates.
+
+    Modules are contiguous and 13 mm long. A signed module index avoids any
+    assumption about the total barrel length; an additive change in module
+    numbering would not change its ordered-threshold representation.
+    """
+    module = np.floor(z_global / MODULE_LENGTH_MM).astype(np.float32)
+    x_local = z_global - (module + 0.5) * MODULE_LENGTH_MM
+    return np.stack((module, x_local, y_local), axis=1).astype(np.float32)
+
+
+def _build_model_inputs(
+    pixels: np.ndarray, positions: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Construct the exact Model-2 and Model-3 input vectors for one batch."""
+    if pixels.ndim != 4 or tuple(pixels.shape[1:]) != (N_TIME, N_Y, N_X):
+        raise ValueError(f"Expected pixels shaped (batch,{N_TIME},{N_Y},{N_X})")
+    if positions.shape != (len(pixels), 3):
+        raise ValueError(f"Expected positions shaped (batch,3), got {positions.shape}")
+    cluster = pixels.sum(axis=1, dtype=np.float32)
+    x_profile = cluster.sum(axis=1, dtype=np.float32)
+    y_profile = cluster.sum(axis=2, dtype=np.float32)
+    dense = np.concatenate(
+        (
+            _symmetric_log(x_profile),
+            _symmetric_log(y_profile),
+            positions,
+        ),
+        axis=1,
+    ).astype(np.float32)
+    conv = np.concatenate(
+        (
+            _symmetric_log(cluster).reshape(len(pixels), N_CONV_CLUSTER_FEATURES),
+            positions,
+        ),
+        axis=1,
+    ).astype(np.float32)
+    return dense, conv
 
 
 def _prepare_source(
@@ -107,19 +169,27 @@ def _prepare_source(
         )
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    dense_path = output_dir / "dense_profiles.npy"
-    temporal_path = output_dir / "temporal_profiles.npy"
+    dense_path = output_dir / "dense_inputs.npy"
+    conv_path = output_dir / "conv_inputs.npy"
     timing_path = output_dir / "timing.npy"
     dense = np.lib.format.open_memmap(
-        dense_path, mode="w+", dtype=np.float32, shape=(n_rows, N_Y)
+        dense_path, mode="w+", dtype=np.float32, shape=(n_rows, N_DENSE_INPUT_FEATURES)
     )
-    temporal = np.lib.format.open_memmap(
-        temporal_path, mode="w+", dtype=np.float32, shape=(n_rows, N_Y, N_TIME)
+    conv = np.lib.format.open_memmap(
+        conv_path, mode="w+", dtype=np.float32, shape=(n_rows, N_CONV_INPUT_FEATURES)
     )
     timing = np.lib.format.open_memmap(
         timing_path, mode="w+", dtype=np.float32, shape=(n_rows,)
     )
-    timing[:] = _read_timing(labels_path, timing_column, n_rows)
+    label_values = _read_label_columns(
+        labels_path,
+        (timing_column, *POSITION_COLUMNS),
+        n_rows,
+    )
+    timing[:] = label_values[timing_column]
+    positions = _position_features(
+        label_values["z-global"], label_values["y-local"]
+    )
 
     offset = 0
     for batch_number, batch in enumerate(recon.iter_batches(batch_size=batch_size), 1):
@@ -131,16 +201,14 @@ def _prepare_source(
         count = len(array)
         pixels = array.reshape(count, N_TIME, N_Y, N_X)
 
-        # Model 2 integrates deposited charge over time, then applies the
-        # established symmetric-log transform and projects over x.
-        integrated = pixels.sum(axis=1, dtype=np.float32)
-        integrated = np.sign(integrated) * np.log1p(np.abs(integrated))
-        dense[offset : offset + count] = integrated.mean(axis=-1)
-
-        # Model 3 keeps all timing bins. The saved layout is (y,time), matching
-        # the spatial convention consumed by LogicConv2d.
-        transformed = np.sign(pixels) * np.log1p(np.abs(pixels))
-        temporal[offset : offset + count] = transformed.mean(axis=-1).transpose(0, 2, 1)
+        # The released recon3D representation is time resolved, while the MAIA
+        # Model-2/Model-3 definitions use the total spatial charge cluster.
+        # Model 2 keeps BOTH spatial projections; Model 3 keeps the full image.
+        batch_dense, batch_conv = _build_model_inputs(
+            pixels, positions[offset : offset + count]
+        )
+        dense[offset : offset + count] = batch_dense
+        conv[offset : offset + count] = batch_conv
         offset += count
         print(
             f"[{source}] batch {batch_number}: {offset:,}/{n_rows:,} rows",
@@ -150,7 +218,7 @@ def _prepare_source(
     if offset != n_rows:
         raise RuntimeError(f"{source}: wrote {offset} rows, expected {n_rows}")
     dense.flush()
-    temporal.flush()
+    conv.flush()
     timing.flush()
     return {
         "source": source,
@@ -158,8 +226,8 @@ def _prepare_source(
         "rows": n_rows,
         "reconstruction": str(recon_path),
         "labels": str(labels_path),
-        "dense_profiles": str(dense_path),
-        "temporal_profiles": str(temporal_path),
+        "dense_inputs": str(dense_path),
+        "conv_inputs": str(conv_path),
         "timing": str(timing_path),
     }
 
@@ -246,7 +314,7 @@ def _threshold_sample(
         selected_rows = np.sort(
             np.asarray(indices[selected_positions], dtype=np.int64)
         )
-        filename = "dense_profiles.npy" if family == "dense" else "temporal_profiles.npy"
+        filename = "dense_inputs.npy" if family == "dense" else "conv_inputs.npy"
         values = np.load(cache_dir / source / filename, mmap_mode="r")
         pieces.append(np.asarray(values[selected_rows], dtype=np.float32))
         remaining -= take
@@ -261,19 +329,43 @@ def _derive_thresholds(
     )
     dense = _threshold_sample(cache_dir, "dense", maximum_rows, seed)
     dense_thresholds = np.quantile(dense, probabilities, axis=0).T.astype(np.float32)
-    temporal = _threshold_sample(cache_dir, "conv", maximum_rows, seed + 1)
-    conv_thresholds = np.quantile(temporal.reshape(-1), probabilities).astype(
-        np.float32
-    )[None, :]
+    conv = _threshold_sample(cache_dir, "conv", maximum_rows, seed + 1)
+    conv_pixels = conv[:, :N_CONV_CLUSTER_FEATURES]
+    conv_positions = conv[:, N_CONV_CLUSTER_FEATURES:]
+    positive_pixels = conv_pixels[conv_pixels > 0]
+    if len(positive_pixels) < n_thresholds:
+        raise RuntimeError(
+            "Not enough positive charge values to derive convolutional thresholds"
+        )
+    conv_pixel_thresholds = np.quantile(
+        positive_pixels, probabilities
+    ).astype(np.float32)[None, :]
+    position_thresholds = np.quantile(
+        conv_positions, probabilities, axis=0
+    ).T.astype(np.float32)
     np.save(cache_dir / "dense_thresholds.npy", dense_thresholds, allow_pickle=False)
-    np.save(cache_dir / "conv_thresholds.npy", conv_thresholds, allow_pickle=False)
+    np.save(
+        cache_dir / "conv_pixel_thresholds.npy",
+        conv_pixel_thresholds,
+        allow_pickle=False,
+    )
+    np.save(
+        cache_dir / "position_thresholds.npy",
+        position_thresholds,
+        allow_pickle=False,
+    )
     return {
         "method": "training-only empirical quantiles",
         "sample_rows": min(maximum_rows, len(dense)),
         "thresholds_per_feature": n_thresholds,
         "dense_shape": list(dense_thresholds.shape),
-        "conv_shape": list(conv_thresholds.shape),
-        "conv_threshold_sharing": "one global threshold set shared over the 13x20 profile",
+        "conv_pixel_shape": list(conv_pixel_thresholds.shape),
+        "position_shape": list(position_thresholds.shape),
+        "conv_threshold_sharing": (
+            "one positive-charge quantile threshold set shared over the 13x21 "
+            "charge cluster (zero charge maps to all-zero thermometer bits); "
+            "per-feature thresholds for n_module, x_local, and y_local"
+        ),
     }
 
 
@@ -296,13 +388,16 @@ def prepare_cache(
             metadata = json.load(handle)
         if (
             metadata.get("cache_version") == CACHE_VERSION
+            and metadata.get("input_schema") == INPUT_SCHEMA
             and metadata.get("timing_column") == timing_column
         ):
             print(f"[SKIP] Existing complete cache: {cache_dir}")
             return metadata
         raise RuntimeError(
-            f"Cache metadata mismatch at {cache_dir}: requested timing column "
-            f"{timing_column!r}, cached {metadata.get('timing_column')!r}. Use a "
+            f"Cache metadata mismatch at {cache_dir}: expected version/schema "
+            f"{CACHE_VERSION}/{INPUT_SCHEMA} and timing column {timing_column!r}; "
+            f"found {metadata.get('cache_version')}/{metadata.get('input_schema')} "
+            f"and {metadata.get('timing_column')!r}. Use a "
             "different MAIA_CACHE_ROOT or --overwrite-cache intentionally."
         )
     if not 0 < train_fraction < 1 or not 0 <= validation_fraction < 1:
@@ -331,6 +426,7 @@ def prepare_cache(
     )
     metadata = {
         "cache_version": CACHE_VERSION,
+        "input_schema": INPUT_SCHEMA,
         "data_root": str(data_root.resolve()),
         "task": {
             "negative_class": {"index": 0, "name": "BIB", "sources": ["bib_mp", "bib_mm"]},
@@ -338,15 +434,23 @@ def prepare_cache(
         },
         "inputs": {
             "dense": (
-                "raw charge integrated over 20 time slices, symmetric-log transformed, "
-                "then x-projected to 13 bins"
+                "time-integrated 21-bin x profile, 13-bin y profile, n_module, "
+                "x_local, and y_local (37 features)"
             ),
             "conv": (
-                "per-time-bin symmetric-log transformed charge, x-projected to a "
-                "13x20 time-profile"
+                "time-integrated full 13x21 spatial charge cluster followed by "
+                "n_module, x_local, and y_local (276 values; position is a "
+                "post-convolution branch)"
             ),
-            "truth_features_used": [],
-            "charge_transform": "sign(x)*log1p(abs(x))",
+            "position_features": ["n_module derived from z-global", "x_local derived from z-global", "y-local"],
+            "class_truth_features_used": [],
+            "timing_used_as_input": False,
+            "charge_transform": "integrate time, then sign(x)*log1p(abs(x))",
+            "position_derivation": {
+                "module_length_mm": MODULE_LENGTH_MM,
+                "module_index": "floor(z-global / 13 mm), signed",
+                "x_local": "z-global - (n_module + 0.5) * 13 mm",
+            },
         },
         "timing_column": timing_column,
         "sources": sources,
@@ -368,10 +472,22 @@ class MaiaDataset(Dataset):
             raise ValueError(f"Unknown split {split!r}")
         if family not in {"dense", "conv"}:
             raise ValueError(f"Unknown family {family!r}")
-        if not (self.cache_dir / "preparation_complete.json").is_file():
+        complete_path = self.cache_dir / "preparation_complete.json"
+        if not complete_path.is_file():
             raise FileNotFoundError(f"Incomplete or missing cache: {self.cache_dir}")
+        with complete_path.open() as handle:
+            metadata = json.load(handle)
+        if (
+            metadata.get("cache_version") != CACHE_VERSION
+            or metadata.get("input_schema") != INPUT_SCHEMA
+        ):
+            raise RuntimeError(
+                f"Refusing stale MAIA cache {self.cache_dir}: expected "
+                f"version/schema {CACHE_VERSION}/{INPUT_SCHEMA}, found "
+                f"{metadata.get('cache_version')}/{metadata.get('input_schema')}"
+            )
 
-        filename = "dense_profiles.npy" if family == "dense" else "temporal_profiles.npy"
+        filename = "dense_inputs.npy" if family == "dense" else "conv_inputs.npy"
         self._segments = []
         self._ends = []
         end = 0
@@ -419,6 +535,20 @@ def deterministic_subset(dataset: Dataset, maximum_examples: int, seed: int) -> 
     return Subset(dataset, indices.tolist())
 
 
-def load_thresholds(cache_dir: str | Path, family: str) -> torch.Tensor:
-    name = "dense_thresholds.npy" if family == "dense" else "conv_thresholds.npy"
-    return torch.from_numpy(np.array(np.load(Path(cache_dir) / name), copy=True)).float()
+def load_thresholds(cache_dir: str | Path, family: str) -> dict[str, torch.Tensor]:
+    cache_dir = Path(cache_dir)
+    if family == "dense":
+        names = {"dense": "dense_thresholds.npy"}
+    elif family == "conv":
+        names = {
+            "cluster": "conv_pixel_thresholds.npy",
+            "position": "position_thresholds.npy",
+        }
+    else:
+        raise ValueError(f"Unknown family {family!r}")
+    return {
+        key: torch.from_numpy(
+            np.array(np.load(cache_dir / filename), copy=True)
+        ).float()
+        for key, filename in names.items()
+    }

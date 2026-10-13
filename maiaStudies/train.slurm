@@ -38,10 +38,10 @@ exec python -m maiaStudies.train \
   --output "$OUTPUT" \
   --device cuda \
   --batch-size "$BATCH_SIZE" \
-  --num-workers 4 \
-  --learning-rate 0.01 \
-  --minimum-steps 20000 \
-  --minimum-training-hours 5.0 \
-  --eval-frequency 5000 \
-  --validation-examples 100000 \
+  --num-workers "${MAIA_NUM_WORKERS:-4}" \
+  --learning-rate "${MAIA_LEARNING_RATE:-0.01}" \
+  --minimum-steps "${MAIA_MINIMUM_STEPS:-20000}" \
+  --minimum-training-hours "${MAIA_MINIMUM_TRAINING_HOURS:-5.0}" \
+  --eval-frequency "${MAIA_EVAL_FREQUENCY:-5000}" \
+  --validation-examples "${MAIA_VALIDATION_EXAMPLES:-100000}" \
   --seed 42

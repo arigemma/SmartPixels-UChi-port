@@ -22,3 +22,8 @@ python -m maiaStudies.prepare \
   --thresholds 100 \
   --threshold-sample-rows 50000 \
   --seed 42
+
+python -m maiaStudies.audit_cache \
+  --cache-dir "$MAIA_CACHE_ROOT" \
+  --maximum-per-class 20000 \
+  --minimum-baseline-auc 0.60

@@ -39,4 +39,6 @@ exec python -m maiaStudies.evaluate \
   --batch-size "$BATCH_SIZE" \
   --num-workers 4 \
   --timing-min-ns -0.5 \
-  --timing-max-ns 15.0
+  --timing-max-ns 15.0 \
+  --maximum-validation-examples "${MAIA_MAXIMUM_VALIDATION_EXAMPLES:-0}" \
+  --maximum-test-examples "${MAIA_MAXIMUM_TEST_EXAMPLES:-0}"

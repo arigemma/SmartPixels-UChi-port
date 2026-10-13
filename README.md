@@ -18,22 +18,23 @@ deterministically undersampled to match the combined number of `bib_mp` and
 `bib_mm` rows. Each source is then split 80%/10%/10% into train, validation,
 and test sets with seed 42.
 
-No label/truth quantity is supplied to a classifier. In particular,
-`adjusted_hit_time`, position, direction, and momentum are not model inputs.
-The collaborator-provided \([-0.5,15]\) ns cut on `adjusted_hit_time` is applied
-only as a second, post-training evaluation selection. Every model is reported
-both before and after that cut.
+The class label is determined only by source provenance. Detector position is
+a deployed input, as in the MAIA model definitions; direction, momentum, and
+timing truth are not model inputs. The collaborator-provided \([-0.5,15]\) ns
+cut on `adjusted_hit_time` is applied only as a second, post-training evaluation
+selection. Every model is reported both before and after that cut.
 
 ## Inputs and models
 
 The 5,460 reconstruction columns are reshaped to `(20,13,21)` =
 `(time,y,x)`.
 
-- Dense/Model 2: integrate raw deposited charge over all 20 time bins, apply
-  symmetric-log scaling, project over x, and classify the resulting 13-bin
-  y-profile.
-- Convolutional/Model 3: apply symmetric-log scaling per time bin, project over
-  x, and classify the full `13 x 20` y/time profile.
+- Dense/Model 2: integrate charge over time, form the 21-bin x profile and
+  13-bin y profile, then concatenate `n_module`, `x_local`, and `y_local` (37
+  inputs total).
+- Convolutional/Model 3: integrate charge over time and convolve the full
+  `13 x 21` spatial cluster. Thermometer-encoded `n_module`, `x_local`, and
+  `y_local` are concatenated after the convolutional trunk.
 
 Both families use 100 fixed empirical-quantile thresholds derived exclusively
 from training data, `lut_rank=2`, residual logic initialization, and a binary
@@ -61,15 +62,24 @@ module load anaconda3/2025.12
 conda activate smart_pixels
 
 export MAIA_DATA_ROOT=/scratch/gpfs/IOJALVO/mb7126/SmartPixels/22016562
-bash maiaStudies/submit.sh
+bash maiaStudies/submit_pilot.sh
 ```
 
 The one-time projected cache defaults to
-`$MAIA_DATA_ROOT/derived/maia_lnn_v1`. A completed cache is detected and safely
+`$MAIA_DATA_ROOT/derived/maia_lnn_spatial_v2`. This is deliberately distinct
+from the invalid v1 cache. A completed v2 cache is detected and safely
 reused. Override `MAIA_CACHE_ROOT` or `MAIA_RESULT_ROOT` before submission if
 needed. The timing selection defaults to `adjusted_hit_time`. To study one of
 the smeared timing definitions instead, set `MAIA_TIMING_COLUMN` and use a
 distinct `MAIA_CACHE_ROOT` before launching.
+
+The pilot prepares and audits the cache, then trains/evaluates one middle-size
+Model 2 and one middle-size Model 3. It writes `pilot_gate_complete.json` only
+if both learn above chance. After that marker exists, launch the 30-model run:
+
+```bash
+bash maiaStudies/submit.sh
+```
 
 Monitor with:
 
@@ -98,7 +108,7 @@ Expected final products:
 The complete plot package can be regenerated at any time, without retraining:
 
 ```bash
-ROOT="$PWD/results/SLURM/2026_10_07_maia_signal_vs_bib_lnn_5h_20k"
+ROOT="$PWD/results/SLURM/2026_10_13_maia_signal_vs_bib_corrected_inputs_5h_20k"
 bash maiaStudies/plot_summary.sh "$ROOT"
 ```
 

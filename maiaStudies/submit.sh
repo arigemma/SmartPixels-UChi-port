@@ -10,9 +10,29 @@ if [[ "$(git branch --show-current)" != "maia-studies" ]]; then
 fi
 
 export MAIA_DATA_ROOT="${MAIA_DATA_ROOT:-/scratch/gpfs/IOJALVO/mb7126/SmartPixels/22016562}"
-export MAIA_CACHE_ROOT="${MAIA_CACHE_ROOT:-$MAIA_DATA_ROOT/derived/maia_lnn_v1}"
-export MAIA_RESULT_ROOT="${MAIA_RESULT_ROOT:-$PWD/results/SLURM/2026_10_07_maia_signal_vs_bib_lnn_5h_20k}"
+export MAIA_CACHE_ROOT="${MAIA_CACHE_ROOT:-$MAIA_DATA_ROOT/derived/maia_lnn_spatial_v2}"
+export MAIA_PILOT_ROOT="${MAIA_PILOT_ROOT:-$PWD/results/SLURM/2026_10_13_maia_signal_vs_bib_corrected_inputs_pilot}"
+export MAIA_RESULT_ROOT="${MAIA_RESULT_ROOT:-$PWD/results/SLURM/2026_10_13_maia_signal_vs_bib_corrected_inputs_5h_20k}"
 export MAIA_TIMING_COLUMN="${MAIA_TIMING_COLUMN:-adjusted_hit_time}"
+
+if [[ "${MAIA_SKIP_PILOT_GATE:-0}" != "1" ]]; then
+  GATE="$MAIA_PILOT_ROOT/pilot_gate_complete.json"
+  if [[ ! -s "$GATE" ]]; then
+    echo "[ERROR] Corrected-input pilot has not passed: $GATE" >&2
+    echo "Run: bash maiaStudies/submit_pilot.sh" >&2
+    exit 2
+  fi
+  python - "$GATE" <<'PY'
+import json
+import sys
+from maiaStudies.data import INPUT_SCHEMA
+with open(sys.argv[1]) as handle:
+    gate = json.load(handle)
+if not gate.get("passed") or gate.get("input_schema") != INPUT_SCHEMA:
+    raise SystemExit(f"Invalid or stale pilot gate: {sys.argv[1]}")
+print(f"[PILOT PASS] {sys.argv[1]}")
+PY
+fi
 
 mkdir -p logs "$MAIA_RESULT_ROOT"
 python -m unittest discover -s maiaStudies/tests -p 'test_*.py'
@@ -56,6 +76,7 @@ summary_job_id=$SUMMARY_JOB
 git_commit=$(git rev-parse HEAD)
 data_root=$MAIA_DATA_ROOT
 cache_root=$MAIA_CACHE_ROOT
+pilot_root=$MAIA_PILOT_ROOT
 timing_column=$MAIA_TIMING_COLUMN
 result_root=$MAIA_RESULT_ROOT
 EOF

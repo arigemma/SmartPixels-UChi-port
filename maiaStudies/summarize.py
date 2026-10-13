@@ -168,6 +168,22 @@ def _wide_rows(rows: list[dict]) -> list[dict]:
     return output
 
 
+def _assert_campaign_learned(rows: list[dict]) -> None:
+    """Catch chance-level campaigns before producing presentation figures."""
+    full = [row for row in rows if row["subset"] == "full_test"]
+    balanced = np.asarray([float(row["balanced_accuracy"]) for row in full])
+    auc = np.asarray([float(row["roc_auc"]) for row in full])
+    if balanced.size == 0:
+        raise RuntimeError("No full-test rows are available")
+    if float(balanced.max()) < 0.55 and float(np.median(auc)) < 0.55:
+        raise RuntimeError(
+            "MAIA campaign is at chance level; refusing to generate polished plots. "
+            f"best balanced accuracy={balanced.max():.4f}, median ROC AUC="
+            f"{np.median(auc):.4f}. Inspect the data/model pipeline. Pass "
+            "--allow-collapsed only to make explicitly diagnostic plots."
+        )
+
+
 def _save_figure(
     figure: plt.Figure,
     output_dir: Path,
@@ -639,9 +655,15 @@ def _dashboard(rows: list[dict]) -> plt.Figure:
         Line2D([0], [0], marker=marker, linestyle="none", color="#333333", label=f"τ={int(tau)}")
         for tau, marker in TAU_MARKERS.items()
     ]
-    figure.legend(handles=family_handles + tau_handles, loc="upper center", ncol=5, frameon=False)
-    figure.suptitle("MAIA LNN campaign overview", y=0.985)
-    figure.tight_layout(rect=(0, 0, 1, 0.94))
+    figure.suptitle("MAIA LNN campaign overview", y=0.995)
+    figure.legend(
+        handles=family_handles + tau_handles,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.965),
+        ncol=5,
+        frameon=False,
+    )
+    figure.tight_layout(rect=(0, 0, 1, 0.91))
     return figure
 
 
@@ -733,6 +755,7 @@ def generate_summary(
     dpi: int = 400,
     font_scale: float = 1.0,
     allow_partial: bool = False,
+    allow_collapsed: bool = False,
     annotate: bool = True,
 ) -> dict:
     _configure_matplotlib(font_scale)
@@ -755,6 +778,8 @@ def generate_summary(
         )
     if not rows:
         raise FileNotFoundError(f"No evaluation_complete.json files found below {result_root}")
+    if not allow_collapsed:
+        _assert_campaign_learned(rows)
 
     wide = _wide_rows(rows)
     _write_delimited(result_root / "performance_summary.tsv", rows, "\t")
@@ -920,6 +945,7 @@ def main() -> None:
     parser.add_argument("--dpi", type=int, default=400)
     parser.add_argument("--font-scale", type=float, default=1.0)
     parser.add_argument("--allow-partial", action="store_true")
+    parser.add_argument("--allow-collapsed", action="store_true")
     parser.add_argument("--no-annotations", action="store_true")
     args = parser.parse_args()
     manifest = generate_summary(
@@ -929,6 +955,7 @@ def main() -> None:
         dpi=args.dpi,
         font_scale=args.font_scale,
         allow_partial=args.allow_partial,
+        allow_collapsed=args.allow_collapsed,
         annotate=not args.no_annotations,
     )
     print(f"[DONE] Models summarized: {manifest['models_found']}/{manifest['models_expected']}")

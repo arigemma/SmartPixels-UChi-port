@@ -3,10 +3,18 @@
 ## Data preparation
 
 `prepare.slurm` streams the compressed reconstruction Parquet files in small
-batches. It writes memory-mapped 13-bin dense profiles and 13x20 temporal
-profiles, split-index arrays, timing metadata, and training-only fixed
-thresholds. It never calls `pandas.read_parquet` on a complete reconstruction
-file.
+batches. It writes memory-mapped Model-2 inputs (21-bin x profile, 13-bin y
+profile, and three position values) and Model-3 inputs (the full 13x21 spatial
+cluster plus the same position values), split-index arrays, timing metadata,
+and training-only fixed thresholds. It never calls `pandas.read_parquet` on a
+complete reconstruction file.
+
+The charge cluster is summed over the 20 time slices. `n_module` and `x_local`
+are deterministically derived from `z-global` using the published
+13-mm/module barrel geometry; `y-local` is read directly. Timing, momentum,
+and direction labels remain excluded. `audit_cache.py` verifies schemas,
+threshold ordering and finite values, then requires a lightweight diagnostic
+classifier to obtain validation ROC AUC above 0.60 before GPU jobs are allowed.
 
 The cache is finalized by `preparation_complete.json`; without this marker,
 training refuses to run. Re-running the normal submit script reuses a complete
@@ -29,10 +37,16 @@ inside the timing-cut validation/test subsets.
 
 ## Job chain and recovery
 
-The standard chain is:
+The mandatory pilot chain is:
 
 ```text
-prepare -> 30 training tasks -> 30 evaluation tasks -> summary/plots
+prepare + cache audit -> 2 pilot training tasks -> 2 pilot evaluations -> gate
+```
+
+Only after that gate passes is the full chain enabled:
+
+```text
+30 training tasks -> 30 evaluation tasks -> summary/plots
 ```
 
 Every downstream dependency is `afterok`, so a missing model cannot silently
@@ -42,7 +56,7 @@ produce a partial final plot. Job IDs and exact roots are recorded in
 Check failures with:
 
 ```bash
-ROOT=results/SLURM/2026_10_07_maia_signal_vs_bib_lnn_5h_20k
+ROOT=results/SLURM/2026_10_13_maia_signal_vs_bib_corrected_inputs_5h_20k
 source "$ROOT/submitted_jobs.txt"
 sacct -X -j "$prepare_job_id,$training_job_id,$evaluation_job_id,$summary_job_id" \
   --format=JobID%24,JobName%24,State%22,ExitCode%12,Elapsed
@@ -58,7 +72,7 @@ Once all 30 evaluations are complete, regenerate the complete paper-ready
 summary package without rerunning training or inference:
 
 ```bash
-ROOT="$PWD/results/SLURM/2026_10_07_maia_signal_vs_bib_lnn_5h_20k"
+ROOT="$PWD/results/SLURM/2026_10_13_maia_signal_vs_bib_corrected_inputs_5h_20k"
 bash maiaStudies/plot_summary.sh "$ROOT"
 ```
 
@@ -79,6 +93,10 @@ partial summary:
 ```bash
 MAIA_ALLOW_PARTIAL=1 bash maiaStudies/plot_summary.sh "$ROOT"
 ```
+
+Chance-level campaigns are rejected before presentation plots are produced.
+For forensic plotting only, add `MAIA_ALLOW_COLLAPSED=1`; such output must not
+be used as a result figure.
 
 The final package contains:
 

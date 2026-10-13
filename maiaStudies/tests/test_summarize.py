@@ -1,7 +1,12 @@
 import unittest
 
 from maiaStudies.campaign import CAMPAIGN_CONFIGS
-from maiaStudies.summarize import _best_rows, _flatten, _wide_rows
+from maiaStudies.summarize import (
+    _assert_campaign_learned,
+    _best_rows,
+    _flatten,
+    _wide_rows,
+)
 
 
 def _point(target, rejection):
@@ -35,6 +40,17 @@ def _metrics(balanced_accuracy, rejection):
 
 
 class SummaryTest(unittest.TestCase):
+    def test_chance_level_campaign_is_rejected(self):
+        rows = [
+            {"subset": "full_test", "balanced_accuracy": 0.50, "roc_auc": 0.49},
+            {"subset": "full_test", "balanced_accuracy": 0.51, "roc_auc": 0.52},
+        ]
+        with self.assertRaisesRegex(RuntimeError, "chance level"):
+            _assert_campaign_learned(rows)
+        _assert_campaign_learned(
+            [{"subset": "full_test", "balanced_accuracy": 0.70, "roc_auc": 0.80}]
+        )
+
     def test_flatten_and_wide_table_preserve_physics_metrics(self):
         config = CAMPAIGN_CONFIGS[0]
         result = {

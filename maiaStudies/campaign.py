@@ -1,4 +1,11 @@
-"""Canonical 30-point MAIA LNN architecture and temperature sweep."""
+"""Canonical 30-point MAIA LNN architecture and temperature sweep.
+
+The input schemas follow the MAIA dataset paper rather than the older CMS
+SmartPixels profile convention:
+
+* Model 2: 21-bin x profile, 13-bin y profile, and three position features;
+* Model 3: 13x21 spatial charge cluster and the same three position features.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +16,14 @@ from typing import Literal
 
 
 Family = Literal["dense", "conv"]
+
+N_Y = 13
+N_X = 21
+N_POSITION_FEATURES = 3
+N_DENSE_PROFILE_FEATURES = N_X + N_Y
+N_DENSE_INPUT_FEATURES = N_DENSE_PROFILE_FEATURES + N_POSITION_FEATURES
+N_CONV_CLUSTER_FEATURES = N_Y * N_X
+N_CONV_INPUT_FEATURES = N_CONV_CLUSTER_FEATURES + N_POSITION_FEATURES
 
 
 @dataclass(frozen=True)
@@ -38,7 +53,15 @@ class MaiaConfig:
 
     @property
     def raw_input_features(self) -> int:
-        return 13 if self.family == "dense" else 13 * 20
+        return (
+            N_DENSE_INPUT_FEATURES
+            if self.family == "dense"
+            else N_CONV_INPUT_FEATURES
+        )
+
+    @property
+    def position_features(self) -> int:
+        return N_POSITION_FEATURES
 
     def validate(self) -> None:
         if self.lut_rank != 2:
@@ -54,8 +77,12 @@ class MaiaConfig:
             if len(self.conv_kernels) != 4 or self.tree_depth < 1:
                 raise ValueError(f"{self.alias}: invalid convolutional configuration")
             # Four padded convolutions with one 2x2 pool and a stride-2 final
-            # convolution map (13,20) -> (6,10) -> (3,5).
-            previous = self.conv_kernels[-1] * 3 * 5
+            # convolution map (13,21) -> (6,10) -> (3,5). Position features
+            # are thermometer encoded and concatenated after convolution.
+            previous = (
+                self.conv_kernels[-1] * 3 * 5
+                + N_POSITION_FEATURES * self.thresholds_per_feature
+            )
         for width in self.dense_widths:
             if width * self.lut_rank < previous:
                 raise ValueError(
@@ -74,22 +101,25 @@ class MaiaConfig:
         return result
 
 
-# Five increasing stems in each family.  Every transition obeys the fixed
-# rank-2 connection coverage constraint: 2*out_dim >= in_dim.
+# Five increasing stems in each family. Every transition obeys the fixed
+# rank-2 connection coverage constraint: 2*out_dim >= in_dim. These widths are
+# intentionally larger than the v1 campaign because Model 2 now has the
+# correct 37-feature input (3,700 thermometer bits), and Model 3 appends 300
+# position bits after its convolutional trunk.
 _DENSE_SIZES = (
-    ("s01", (650, 650, 650)),
-    ("s02", (900, 900, 900)),
-    ("s03", (1300, 1300, 1300)),
-    ("s04", (1800, 1800, 1800)),
-    ("s05", (2600, 2600, 2600)),
+    ("s01", (1900, 1900, 1900)),
+    ("s02", (2600, 2600, 2600)),
+    ("s03", (3600, 3600, 3600)),
+    ("s04", (5000, 5000, 5000)),
+    ("s05", (7000, 7000, 7000)),
 )
 
 _CONV_SIZES = (
-    ("s01", (16, 32, 64, 64), (512, 512, 256)),
-    ("s02", (24, 48, 96, 96), (768, 768, 384)),
-    ("s03", (32, 64, 128, 128), (1024, 1024, 512)),
-    ("s04", (48, 96, 192, 192), (1536, 1536, 768)),
-    ("s05", (64, 128, 256, 256), (2048, 2048, 1024)),
+    ("s01", (16, 32, 64, 64), (640, 640, 320)),
+    ("s02", (24, 48, 96, 96), (896, 896, 448)),
+    ("s03", (32, 64, 128, 128), (1152, 1152, 576)),
+    ("s04", (48, 96, 192, 192), (1664, 1664, 832)),
+    ("s05", (64, 128, 256, 256), (2112, 2112, 1056)),
 )
 
 TAUS = (10.0, 20.0, 40.0)
