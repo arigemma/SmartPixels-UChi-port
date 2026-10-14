@@ -105,8 +105,8 @@ Expected final products:
   dashboard;
 - one `evaluation_complete.json`, `roc_full.csv`, and `roc_timing_cut.csv` per
   model;
-- `best_model.pth` state-dict checkpoints with embedded architecture and fixed
-  thresholds.
+- `best_model.pth` checkpoints with embedded architecture, fixed thresholds,
+  learned LUT state, and explicit fixed connection indices.
 
 The complete plot package can be regenerated at any time, without retraining:
 

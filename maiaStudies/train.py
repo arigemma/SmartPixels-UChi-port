@@ -17,6 +17,12 @@ from torch.utils.data import DataLoader
 from sklearn.metrics import roc_auc_score
 
 from .campaign import get_config
+from .checkpointing import (
+    CHECKPOINT_FORMAT,
+    capture_fixed_connections,
+    load_model_checkpoint_state,
+    snapshot_to_cpu as _snapshot_to_cpu,
+)
 from .data import INPUT_SCHEMA, MaiaDataset, deterministic_subset, load_thresholds
 from .models import build_model, resource_proxies
 
@@ -41,24 +47,6 @@ def _atomic_torch_save(path: Path, payload: dict) -> None:
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
-
-
-def _snapshot_to_cpu(value):
-    """Recursively detach and clone checkpoint tensors onto CPU.
-
-    ``state_dict()`` returns tensors that share storage with the live model.
-    Materializing an immutable CPU snapshot makes the checkpoint independent
-    of subsequent optimizer steps and CUDA serialization details.
-    """
-    if isinstance(value, torch.Tensor):
-        return value.detach().cpu().clone()
-    if isinstance(value, dict):
-        return {key: _snapshot_to_cpu(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_snapshot_to_cpu(item) for item in value]
-    if isinstance(value, tuple):
-        return tuple(_snapshot_to_cpu(item) for item in value)
-    return value
 
 
 def _seed_everything(seed: int) -> None:
@@ -117,13 +105,16 @@ def checkpoint_payload(
     step: int,
     elapsed_hours: float,
     validation: dict,
+    seed: int,
 ) -> dict:
     return {
-        "format": "maia_lnn_state_dict_v2",
+        "format": CHECKPOINT_FORMAT,
         "input_schema": INPUT_SCHEMA,
         "campaign_config": config.to_dict(),
+        "model_initialization_seed": int(seed),
         "thresholds": _snapshot_to_cpu(thresholds),
         "model_state_dict": _snapshot_to_cpu(model.state_dict()),
+        "fixed_connection_state": capture_fixed_connections(model),
         "optimizer_state_dict": _snapshot_to_cpu(optimizer.state_dict()),
         "step": int(step),
         "elapsed_training_hours": float(elapsed_hours),
@@ -241,7 +232,8 @@ def main() -> None:
                     flush=True,
                 )
                 payload = checkpoint_payload(
-                    model, optimizer, config, thresholds, step, elapsed, last_validation
+                    model, optimizer, config, thresholds, step, elapsed,
+                    last_validation, args.seed
                 )
                 _atomic_torch_save(args.output / "latest_model.pth", payload)
                 if last_validation["balanced_accuracy"] > best_balanced_accuracy:
@@ -265,7 +257,8 @@ def main() -> None:
         last_validation = validation_metrics(model, validation_loader, device)
         best_balanced_accuracy = last_validation["balanced_accuracy"]
     final_payload = checkpoint_payload(
-        model, optimizer, config, thresholds, step, elapsed_hours, last_validation
+        model, optimizer, config, thresholds, step, elapsed_hours,
+        last_validation, args.seed
     )
     _atomic_torch_save(args.output / "final_model.pth", final_payload)
     if not (args.output / "best_model.pth").is_file():
@@ -280,8 +273,11 @@ def main() -> None:
     reloaded_thresholds = {
         name: values.float() for name, values in best_checkpoint["thresholds"].items()
     }
+    # Re-seeding is an additional safeguard for TorchLogix releases that
+    # initialize fixed connections from global random-number generators.
+    _seed_everything(int(best_checkpoint["model_initialization_seed"]))
     reloaded_model = build_model(config, reloaded_thresholds, device).to(device)
-    reloaded_model.load_state_dict(best_checkpoint["model_state_dict"], strict=True)
+    load_model_checkpoint_state(reloaded_model, best_checkpoint)
     roundtrip_validation = validation_metrics(
         reloaded_model, validation_loader, device
     )

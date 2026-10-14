@@ -14,6 +14,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from .campaign import get_config
+from .checkpointing import CHECKPOINT_FORMAT, load_model_checkpoint_state
 from .data import INPUT_SCHEMA, MaiaDataset, deterministic_subset
 from .metrics import evaluate_binary_scores, roc_rows
 from .models import build_model, resource_proxies
@@ -96,7 +97,7 @@ def main() -> None:
         )
     device = torch.device(args.device)
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    if checkpoint.get("format") != "maia_lnn_state_dict_v2":
+    if checkpoint.get("format") != CHECKPOINT_FORMAT:
         raise ValueError(f"Unexpected checkpoint format in {checkpoint_path}")
     if checkpoint.get("input_schema") != INPUT_SCHEMA:
         raise ValueError(
@@ -109,7 +110,7 @@ def main() -> None:
         name: values.float() for name, values in checkpoint["thresholds"].items()
     }
     model = build_model(config, thresholds, device)
-    model.load_state_dict(checkpoint["model_state_dict"], strict=True)
+    load_model_checkpoint_state(model, checkpoint)
     model.to(device)
     trainable_parameters = sum(
         parameter.numel() for parameter in model.parameters() if parameter.requires_grad

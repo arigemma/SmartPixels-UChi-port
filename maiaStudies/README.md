@@ -46,6 +46,9 @@ prepare + cache audit -> 2 pilot training tasks -> 2 pilot evaluations -> gate
 Each training task performs an exact checkpoint round-trip test: the selected
 checkpoint is loaded into a freshly constructed model and must reproduce the
 stored validation metrics before `training_complete.json` is written.
+The checkpoint stores fixed TorchLogix connection indices explicitly because
+the wiring is part of the trained model and cannot be randomized again when
+the learned LUT weights are loaded.
 
 Only after that gate passes is the full chain enabled:
 
