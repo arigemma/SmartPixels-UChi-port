@@ -71,9 +71,13 @@ class SummaryTest(unittest.TestCase):
             _flatten(config, result, "full_test"),
             _flatten(config, result, "timing_cut_test"),
         ]
-        self.assertEqual(rows[0]["family_label"], "Model 2 (dense)")
+        self.assertEqual(rows[0]["family_label"], "LNN Model 2 (14 inputs)")
         self.assertEqual(rows[0]["trainable_parameters"], 12_345)
         self.assertEqual(rows[0]["bib_rejection_at_90pct_signal_op"], 20.0)
+        self.assertAlmostEqual(
+            rows[0]["bib_rejection_fraction_at_99pct_signal_op"],
+            1.0 - 1.0 / 18.0,
+        )
         wide = _wide_rows(rows)
         self.assertEqual(len(wide), 1)
         self.assertEqual(wide[0]["full_test_balanced_accuracy"], 0.78)
@@ -129,6 +133,13 @@ class SummaryTest(unittest.TestCase):
         )
         self.assertEqual(dense_balanced["alias"], CAMPAIGN_CONFIGS[1].alias)
         self.assertEqual(conv_balanced["alias"], CAMPAIGN_CONFIGS[15].alias)
+        self.assertTrue(
+            any(
+                row["criterion"]
+                == "highest BIB rejection fraction at 99% signal OP"
+                for row in best
+            )
+        )
 
 
 if __name__ == "__main__":

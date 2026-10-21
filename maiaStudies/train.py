@@ -25,6 +25,7 @@ from .checkpointing import (
     snapshot_to_cpu as _snapshot_to_cpu,
 )
 from .data import INPUT_SCHEMA, MaiaDataset, deterministic_subset, load_thresholds
+from .metrics import confusion_metrics, threshold_for_signal_efficiency
 from .models import build_model, resource_proxies
 
 
@@ -91,6 +92,8 @@ def validation_metrics(
     recalls = confusion.diagonal() / np.maximum(confusion.sum(axis=1), 1)
     scores = np.concatenate(all_scores)
     truth = np.concatenate(all_labels)
+    signal_99_threshold = threshold_for_signal_efficiency(truth, scores, 0.99)
+    signal_99 = confusion_metrics(truth, scores, signal_99_threshold)
     model.train(was_training)
     return {
         "cross_entropy": loss_sum / max(count, 1),
@@ -101,7 +104,23 @@ def validation_metrics(
         "prediction_signal_fraction": float(np.mean(scores >= 0.0)),
         "score_mean": float(scores.mean()),
         "score_std": float(scores.std()),
+        "signal_efficiency_at_99pct_signal_op": float(
+            signal_99["signal_efficiency"]
+        ),
+        "bib_rejection_fraction_at_99pct_signal_op": float(
+            signal_99["bib_rejection_fraction"]
+        ),
+        "score_threshold_at_99pct_signal_op": float(signal_99_threshold),
     }
+
+
+def checkpoint_rank(validation: dict[str, float]) -> tuple[float, float, float]:
+    """Rank checkpoints for the MAIA physics goal, then break exact ties."""
+    return (
+        float(validation["bib_rejection_fraction_at_99pct_signal_op"]),
+        float(validation["roc_auc"]),
+        float(validation["balanced_accuracy"]),
+    )
 
 
 def _append_validation_history(
@@ -237,7 +256,7 @@ def main() -> None:
     started = time.monotonic()
     step = 0
     epoch = 0
-    best_balanced_accuracy = -float("inf")
+    best_rank = (-float("inf"), -float("inf"), -float("inf"))
     last_validation: dict[str, float] = {}
     model.train()
     while not stop_requested:
@@ -293,8 +312,9 @@ def main() -> None:
                     last_validation, args.seed
                 )
                 _atomic_torch_save(args.output / "latest_model.pth", payload)
-                if last_validation["balanced_accuracy"] > best_balanced_accuracy:
-                    best_balanced_accuracy = last_validation["balanced_accuracy"]
+                candidate_rank = checkpoint_rank(last_validation)
+                if candidate_rank > best_rank:
+                    best_rank = candidate_rank
                     _atomic_torch_save(args.output / "best_model.pth", payload)
                 model.train()
 
@@ -312,7 +332,7 @@ def main() -> None:
     elapsed_hours = (time.monotonic() - started) / 3600.0
     if not last_validation:
         last_validation = validation_metrics(model, validation_loader, device)
-        best_balanced_accuracy = last_validation["balanced_accuracy"]
+        best_rank = checkpoint_rank(last_validation)
     final_payload = checkpoint_payload(
         model, optimizer, config, thresholds, step, elapsed_hours,
         last_validation, args.seed
@@ -367,7 +387,13 @@ def main() -> None:
         "tracked_relaxed_validation": args.track_relaxed_validation,
         "batch_size": batch_size,
         "trainable_parameters": parameter_count,
-        "best_validation_balanced_accuracy": best_balanced_accuracy,
+        "checkpoint_selection_metric": (
+            "validation BIB rejection fraction at >=99% signal efficiency; "
+            "ROC AUC and balanced accuracy break exact ties"
+        ),
+        "best_validation_bib_rejection_fraction_at_99pct_signal_op": best_rank[0],
+        "best_validation_roc_auc_tiebreak": best_rank[1],
+        "best_validation_balanced_accuracy_tiebreak": best_rank[2],
         "last_validation": last_validation,
         "checkpoint_roundtrip_validation": {
             "passed": True,

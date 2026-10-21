@@ -25,8 +25,16 @@ from .campaign import CAMPAIGNS, get_campaign_configs
 
 
 FAMILY_STYLE = {
-    "dense": {"label": "Model 2 (dense)", "short": "M2", "color": "#0072B2"},
-    "conv": {"label": "Model 3 (convolutional)", "short": "M3", "color": "#D55E00"},
+    "dense": {
+        "label": "LNN Model 2 (14 inputs)",
+        "short": "M2",
+        "color": "#0072B2",
+    },
+    "conv": {
+        "label": "LNN Model 3 (105 inputs)",
+        "short": "M3",
+        "color": "#D55E00",
+    },
 }
 TAU_MARKERS = {1.0: "D", 3.0: "P", 10.0: "o", 20.0: "s", 40.0: "^"}
 TAU_LINESTYLES = {
@@ -610,19 +618,19 @@ def _dashboard(rows: list[dict]) -> plt.Figure:
         ("trainable_parameters", "roc_auc", "Trainable parameters", "ROC AUC", True, False),
         (
             "trainable_parameters",
-            "bib_rejection_at_90pct_signal_op",
+            "bib_rejection_fraction_at_99pct_signal_op",
             "Trainable parameters",
-            "BIB rejection @ 90% signal OP",
+            "BIB fraction rejected @ 99% signal OP",
             True,
-            True,
+            False,
         ),
         (
-            "signal_efficiency_at_90pct_signal_op",
-            "bib_rejection_at_90pct_signal_op",
+            "signal_efficiency_at_99pct_signal_op",
+            "bib_rejection_fraction_at_99pct_signal_op",
             "Signal efficiency",
-            "BIB rejection factor",
+            "BIB fraction rejected",
             False,
-            True,
+            False,
         ),
     )
     for axis, (x_key, y_key, x_label, y_label, x_log, y_log) in zip(axes.flat, specifications):
@@ -684,6 +692,10 @@ def _best_rows(rows: list[dict]) -> list[dict]:
     full = [row for row in rows if row["subset"] == "full_test"]
     output = []
     criteria = (
+        (
+            "bib_rejection_fraction_at_99pct_signal_op",
+            "highest BIB rejection fraction at 99% signal OP",
+        ),
         ("balanced_accuracy", "highest balanced accuracy"),
         ("roc_auc", "highest ROC AUC"),
         ("bib_rejection_at_90pct_signal_op", "highest BIB rejection at 90% signal OP"),
@@ -731,6 +743,12 @@ def _write_report(
         if not candidates:
             continue
         best_balanced = max(candidates, key=lambda row: float(row["balanced_accuracy"]))
+        best_tail = max(
+            candidates,
+            key=lambda row: float(
+                row["bib_rejection_fraction_at_99pct_signal_op"]
+            ),
+        )
         finite_rejection = [
             row for row in candidates if row["bib_rejection_at_90pct_signal_op"] is not None
         ]
@@ -738,6 +756,9 @@ def _write_report(
             [
                 f"## {style['label']}",
                 "",
+                f"- Best BIB rejection fraction at the validation-derived 99% "
+                f"signal-efficiency OP: `{best_tail['alias']}` = "
+                f"{100 * best_tail['bib_rejection_fraction_at_99pct_signal_op']:.2f}%.",
                 f"- Best balanced accuracy: `{best_balanced['alias']}` = "
                 f"{best_balanced['balanced_accuracy']:.5f}.",
             ]
@@ -838,12 +859,15 @@ def generate_summary(
             ),
         ),
         (
-            "04_bib_rejection_vs_parameters_at_90pct_signal",
+            "04_bib_rejection_fraction_vs_parameters_at_99pct_signal",
             _family_tau_scatter(
-                rows, "trainable_parameters", "bib_rejection_at_90pct_signal_op",
-                "Trainable parameters", "BIB rejection factor",
-                "BIB rejection at the validation-derived 90% signal-efficiency OP",
-                y_log=True, annotate=annotate,
+                rows,
+                "trainable_parameters",
+                "bib_rejection_fraction_at_99pct_signal_op",
+                "Trainable parameters",
+                "Fraction of BIB rejected",
+                "BIB rejection at the validation-derived 99% signal-efficiency OP",
+                annotate=annotate,
             ),
         ),
         (
@@ -857,10 +881,14 @@ def generate_summary(
         (
             "06_signal_efficiency_vs_bib_rejection",
             _family_tau_scatter(
-                rows, "signal_efficiency_at_90pct_signal_op",
-                "bib_rejection_at_90pct_signal_op", "Observed test signal efficiency",
-                "BIB rejection factor", "Signal-efficiency / BIB-rejection operating point",
-                x_log=False, y_log=True, annotate=annotate,
+                rows,
+                "signal_efficiency_at_99pct_signal_op",
+                "bib_rejection_fraction_at_99pct_signal_op",
+                "Observed test signal efficiency",
+                "Fraction of BIB rejected",
+                "Validation-derived 99% signal-efficiency operating point",
+                x_log=False,
+                annotate=annotate,
             ),
         ),
         (
@@ -873,8 +901,10 @@ def generate_summary(
         (
             "08_full_vs_timing_bib_rejection",
             _comparison_plot(
-                rows, "bib_rejection_at_90pct_signal_op", "BIB rejection factor",
-                "Effect of timing selection on BIB rejection", log_scale=True,
+                rows,
+                "bib_rejection_fraction_at_99pct_signal_op",
+                "BIB fraction rejected at 99% signal efficiency",
+                "Effect of timing selection on BIB rejection",
             ),
         ),
         (
@@ -884,8 +914,10 @@ def generate_summary(
         (
             "10_bib_rejection_heatmaps",
             _heatmap(
-                rows, "bib_rejection_at_90pct_signal_op", "BIB rejection factor",
-                "BIB rejection at 90% signal-efficiency operating point",
+                rows,
+                "bib_rejection_fraction_at_99pct_signal_op",
+                "BIB fraction rejected",
+                "BIB rejection at 99% signal-efficiency operating point",
             ),
         ),
         (
@@ -895,8 +927,10 @@ def generate_summary(
         (
             "12_bib_rejection_ranking",
             _ranking_plot(
-                rows, "bib_rejection_at_90pct_signal_op", "BIB rejection factor",
-                "All models ranked by BIB rejection at 90% signal efficiency",
+                rows,
+                "bib_rejection_fraction_at_99pct_signal_op",
+                "Fraction of BIB rejected",
+                "All models ranked by BIB rejection at 99% signal efficiency",
             ),
         ),
         ("13_operating_points_90_95_99", _operating_points_plot(rows)),

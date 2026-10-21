@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-ROOT="${1:-${MAIA_RESULT_ROOT:-$PWD/results/SLURM/2026_10_13_maia_signal_vs_bib_corrected_inputs_5h_20k}}"
+ROOT="${1:-${MAIA_RESULT_ROOT:-$PWD/results/SLURM/2026_10_21_maia_signal_vs_bib_canonical_inputs_5h_20k}}"
 EXPECTED=30
 if [[ -s "$ROOT/submitted_jobs.txt" ]] && grep -q '^gate_job_id=' "$ROOT/submitted_jobs.txt"; then
   EXPECTED=2

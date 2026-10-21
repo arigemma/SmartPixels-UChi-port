@@ -16,7 +16,10 @@ from matplotlib.lines import Line2D
 from .campaign import get_campaign_configs
 
 
-FAMILY_LABELS = {"dense": "Model 2 (dense)", "conv": "Model 3 (convolutional)"}
+FAMILY_LABELS = {
+    "dense": "LNN Model 2 (14 inputs)",
+    "conv": "LNN Model 3 (105 inputs)",
+}
 SIZE_COLORS = {
     size: color
     for size, color in zip(

@@ -1,18 +1,22 @@
 # MAIA campaign details
 
+This campaign applies the established 14-input SmartPixels LNN Model 2 and
+105-input LNN Model 3 to the MAIA binary target. These names differ from the
+MAIA reference paper's own Model 2 (37 inputs) and Model 3 (276 inputs). Never
+combine their results without recording the input schema.
+
 ## Data preparation
 
 `prepare.slurm` streams the compressed reconstruction Parquet files in small
-batches. It writes memory-mapped Model-2 inputs (21-bin x profile, 13-bin y
-profile, and three position values) and Model-3 inputs (the full 13x21 spatial
-cluster plus the same position values), split-index arrays, timing metadata,
-and training-only fixed thresholds. It never calls `pandas.read_parquet` on a
+batches. It writes memory-mapped canonical Model-2 inputs (`y0` plus the
+final-frame 13-bin y profile) and Model-3 inputs (`y0` plus the 13x8 y/time
+profile from slices 0--7), split-index arrays, timing metadata, and
+training-only fixed thresholds. It never calls `pandas.read_parquet` on a
 complete reconstruction file.
 
-The charge cluster is summed over the 20 time slices. `n_module` and `x_local`
-are deterministically derived from `z-global` using the published
-13-mm/module barrel geometry; `y-local` is read directly. Timing, momentum,
-and direction labels remain excluded. `audit_cache.py` verifies schemas,
+The symmetric-log transform is applied per pixel before averaging over the 21
+x positions. `y-local` supplies `y0`; no other truth coordinates are model
+inputs. Truth timing, momentum, and direction remain excluded. `audit_cache.py` verifies schemas,
 threshold ordering and finite values, then requires a lightweight diagnostic
 classifier to obtain validation ROC AUC above 0.60 before GPU jobs are allowed.
 
@@ -63,7 +67,7 @@ produce a partial final plot. Job IDs and exact roots are recorded in
 Check failures with:
 
 ```bash
-ROOT=results/SLURM/2026_10_13_maia_signal_vs_bib_corrected_inputs_5h_20k
+ROOT=results/SLURM/2026_10_21_maia_signal_vs_bib_canonical_inputs_5h_20k
 source "$ROOT/submitted_jobs.txt"
 sacct -X -j "$prepare_job_id,$training_job_id,$evaluation_job_id,$summary_job_id" \
   --format=JobID%24,JobName%24,State%22,ExitCode%12,Elapsed
@@ -79,7 +83,7 @@ Once all 30 evaluations are complete, regenerate the complete paper-ready
 summary package without rerunning training or inference:
 
 ```bash
-ROOT="$PWD/results/SLURM/2026_10_13_maia_signal_vs_bib_corrected_inputs_5h_20k"
+ROOT="$PWD/results/SLURM/2026_10_21_maia_signal_vs_bib_canonical_inputs_5h_20k"
 bash maiaStudies/plot_summary.sh "$ROOT"
 ```
 
@@ -139,9 +143,10 @@ bash maiaStudies/submit_tau_extension.sh
 This trains the same five dense and five convolutional architectures at
 `tau=1` and `tau=3` for the same five-hour/20,000-step minimum. At each
 validation checkpoint it evaluates the identical validation subset once in
-relaxed mode and once in discrete mode; checkpoint selection remains based on
-discrete balanced accuracy. It then evaluates the 20 new checkpoints and
-regenerates the summary over all 50 models. New diagnostics are:
+relaxed mode and once in discrete mode; checkpoint selection uses discrete BIB
+rejection fraction at the ≥99% signal-efficiency operating point. It then
+evaluates the 20 new checkpoints and regenerates the summary over all 50
+models. New diagnostics are:
 
 - one `training_history.tsv` per tau-extension model;
 - `relaxed_discrete_training_history.tsv` at the campaign root;

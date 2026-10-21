@@ -12,7 +12,6 @@ from maiaStudies.data import (
     MaiaDataset,
     SOURCES,
     _build_model_inputs,
-    _position_features,
     _write_splits,
 )
 
@@ -49,31 +48,31 @@ class DataTest(unittest.TestCase):
             self.assertEqual(timing.ndim, 0)
             self.assertIn("deterministic signal undersampling", summary["selection"])
 
-    def test_position_feature_split_matches_ten_13mm_modules(self):
-        values = _position_features(
-            np.array([-65.0, -58.5, -52.0, 0.0, 64.999], dtype=np.float32),
-            np.array([1.0, 2.0, 3.0, 4.0, 5.0], dtype=np.float32),
-        )
-        np.testing.assert_array_equal(values[:, 0], [-5, -5, -4, 0, 4])
-        np.testing.assert_allclose(
-            values[:, 1], [-6.5, 0.0, -6.5, -6.5, 6.499], atol=2e-3
-        )
-        np.testing.assert_array_equal(values[:, 2], [1, 2, 3, 4, 5])
-
-    def test_model2_and_model3_inputs_preserve_both_spatial_axes_and_position(self):
+    def test_model2_and_model3_match_canonical_y_profile_schemas(self):
         pixels = np.zeros((1, 20, 13, 21), dtype=np.float32)
         pixels[0, 0, 2, 7] = 3.0
-        pixels[0, 1, 2, 7] = 5.0
-        position = np.array([[4.0, -1.5, 2.5]], dtype=np.float32)
-        dense, conv = _build_model_inputs(pixels, position)
+        pixels[0, 7, 12, 20] = 5.0
+        pixels[0, 8, 4, 1] = 7.0  # excluded from both deployed schemas
+        pixels[0, 19, 5, 11] = 11.0
+        y0 = np.array([2.5], dtype=np.float32)
+        dense, conv = _build_model_inputs(pixels, y0)
         self.assertEqual(dense.shape, (1, N_DENSE_INPUT_FEATURES))
         self.assertEqual(conv.shape, (1, N_CONV_INPUT_FEATURES))
-        expected = np.log1p(8.0)
-        self.assertAlmostEqual(float(dense[0, 7]), expected)
-        self.assertAlmostEqual(float(dense[0, 21 + 2]), expected)
-        np.testing.assert_array_equal(dense[0, -3:], position[0])
-        self.assertAlmostEqual(float(conv[0, 2 * 21 + 7]), expected)
-        np.testing.assert_array_equal(conv[0, -3:], position[0])
+        self.assertEqual(float(dense[0, 0]), 2.5)
+        self.assertEqual(float(conv[0, 0]), 2.5)
+
+        expected_final = np.log1p(11.0) / 21.0
+        self.assertAlmostEqual(float(dense[0, 1 + 5]), expected_final, places=6)
+        self.assertEqual(np.count_nonzero(dense[0, 1:]), 1)
+
+        # After y0, Model 3 is flattened in (y,time) order over slices 0--7.
+        self.assertAlmostEqual(
+            float(conv[0, 1 + 2 * 8 + 0]), np.log1p(3.0) / 21.0, places=6
+        )
+        self.assertAlmostEqual(
+            float(conv[0, 1 + 12 * 8 + 7]), np.log1p(5.0) / 21.0, places=6
+        )
+        self.assertEqual(np.count_nonzero(conv[0, 1:]), 2)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-RESULT_ROOT="${1:-${MAIA_RESULT_ROOT:-$PWD/results/SLURM/2026_10_13_maia_signal_vs_bib_corrected_inputs_5h_20k}}"
+RESULT_ROOT="${1:-${MAIA_RESULT_ROOT:-$PWD/results/SLURM/2026_10_21_maia_signal_vs_bib_canonical_inputs_5h_20k}}"
 CAMPAIGN="${MAIA_CAMPAIGN:-main}"
 
 if [[ ! -d "$RESULT_ROOT" ]]; then

@@ -10,8 +10,8 @@ if [[ "$(git branch --show-current)" != "maia-studies" ]]; then
 fi
 
 export MAIA_DATA_ROOT="${MAIA_DATA_ROOT:-/scratch/gpfs/IOJALVO/mb7126/SmartPixels/22016562}"
-export MAIA_CACHE_ROOT="${MAIA_CACHE_ROOT:-$MAIA_DATA_ROOT/derived/maia_lnn_spatial_v2}"
-export MAIA_RESULT_ROOT="${MAIA_RESULT_ROOT:-$PWD/results/SLURM/2026_10_13_maia_signal_vs_bib_corrected_inputs_5h_20k}"
+export MAIA_CACHE_ROOT="${MAIA_CACHE_ROOT:-$MAIA_DATA_ROOT/derived/maia_lnn_yprofile_timing8_v3}"
+export MAIA_RESULT_ROOT="${MAIA_RESULT_ROOT:-$PWD/results/SLURM/2026_10_21_maia_signal_vs_bib_canonical_inputs_5h_20k}"
 export MAIA_TIMING_COLUMN="${MAIA_TIMING_COLUMN:-adjusted_hit_time}"
 
 if [[ ! -s "$MAIA_CACHE_ROOT/preparation_complete.json" ]]; then

@@ -8,7 +8,6 @@ from .campaign import (
     CAMPAIGN_CONFIGS,
     N_CONV_INPUT_FEATURES,
     N_DENSE_INPUT_FEATURES,
-    N_POSITION_FEATURES,
 )
 from .checkpointing import (
     CHECKPOINT_FORMAT,
@@ -38,10 +37,9 @@ def main() -> None:
                 2, N_CONV_INPUT_FEATURES
             ),
             {
-                "cluster": torch.linspace(-1, 1, 100).reshape(1, 100),
-                "position": torch.linspace(-1, 1, 100).repeat(
-                    N_POSITION_FEATURES, 1
-                ),
+                "conv": torch.linspace(-1, 1, 100).repeat(
+                    N_CONV_INPUT_FEATURES, 1
+                )
             },
         ),
     )

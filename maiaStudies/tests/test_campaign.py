@@ -5,6 +5,9 @@ import numpy as np
 from maiaStudies.campaign import (
     ALL_CONFIGS,
     CAMPAIGN_CONFIGS,
+    N_CONV_INPUT_FEATURES,
+    N_DENSE_INPUT_FEATURES,
+    N_SLICES,
     TAU_EXTENSION_CONFIGS,
     get_config,
 )
@@ -14,6 +17,9 @@ from maiaStudies.models import resource_proxies
 
 class CampaignTest(unittest.TestCase):
     def test_grid_and_binary_groups(self):
+        self.assertEqual(N_DENSE_INPUT_FEATURES, 14)
+        self.assertEqual(N_CONV_INPUT_FEATURES, 105)
+        self.assertEqual(N_SLICES, 8)
         self.assertEqual(len(CAMPAIGN_CONFIGS), 30)
         self.assertEqual(sum(row.family == "dense" for row in CAMPAIGN_CONFIGS), 15)
         self.assertEqual(sum(row.family == "conv" for row in CAMPAIGN_CONFIGS), 15)
@@ -23,6 +29,9 @@ class CampaignTest(unittest.TestCase):
             self.assertEqual(row.lut_rank, 2)
             self.assertEqual(row.final_logic_width % 2, 0)
             self.assertGreater(resource_proxies(row)["logic_node_proxy"], 0)
+        self.assertEqual(CAMPAIGN_CONFIGS[0].dense_widths, (1269, 1269, 1270))
+        self.assertEqual(CAMPAIGN_CONFIGS[15].conv_kernels, (16, 32, 64, 60))
+        self.assertEqual(CAMPAIGN_CONFIGS[15].dense_widths, (1200, 1200, 600, 300))
 
     def test_tau_extension_reuses_every_architecture_at_tau_one_and_three(self):
         self.assertEqual(len(TAU_EXTENSION_CONFIGS), 20)

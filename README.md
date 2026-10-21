@@ -29,12 +29,20 @@ selection. Every model is reported both before and after that cut.
 The 5,460 reconstruction columns are reshaped to `(20,13,21)` =
 `(time,y,x)`.
 
-- Dense/Model 2: integrate charge over time, form the 21-bin x profile and
-  13-bin y profile, then concatenate `n_module`, `x_local`, and `y_local` (37
-  inputs total).
-- Convolutional/Model 3: integrate charge over time and convolve the full
-  `13 x 21` spatial cluster. Thermometer-encoded `n_module`, `x_local`, and
-  `y_local` are concatenated after the convolutional trunk.
+Here “Model 2” and “Model 3” refer to the established SmartPixels LNN
+definitions inherited from the CMS study. They must not be confused with the
+MAIA paper's independently named Model 2 (37 profile/position inputs) and
+Model 3 (276 full-cluster/position inputs). The old
+`maia_lnn_spatial_v2` campaign used those MAIA-paper inputs; it remains a
+valid MAIA-native input study but is not the 14/105-input LNN campaign below.
+
+- Dense/Model 2: apply the symmetric-log transform per pixel, average over the
+  21 x positions in the final time slice, and prepend `y-local` (`y0`) to the
+  resulting 13-bin y profile (14 inputs total).
+- Convolutional/Model 3: apply the same transform and x projection to time
+  slices 0--7, arrange the profiles as `13 x 8` (y,time), and prepend
+  `y-local` (105 inputs total). The 100 thermometer bits for `y0` bypass the
+  convolutional trunk and are concatenated before the dense logic layers.
 
 Both families use 100 fixed empirical-quantile thresholds derived exclusively
 from training data, `lut_rank=2`, residual logic initialization, and a binary
@@ -43,9 +51,11 @@ architectures per family are trained at `tau = 10, 20, 40`, giving 30 jobs.
 
 The campaign requires at least 20,000 optimizer steps **and** five hours of
 training per model. The best checkpoint is selected by discrete validation
-balanced accuracy. Final output additionally reports signal efficiency, BIB
-acceptance/rejection, ROC AUC, average precision, and BIB rejection at
-validation-derived 90%, 95%, and 99% signal-efficiency operating points.
+BIB rejection fraction at the ≥99% signal-efficiency operating point, with
+ROC AUC and balanced accuracy used only as tie-breakers. Final output
+additionally reports signal efficiency, BIB acceptance/rejection, ROC AUC,
+average precision, and BIB rejection at validation-derived 90%, 95%, and 99%
+signal-efficiency operating points.
 
 The reported `logic_node_proxy` is an architecture count, not a synthesized
 LUT+FF result.
@@ -66,11 +76,13 @@ bash maiaStudies/submit_pilot.sh
 ```
 
 The one-time projected cache defaults to
-`$MAIA_DATA_ROOT/derived/maia_lnn_spatial_v2`. This is deliberately distinct
-from the invalid v1 cache. A completed v2 cache is detected and safely
-reused. Override `MAIA_CACHE_ROOT` or `MAIA_RESULT_ROOT` before submission if
-needed. The timing selection defaults to `adjusted_hit_time`. To study one of
-the smeared timing definitions instead, set `MAIA_TIMING_COLUMN` and use a
+`$MAIA_DATA_ROOT/derived/maia_lnn_yprofile_timing8_v3`. This is deliberately
+distinct from the prior MAIA-native 37/276-input cache, which is valid for a
+different study but incompatible with these models. A completed v3 cache is
+safely reused. Override `MAIA_CACHE_ROOT` or `MAIA_RESULT_ROOT` before
+submission if needed. The timing selection defaults to `adjusted_hit_time`.
+To study one of the smeared timing definitions instead, set
+`MAIA_TIMING_COLUMN` and use a
 distinct `MAIA_CACHE_ROOT` before launching.
 
 The pilot prepares and audits the cache, then trains/evaluates one middle-size
@@ -111,7 +123,7 @@ Expected final products:
 The complete plot package can be regenerated at any time, without retraining:
 
 ```bash
-ROOT="$PWD/results/SLURM/2026_10_13_maia_signal_vs_bib_corrected_inputs_5h_20k"
+ROOT="$PWD/results/SLURM/2026_10_21_maia_signal_vs_bib_canonical_inputs_5h_20k"
 bash maiaStudies/plot_summary.sh "$ROOT"
 ```
 

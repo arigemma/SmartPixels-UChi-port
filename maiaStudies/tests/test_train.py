@@ -13,6 +13,7 @@ from maiaStudies.checkpointing import (
 from maiaStudies.train import (
     _append_validation_history,
     _snapshot_to_cpu,
+    checkpoint_rank,
     validation_metrics,
 )
 
@@ -98,6 +99,24 @@ class TrainTest(unittest.TestCase):
         self.assertTrue(model.training)
         self.assertEqual(discrete["balanced_accuracy"], 1.0)
         self.assertEqual(relaxed["balanced_accuracy"], 0.0)
+        self.assertEqual(
+            discrete["bib_rejection_fraction_at_99pct_signal_op"], 1.0
+        )
+
+    def test_checkpoint_rank_prioritizes_rejection_at_99pct_signal(self):
+        high_balanced = {
+            "bib_rejection_fraction_at_99pct_signal_op": 0.7,
+            "roc_auc": 0.99,
+            "balanced_accuracy": 0.99,
+        }
+        high_tail_rejection = {
+            "bib_rejection_fraction_at_99pct_signal_op": 0.8,
+            "roc_auc": 0.90,
+            "balanced_accuracy": 0.90,
+        }
+        self.assertGreater(
+            checkpoint_rank(high_tail_rejection), checkpoint_rank(high_balanced)
+        )
 
 
 if __name__ == "__main__":

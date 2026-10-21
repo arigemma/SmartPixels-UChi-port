@@ -7,8 +7,8 @@ than any truth column:
 * ``bib_mp`` and ``bib_mm`` -> 0 (beam-induced background)
 
 Truth timing is retained only as evaluation metadata. The only label-table
-columns used as model inputs are detector-position coordinates. They are not
-class labels and are part of the deployed MAIA feature definition.
+column used as a model input is ``y-local`` (the established ``y0`` feature).
+It is not a class label.
 """
 
 from __future__ import annotations
@@ -26,23 +26,23 @@ import torch
 from torch.utils.data import Dataset, Subset
 
 from .campaign import (
-    N_CONV_CLUSTER_FEATURES,
     N_CONV_INPUT_FEATURES,
     N_DENSE_INPUT_FEATURES,
+    LAST_FRAME,
+    N_SLICES,
+    N_TIME,
     N_X,
     N_Y,
 )
 
 
-CACHE_VERSION = 2
-INPUT_SCHEMA = "maia_model2_model3_spatial_v2"
+CACHE_VERSION = 3
+INPUT_SCHEMA = "maia_model2_yprofile_model3_yprofile_timing8_v3"
 SOURCES = ("signal", "bib_mp", "bib_mm")
 SOURCE_LABEL = {"signal": 1, "bib_mp": 0, "bib_mm": 0}
-N_TIME = 20
 N_RECON_COLUMNS = N_TIME * N_Y * N_X
 DEFAULT_TIMING_COLUMN = "adjusted_hit_time"
-POSITION_COLUMNS = ("z-global", "y-local")
-MODULE_LENGTH_MM = 13.0
+Y0_COLUMN = "y-local"
 
 
 def _atomic_json(path: Path, payload: dict) -> None:
@@ -105,42 +105,30 @@ def _symmetric_log(values: np.ndarray) -> np.ndarray:
     return np.sign(values) * np.log1p(np.abs(values))
 
 
-def _position_features(z_global: np.ndarray, y_local: np.ndarray) -> np.ndarray:
-    """Split global z into the coarse module and within-module coordinates.
-
-    Modules are contiguous and 13 mm long. A signed module index avoids any
-    assumption about the total barrel length; an additive change in module
-    numbering would not change its ordered-threshold representation.
-    """
-    module = np.floor(z_global / MODULE_LENGTH_MM).astype(np.float32)
-    x_local = z_global - (module + 0.5) * MODULE_LENGTH_MM
-    return np.stack((module, x_local, y_local), axis=1).astype(np.float32)
-
-
 def _build_model_inputs(
-    pixels: np.ndarray, positions: np.ndarray
+    pixels: np.ndarray, y0: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Construct the exact Model-2 and Model-3 input vectors for one batch."""
+    """Construct the canonical Model-2 and Model-3 vectors for one batch.
+
+    This matches ``dataloader.get_transform`` on the original SmartPixels
+    branch: symmetric-log each pixel, average over x, use the final frame for
+    Model 2, and use time slices 0--7 transposed to (y,time) for Model 3.
+    """
     if pixels.ndim != 4 or tuple(pixels.shape[1:]) != (N_TIME, N_Y, N_X):
         raise ValueError(f"Expected pixels shaped (batch,{N_TIME},{N_Y},{N_X})")
-    if positions.shape != (len(pixels), 3):
-        raise ValueError(f"Expected positions shaped (batch,3), got {positions.shape}")
-    cluster = pixels.sum(axis=1, dtype=np.float32)
-    x_profile = cluster.sum(axis=1, dtype=np.float32)
-    y_profile = cluster.sum(axis=2, dtype=np.float32)
+    y0 = np.asarray(y0, dtype=np.float32)
+    if y0.shape != (len(pixels),):
+        raise ValueError(f"Expected y0 shaped (batch,), got {y0.shape}")
+
+    transformed = _symmetric_log(pixels)
+    y_profile = transformed.mean(axis=-1, dtype=np.float32)  # (B,20,13)
     dense = np.concatenate(
-        (
-            _symmetric_log(x_profile),
-            _symmetric_log(y_profile),
-            positions,
-        ),
+        (y0[:, None], y_profile[:, LAST_FRAME, :]),
         axis=1,
     ).astype(np.float32)
+    timing_profile = y_profile[:, :N_SLICES, :].transpose(0, 2, 1)
     conv = np.concatenate(
-        (
-            _symmetric_log(cluster).reshape(len(pixels), N_CONV_CLUSTER_FEATURES),
-            positions,
-        ),
+        (y0[:, None], timing_profile.reshape(len(pixels), -1)),
         axis=1,
     ).astype(np.float32)
     return dense, conv
@@ -183,13 +171,11 @@ def _prepare_source(
     )
     label_values = _read_label_columns(
         labels_path,
-        (timing_column, *POSITION_COLUMNS),
+        (timing_column, Y0_COLUMN),
         n_rows,
     )
     timing[:] = label_values[timing_column]
-    positions = _position_features(
-        label_values["z-global"], label_values["y-local"]
-    )
+    y0 = label_values[Y0_COLUMN]
 
     offset = 0
     for batch_number, batch in enumerate(recon.iter_batches(batch_size=batch_size), 1):
@@ -201,11 +187,8 @@ def _prepare_source(
         count = len(array)
         pixels = array.reshape(count, N_TIME, N_Y, N_X)
 
-        # The released recon3D representation is time resolved, while the MAIA
-        # Model-2/Model-3 definitions use the total spatial charge cluster.
-        # Model 2 keeps BOTH spatial projections; Model 3 keeps the full image.
         batch_dense, batch_conv = _build_model_inputs(
-            pixels, positions[offset : offset + count]
+            pixels, y0[offset : offset + count]
         )
         dense[offset : offset + count] = batch_dense
         conv[offset : offset + count] = batch_conv
@@ -330,42 +313,16 @@ def _derive_thresholds(
     dense = _threshold_sample(cache_dir, "dense", maximum_rows, seed)
     dense_thresholds = np.quantile(dense, probabilities, axis=0).T.astype(np.float32)
     conv = _threshold_sample(cache_dir, "conv", maximum_rows, seed + 1)
-    conv_pixels = conv[:, :N_CONV_CLUSTER_FEATURES]
-    conv_positions = conv[:, N_CONV_CLUSTER_FEATURES:]
-    positive_pixels = conv_pixels[conv_pixels > 0]
-    if len(positive_pixels) < n_thresholds:
-        raise RuntimeError(
-            "Not enough positive charge values to derive convolutional thresholds"
-        )
-    conv_pixel_thresholds = np.quantile(
-        positive_pixels, probabilities
-    ).astype(np.float32)[None, :]
-    position_thresholds = np.quantile(
-        conv_positions, probabilities, axis=0
-    ).T.astype(np.float32)
+    conv_thresholds = np.quantile(conv, probabilities, axis=0).T.astype(np.float32)
     np.save(cache_dir / "dense_thresholds.npy", dense_thresholds, allow_pickle=False)
-    np.save(
-        cache_dir / "conv_pixel_thresholds.npy",
-        conv_pixel_thresholds,
-        allow_pickle=False,
-    )
-    np.save(
-        cache_dir / "position_thresholds.npy",
-        position_thresholds,
-        allow_pickle=False,
-    )
+    np.save(cache_dir / "conv_thresholds.npy", conv_thresholds, allow_pickle=False)
     return {
         "method": "training-only empirical quantiles",
         "sample_rows": min(maximum_rows, len(dense)),
         "thresholds_per_feature": n_thresholds,
         "dense_shape": list(dense_thresholds.shape),
-        "conv_pixel_shape": list(conv_pixel_thresholds.shape),
-        "position_shape": list(position_thresholds.shape),
-        "conv_threshold_sharing": (
-            "one positive-charge quantile threshold set shared over the 13x21 "
-            "charge cluster (zero charge maps to all-zero thermometer bits); "
-            "per-feature thresholds for n_module, x_local, and y_local"
-        ),
+        "conv_shape": list(conv_thresholds.shape),
+        "threshold_layout": "one ordered quantile set per deployed input feature",
     }
 
 
@@ -434,23 +391,18 @@ def prepare_cache(
         },
         "inputs": {
             "dense": (
-                "time-integrated 21-bin x profile, 13-bin y profile, n_module, "
-                "x_local, and y_local (37 features)"
+                "y-local followed by the 13-bin x-averaged y profile from "
+                "time slice 19 (14 features)"
             ),
             "conv": (
-                "time-integrated full 13x21 spatial charge cluster followed by "
-                "n_module, x_local, and y_local (276 values; position is a "
-                "post-convolution branch)"
+                "y-local followed by the x-averaged 13x8 y/time profile from "
+                "time slices 0--7, flattened in (y,time) order (105 features)"
             ),
-            "position_features": ["n_module derived from z-global", "x_local derived from z-global", "y-local"],
+            "position_features": ["y-local (y0)"],
             "class_truth_features_used": [],
-            "timing_used_as_input": False,
-            "charge_transform": "integrate time, then sign(x)*log1p(abs(x))",
-            "position_derivation": {
-                "module_length_mm": MODULE_LENGTH_MM,
-                "module_index": "floor(z-global / 13 mm), signed",
-                "x_local": "z-global - (n_module + 0.5) * 13 mm",
-            },
+            "truth_timing_column_used_as_input": False,
+            "charge_time_slices_used": {"dense": [LAST_FRAME], "conv": list(range(N_SLICES))},
+            "charge_transform": "sign(x)*log1p(abs(x)) per pixel, then mean over x",
         },
         "timing_column": timing_column,
         "sources": sources,
@@ -540,10 +492,7 @@ def load_thresholds(cache_dir: str | Path, family: str) -> dict[str, torch.Tenso
     if family == "dense":
         names = {"dense": "dense_thresholds.npy"}
     elif family == "conv":
-        names = {
-            "cluster": "conv_pixel_thresholds.npy",
-            "position": "position_thresholds.npy",
-        }
+        names = {"conv": "conv_thresholds.npy"}
     else:
         raise ValueError(f"Unknown family {family!r}")
     return {

@@ -78,17 +78,14 @@ def audit_cache(
         source_rows[source] = len(dense)
 
     dense_thresholds = np.load(cache_dir / "dense_thresholds.npy")
-    pixel_thresholds = np.load(cache_dir / "conv_pixel_thresholds.npy")
-    position_thresholds = np.load(cache_dir / "position_thresholds.npy")
+    conv_thresholds = np.load(cache_dir / "conv_thresholds.npy")
     expected_shapes = {
         "dense": (N_DENSE_INPUT_FEATURES, N_THRESHOLDS),
-        "conv_pixel": (1, N_THRESHOLDS),
-        "position": (3, N_THRESHOLDS),
+        "conv": (N_CONV_INPUT_FEATURES, N_THRESHOLDS),
     }
     observed_shapes = {
         "dense": tuple(dense_thresholds.shape),
-        "conv_pixel": tuple(pixel_thresholds.shape),
-        "position": tuple(position_thresholds.shape),
+        "conv": tuple(conv_thresholds.shape),
     }
     if observed_shapes != expected_shapes:
         raise RuntimeError(
@@ -96,8 +93,7 @@ def audit_cache(
         )
     for name, values in (
         ("dense", dense_thresholds),
-        ("conv_pixel", pixel_thresholds),
-        ("position", position_thresholds),
+        ("conv", conv_thresholds),
     ):
         if not np.isfinite(values).all() or np.any(np.diff(values, axis=1) < 0):
             raise RuntimeError(f"{name}: thresholds are non-finite or unordered")

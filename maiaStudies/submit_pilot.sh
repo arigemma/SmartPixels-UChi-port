@@ -10,8 +10,8 @@ if [[ "$(git branch --show-current)" != "maia-studies" ]]; then
 fi
 
 export MAIA_DATA_ROOT="${MAIA_DATA_ROOT:-/scratch/gpfs/IOJALVO/mb7126/SmartPixels/22016562}"
-export MAIA_CACHE_ROOT="${MAIA_CACHE_ROOT:-$MAIA_DATA_ROOT/derived/maia_lnn_spatial_v2}"
-export MAIA_RESULT_ROOT="${MAIA_PILOT_ROOT:-$PWD/results/SLURM/2026_10_13_maia_signal_vs_bib_corrected_inputs_pilot_v3}"
+export MAIA_CACHE_ROOT="${MAIA_CACHE_ROOT:-$MAIA_DATA_ROOT/derived/maia_lnn_yprofile_timing8_v3}"
+export MAIA_RESULT_ROOT="${MAIA_PILOT_ROOT:-$PWD/results/SLURM/2026_10_21_maia_signal_vs_bib_canonical_inputs_pilot_v1}"
 export MAIA_TIMING_COLUMN="${MAIA_TIMING_COLUMN:-adjusted_hit_time}"
 
 mkdir -p logs "$MAIA_RESULT_ROOT"
@@ -49,7 +49,7 @@ cache_root=$MAIA_CACHE_ROOT
 result_root=$MAIA_RESULT_ROOT
 EOF
 
-echo "Preparation: $PREPARE_JOB (fresh corrected-input v2 cache)"
+echo "Preparation: $PREPARE_JOB (canonical 14/105-input v3 cache)"
 echo "Pilot train: $TRAIN_JOB (dense_s03_tau20 and conv_s03_tau20)"
 echo "Pilot eval:  $EVAL_JOB (100k validation + 100k test examples)"
 echo "Pilot gate:  $GATE_JOB (must exceed chance before full submission)"

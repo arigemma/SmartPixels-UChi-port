@@ -1,10 +1,10 @@
-"""Canonical MAIA LNN architecture and GroupSum-temperature sweeps.
+"""Canonical SmartPixels Model-2/Model-3 sweeps for the MAIA binary task.
 
-The input schemas follow the MAIA dataset paper rather than the older CMS
-SmartPixels profile convention:
+The detector task changes from signed-pT classification to signal-versus-BIB,
+but the deployed model inputs remain the established SmartPixels schemas:
 
-* Model 2: 21-bin x profile, 13-bin y profile, and three position features;
-* Model 3: 13x21 spatial charge cluster and the same three position features.
+* Model 2: y-local plus the 13-bin y profile from the final time slice;
+* Model 3: y-local plus the 13x8 time-resolved y profile from slices 0--7.
 """
 
 from __future__ import annotations
@@ -19,11 +19,14 @@ Family = Literal["dense", "conv"]
 
 N_Y = 13
 N_X = 21
-N_POSITION_FEATURES = 3
-N_DENSE_PROFILE_FEATURES = N_X + N_Y
-N_DENSE_INPUT_FEATURES = N_DENSE_PROFILE_FEATURES + N_POSITION_FEATURES
-N_CONV_CLUSTER_FEATURES = N_Y * N_X
-N_CONV_INPUT_FEATURES = N_CONV_CLUSTER_FEATURES + N_POSITION_FEATURES
+N_TIME = 20
+LAST_FRAME = N_TIME - 1
+N_SLICES = 8
+N_POSITION_FEATURES = 1
+N_DENSE_PROFILE_FEATURES = N_Y
+N_DENSE_INPUT_FEATURES = N_POSITION_FEATURES + N_DENSE_PROFILE_FEATURES
+N_CONV_PROFILE_FEATURES = N_Y * N_SLICES
+N_CONV_INPUT_FEATURES = N_POSITION_FEATURES + N_CONV_PROFILE_FEATURES
 
 
 @dataclass(frozen=True)
@@ -76,11 +79,11 @@ class MaiaConfig:
         else:
             if len(self.conv_kernels) != 4 or self.tree_depth < 1:
                 raise ValueError(f"{self.alias}: invalid convolutional configuration")
-            # Four padded convolutions with one 2x2 pool and a stride-2 final
-            # convolution map (13,21) -> (6,10) -> (3,5). Position features
-            # are thermometer encoded and concatenated after convolution.
+            # Canonical Model 3: four padded convolutions, one 2x2 pool, and a
+            # stride-2 final convolution: (13,8) -> (6,4) -> (3,2). The 100
+            # thermometer bits for y-local bypass the convolutional trunk.
             previous = (
-                self.conv_kernels[-1] * 3 * 5
+                self.conv_kernels[-1] * 3 * 2
                 + N_POSITION_FEATURES * self.thresholds_per_feature
             )
         for width in self.dense_widths:
@@ -101,25 +104,24 @@ class MaiaConfig:
         return result
 
 
-# Five increasing stems in each family. Every transition obeys the fixed
-# rank-2 connection coverage constraint: 2*out_dim >= in_dim. These widths are
-# intentionally larger than the v1 campaign because Model 2 now has the
-# correct 37-feature input (3,700 thermometer bits), and Model 3 appends 300
-# position bits after its convolutional trunk.
+# First five points of the established compact Model-2 left extension and
+# Model-3 frontier sweeps. The final widths of odd-width three-class Model-2
+# points are increased by one so the binary GroupSum receives equal groups.
+# Every transition obeys 2*out_dim >= in_dim.
 _DENSE_SIZES = (
-    ("s01", (1900, 1900, 1900)),
-    ("s02", (2600, 2600, 2600)),
-    ("s03", (3600, 3600, 3600)),
-    ("s04", (5000, 5000, 5000)),
-    ("s05", (7000, 7000, 7000)),
+    ("s01", (1269, 1269, 1270)),
+    ("s02", (1617, 1617, 1618)),
+    ("s03", (1914, 1914, 1914)),
+    ("s04", (2175, 2175, 2176)),
+    ("s05", (2412, 2412, 2412)),
 )
 
 _CONV_SIZES = (
-    ("s01", (16, 32, 64, 64), (640, 640, 320)),
-    ("s02", (24, 48, 96, 96), (896, 896, 448)),
-    ("s03", (32, 64, 128, 128), (1152, 1152, 576)),
-    ("s04", (48, 96, 192, 192), (1664, 1664, 832)),
-    ("s05", (64, 128, 256, 256), (2112, 2112, 1056)),
+    ("s01", (16, 32, 64, 60), (1200, 1200, 600, 300)),
+    ("s02", (24, 48, 96, 90), (1800, 1800, 900, 450)),
+    ("s03", (32, 64, 128, 120), (2400, 2400, 1200, 600)),
+    ("s04", (40, 80, 160, 150), (3000, 3000, 1500, 750)),
+    ("s05", (48, 96, 192, 180), (3600, 3600, 1800, 900)),
 )
 
 TAUS = (10.0, 20.0, 40.0)
