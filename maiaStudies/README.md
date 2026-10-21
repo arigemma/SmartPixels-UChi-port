@@ -87,6 +87,19 @@ ROOT="$PWD/results/SLURM/2026_10_21_maia_signal_vs_bib_canonical_inputs_5h_20k"
 bash maiaStudies/plot_summary.sh "$ROOT"
 ```
 
+The plotting wrapper auto-detects the earlier completed 37-input dense /
+276-input convolutional MAIA-native campaign from its model aliases and labels
+it accordingly. For an explicit replot of that campaign, use:
+
+```bash
+ROOT="$PWD/results/SLURM/2026_10_13_maia_signal_vs_bib_corrected_inputs_5h_20k"
+MAIA_CAMPAIGN=native_legacy bash maiaStudies/plot_summary.sh "$ROOT"
+```
+
+Canonical campaigns use `dense14_*` and `conv105_*` aliases. The summarizer
+checks the input-schema marker in every evaluation and refuses to combine or
+mislabel the two campaign definitions.
+
 Dense Model 2 is blue and convolutional Model 3 is orange in every figure.
 Marker shape and line style identify `tau=10`, `20`, and `40`. Exact model
 aliases are included as annotations and in the ranking figures. Set

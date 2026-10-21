@@ -12,6 +12,7 @@ import argparse
 import csv
 import json
 from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 
 import matplotlib
@@ -26,12 +27,12 @@ from .campaign import CAMPAIGNS, get_campaign_configs
 
 FAMILY_STYLE = {
     "dense": {
-        "label": "LNN Model 2 (14 inputs)",
+        "label": "Dense LNN (Model 2)",
         "short": "M2",
         "color": "#0072B2",
     },
     "conv": {
-        "label": "LNN Model 3 (105 inputs)",
+        "label": "Convolutional LNN (Model 3)",
         "short": "M3",
         "color": "#D55E00",
     },
@@ -46,6 +47,86 @@ TAU_LINESTYLES = {
 }
 TARGETS = (90, 95, 99)
 SUBSET_LABEL = {"full_test": "Full test", "timing_cut_test": "Timing cut"}
+CANONICAL_INPUT_SCHEMA = "maia_model2_yprofile_model3_yprofile_timing8_v3"
+LEGACY_NATIVE_INPUT_SCHEMA = "maia_model2_model3_spatial_v2"
+
+
+@dataclass(frozen=True)
+class _LegacyNativeConfig:
+    """Plot-only description of the completed 37/276-input campaign."""
+
+    task_index: int
+    alias: str
+    family: str
+    size: str
+    tau: float
+    thresholds_per_feature: int
+    raw_input_features: int
+    dense_widths: tuple[int, ...]
+    conv_kernels: tuple[int, ...] = ()
+
+    @property
+    def final_logic_width(self) -> int:
+        return self.dense_widths[-1]
+
+    @property
+    def group_width_per_class(self) -> int:
+        return self.final_logic_width // 2
+
+
+def _legacy_native_configs() -> tuple[_LegacyNativeConfig, ...]:
+    dense_sizes = (
+        ("s01", (1900, 1900, 1900)),
+        ("s02", (2600, 2600, 2600)),
+        ("s03", (3600, 3600, 3600)),
+        ("s04", (5000, 5000, 5000)),
+        ("s05", (7000, 7000, 7000)),
+    )
+    conv_sizes = (
+        ("s01", (16, 32, 64, 64), (640, 640, 320)),
+        ("s02", (24, 48, 96, 96), (896, 896, 448)),
+        ("s03", (32, 64, 128, 128), (1152, 1152, 576)),
+        ("s04", (48, 96, 192, 192), (1664, 1664, 832)),
+        ("s05", (64, 128, 256, 256), (2112, 2112, 1056)),
+    )
+    rows = []
+    for size, widths in dense_sizes:
+        for tau in (10.0, 20.0, 40.0):
+            rows.append(
+                _LegacyNativeConfig(
+                    len(rows), f"dense_{size}_tau{int(tau)}", "dense", size,
+                    tau, 100, 37, widths,
+                )
+            )
+    for size, kernels, widths in conv_sizes:
+        for tau in (10.0, 20.0, 40.0):
+            rows.append(
+                _LegacyNativeConfig(
+                    len(rows), f"conv_{size}_tau{int(tau)}", "conv", size,
+                    tau, 100, 276, widths, kernels,
+                )
+            )
+    return tuple(rows)
+
+
+def _summary_configs(campaign: str):
+    if campaign == "native_legacy":
+        return _legacy_native_configs()
+    return get_campaign_configs(campaign)
+
+
+def _family_label(family: str, input_schema: str | None) -> str:
+    if input_schema == LEGACY_NATIVE_INPUT_SCHEMA:
+        return (
+            "MAIA-native dense LNN (37 inputs)"
+            if family == "dense"
+            else "MAIA-native convolutional LNN (276 inputs)"
+        )
+    return (
+        "Canonical dense LNN (14 inputs)"
+        if family == "dense"
+        else "Canonical convolutional LNN (105 inputs)"
+    )
 
 
 def _configure_matplotlib(font_scale: float) -> None:
@@ -82,15 +163,13 @@ def _operating_point(metrics: dict, target: int) -> dict:
 def _flatten(config, result: dict, subset: str) -> dict:
     metrics = result[subset]
     argmax = metrics["argmax"]
+    family_label = _family_label(config.family, result.get("input_schema"))
     row = {
         "task_index": config.task_index,
         "alias": config.alias,
-        "display_name": (
-            f"{FAMILY_STYLE[config.family]['label']} {config.size}, "
-            f"tau={int(config.tau)}"
-        ),
+        "display_name": f"{family_label} {config.size}, tau={int(config.tau)}",
         "family": config.family,
-        "family_label": FAMILY_STYLE[config.family]["label"],
+        "family_label": family_label,
         "size": config.size,
         "tau": config.tau,
         "subset": subset,
@@ -800,7 +879,12 @@ def generate_summary(
     annotate: bool = True,
 ) -> dict:
     _configure_matplotlib(font_scale)
-    configs = get_campaign_configs(campaign)
+    configs = _summary_configs(campaign)
+    expected_schema = (
+        LEGACY_NATIVE_INPUT_SCHEMA
+        if campaign == "native_legacy"
+        else CANONICAL_INPUT_SCHEMA
+    )
     output_dir = output_dir or result_root / "summary_plots"
     rows: list[dict] = []
     missing: list[str] = []
@@ -811,6 +895,14 @@ def generate_summary(
             continue
         with path.open() as handle:
             result = json.load(handle)
+        actual_schema = result.get("input_schema")
+        if actual_schema != expected_schema:
+            raise ValueError(
+                f"Input-schema mismatch for {config.alias}: expected "
+                f"{expected_schema!r} for campaign {campaign!r}, found "
+                f"{actual_schema!r}. Select the matching campaign instead of "
+                "mixing model definitions in one summary."
+            )
         rows.append(_flatten(config, result, "full_test"))
         rows.append(_flatten(config, result, "timing_cut_test"))
     if missing and not allow_partial:
@@ -998,7 +1090,11 @@ def generate_summary(
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--result-root", type=Path, required=True)
-    parser.add_argument("--campaign", choices=tuple(CAMPAIGNS), default="main")
+    parser.add_argument(
+        "--campaign",
+        choices=tuple(CAMPAIGNS) + ("native_legacy",),
+        default="main",
+    )
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--formats", nargs="+", choices=("png", "pdf"), default=("png", "pdf"))
     parser.add_argument("--dpi", type=int, default=400)

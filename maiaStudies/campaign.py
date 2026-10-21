@@ -136,7 +136,7 @@ def _build_configs(taus: tuple[float, ...]) -> tuple[MaiaConfig, ...]:
             rows.append(
                 MaiaConfig(
                     task_index=len(rows),
-                    alias=f"dense_{size}_tau{int(tau)}",
+                    alias=f"dense14_{size}_tau{int(tau)}",
                     family="dense",
                     size=size,
                     tau=tau,
@@ -149,7 +149,7 @@ def _build_configs(taus: tuple[float, ...]) -> tuple[MaiaConfig, ...]:
             rows.append(
                 MaiaConfig(
                     task_index=len(rows),
-                    alias=f"conv_{size}_tau{int(tau)}",
+                    alias=f"conv105_{size}_tau{int(tau)}",
                     family="conv",
                     size=size,
                     tau=tau,

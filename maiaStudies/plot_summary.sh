@@ -5,7 +5,14 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 RESULT_ROOT="${1:-${MAIA_RESULT_ROOT:-$PWD/results/SLURM/2026_10_21_maia_signal_vs_bib_canonical_inputs_5h_20k}}"
-CAMPAIGN="${MAIA_CAMPAIGN:-main}"
+
+if [[ -n "${MAIA_CAMPAIGN:-}" ]]; then
+  CAMPAIGN="$MAIA_CAMPAIGN"
+elif [[ -s "$RESULT_ROOT/dense_s01_tau10/evaluation_complete.json" ]]; then
+  CAMPAIGN="native_legacy"
+else
+  CAMPAIGN="main"
+fi
 
 if [[ ! -d "$RESULT_ROOT" ]]; then
   echo "[ERROR] Campaign directory does not exist: $RESULT_ROOT" >&2
@@ -37,6 +44,7 @@ fi
 python -m maiaStudies.summarize "${ARGS[@]}"
 
 echo
+echo "Input campaign: $CAMPAIGN"
 echo "Main dashboard: $RESULT_ROOT/summary_plots/17_campaign_dashboard.png"
 echo "All figures:    $RESULT_ROOT/summary_plots"
 echo "All numbers:    $RESULT_ROOT/model_comparison_wide.tsv"

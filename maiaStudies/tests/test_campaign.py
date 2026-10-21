@@ -42,11 +42,11 @@ class CampaignTest(unittest.TestCase):
         )
         self.assertEqual(
             get_config(0, "tau_extension").alias,
-            "dense_s01_tau1",
+            "dense14_s01_tau1",
         )
         self.assertEqual(
             get_config(19, "tau_extension").alias,
-            "conv_s05_tau3",
+            "conv105_s05_tau3",
         )
         self.assertEqual(len({row.alias for row in ALL_CONFIGS}), 50)
         self.assertEqual([row.task_index for row in ALL_CONFIGS], list(range(50)))

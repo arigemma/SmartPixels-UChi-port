@@ -50,7 +50,7 @@ result_root=$MAIA_RESULT_ROOT
 EOF
 
 echo "Preparation: $PREPARE_JOB (canonical 14/105-input v3 cache)"
-echo "Pilot train: $TRAIN_JOB (dense_s03_tau20 and conv_s03_tau20)"
+echo "Pilot train: $TRAIN_JOB (dense14_s03_tau20 and conv105_s03_tau20)"
 echo "Pilot eval:  $EVAL_JOB (100k validation + 100k test examples)"
 echo "Pilot gate:  $GATE_JOB (must exceed chance before full submission)"
 echo "Pilot root:  $MAIA_RESULT_ROOT"

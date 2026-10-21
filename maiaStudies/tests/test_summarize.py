@@ -5,6 +5,7 @@ from maiaStudies.summarize import (
     _assert_campaign_learned,
     _best_rows,
     _flatten,
+    _legacy_native_configs,
     _wide_rows,
 )
 
@@ -54,6 +55,7 @@ class SummaryTest(unittest.TestCase):
     def test_flatten_and_wide_table_preserve_physics_metrics(self):
         config = CAMPAIGN_CONFIGS[0]
         result = {
+            "input_schema": "maia_model2_yprofile_model3_yprofile_timing8_v3",
             "checkpoint_step": 20_000,
             "trainable_parameters": 12_345,
             "logic_node_proxy": 1_950,
@@ -71,7 +73,9 @@ class SummaryTest(unittest.TestCase):
             _flatten(config, result, "full_test"),
             _flatten(config, result, "timing_cut_test"),
         ]
-        self.assertEqual(rows[0]["family_label"], "LNN Model 2 (14 inputs)")
+        self.assertEqual(
+            rows[0]["family_label"], "Canonical dense LNN (14 inputs)"
+        )
         self.assertEqual(rows[0]["trainable_parameters"], 12_345)
         self.assertEqual(rows[0]["bib_rejection_at_90pct_signal_op"], 20.0)
         self.assertAlmostEqual(
@@ -91,6 +95,7 @@ class SummaryTest(unittest.TestCase):
             (CAMPAIGN_CONFIGS[15], 0.80),
         ):
             result = {
+                "input_schema": "maia_model2_yprofile_model3_yprofile_timing8_v3",
                 "checkpoint_step": 20_000,
                 "trainable_parameters": 10_000 + config.task_index,
                 "logic_node_proxy": 1_000 + config.task_index,
@@ -140,6 +145,16 @@ class SummaryTest(unittest.TestCase):
                 for row in best
             )
         )
+
+    def test_legacy_native_plot_configs_cannot_collide_with_canonical_aliases(self):
+        configs = _legacy_native_configs()
+        self.assertEqual(len(configs), 30)
+        self.assertEqual(configs[0].alias, "dense_s01_tau10")
+        self.assertEqual(configs[0].raw_input_features, 37)
+        self.assertEqual(configs[15].alias, "conv_s01_tau10")
+        self.assertEqual(configs[15].raw_input_features, 276)
+        self.assertTrue(all(not row.alias.startswith("dense14_") for row in configs))
+        self.assertTrue(all(not row.alias.startswith("conv105_") for row in configs))
 
 
 if __name__ == "__main__":
