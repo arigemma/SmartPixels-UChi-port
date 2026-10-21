@@ -1,4 +1,4 @@
-"""Canonical 30-point MAIA LNN architecture and temperature sweep.
+"""Canonical MAIA LNN architecture and GroupSum-temperature sweeps.
 
 The input schemas follow the MAIA dataset paper rather than the older CMS
 SmartPixels profile convention:
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Literal
 
 
@@ -123,13 +123,14 @@ _CONV_SIZES = (
 )
 
 TAUS = (10.0, 20.0, 40.0)
+TAU_EXTENSION = (1.0, 3.0)
 N_THRESHOLDS = 100
 
 
-def _build_configs() -> tuple[MaiaConfig, ...]:
+def _build_configs(taus: tuple[float, ...]) -> tuple[MaiaConfig, ...]:
     rows: list[MaiaConfig] = []
     for size, widths in _DENSE_SIZES:
-        for tau in TAUS:
+        for tau in taus:
             rows.append(
                 MaiaConfig(
                     task_index=len(rows),
@@ -142,7 +143,7 @@ def _build_configs() -> tuple[MaiaConfig, ...]:
                 )
             )
     for size, kernels, widths in _CONV_SIZES:
-        for tau in TAUS:
+        for tau in taus:
             rows.append(
                 MaiaConfig(
                     task_index=len(rows),
@@ -158,44 +159,75 @@ def _build_configs() -> tuple[MaiaConfig, ...]:
             )
     for row in rows:
         row.validate()
-    if len(rows) != 30 or [row.task_index for row in rows] != list(range(30)):
-        raise AssertionError("The MAIA campaign must contain exactly 30 ordered tasks")
+    if [row.task_index for row in rows] != list(range(len(rows))):
+        raise AssertionError("MAIA campaign task indices must be contiguous")
     return tuple(rows)
 
 
-CAMPAIGN_CONFIGS = _build_configs()
+CAMPAIGN_CONFIGS = _build_configs(TAUS)
+TAU_EXTENSION_CONFIGS = _build_configs(TAU_EXTENSION)
+ALL_CONFIGS = tuple(
+    replace(row, task_index=index)
+    for index, row in enumerate(
+        sorted(
+            CAMPAIGN_CONFIGS + TAU_EXTENSION_CONFIGS,
+            key=lambda row: (0 if row.family == "dense" else 1, row.size, row.tau),
+        )
+    )
+)
+CAMPAIGNS = {
+    "main": CAMPAIGN_CONFIGS,
+    "tau_extension": TAU_EXTENSION_CONFIGS,
+    "all": ALL_CONFIGS,
+}
 CAMPAIGN_BY_ALIAS = {row.alias: row for row in CAMPAIGN_CONFIGS}
 
 
-def get_config(task_index: int) -> MaiaConfig:
-    if not 0 <= task_index < len(CAMPAIGN_CONFIGS):
-        raise ValueError(f"task index must be in [0, {len(CAMPAIGN_CONFIGS) - 1}]")
-    return CAMPAIGN_CONFIGS[task_index]
+def get_campaign_configs(campaign: str = "main") -> tuple[MaiaConfig, ...]:
+    try:
+        return CAMPAIGNS[campaign]
+    except KeyError as exc:
+        raise ValueError(
+            f"Unknown MAIA campaign {campaign!r}; choose from {sorted(CAMPAIGNS)}"
+        ) from exc
+
+
+def get_config(task_index: int, campaign: str = "main") -> MaiaConfig:
+    configs = get_campaign_configs(campaign)
+    if not 0 <= task_index < len(configs):
+        raise ValueError(f"task index must be in [0, {len(configs) - 1}]")
+    return configs[task_index]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--task-index", type=int)
+    parser.add_argument("--campaign", choices=tuple(CAMPAIGNS), default="main")
     parser.add_argument("--validate", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
     if args.task_index is not None:
-        row = get_config(args.task_index)
+        row = get_config(args.task_index, args.campaign)
         print(json.dumps(row.to_dict(), indent=2) if args.json else row.alias)
         return
 
-    for row in CAMPAIGN_CONFIGS:
+    configs = get_campaign_configs(args.campaign)
+    for row in configs:
         row.validate()
     if args.validate:
-        print("Validated 30 MAIA tasks: 5 dense + 5 conv architectures, 3 taus each.")
+        taus = sorted({row.tau for row in configs})
+        print(
+            f"Validated {len(configs)} MAIA tasks for {args.campaign}: "
+            f"taus={','.join(f'{tau:g}' for tau in taus)}."
+        )
         return
 
     print(
         "task\talias\tfamily\tsize\ttau\tthresholds\tconv_kernels\tdense_widths\t"
         "group_width"
     )
-    for row in CAMPAIGN_CONFIGS:
+    for row in configs:
         kernels = ",".join(map(str, row.conv_kernels)) or "-"
         widths = ",".join(map(str, row.dense_widths))
         print(

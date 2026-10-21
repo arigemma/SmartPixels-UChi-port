@@ -2,7 +2,12 @@ import unittest
 
 import numpy as np
 
-from maiaStudies.campaign import CAMPAIGN_CONFIGS
+from maiaStudies.campaign import (
+    ALL_CONFIGS,
+    CAMPAIGN_CONFIGS,
+    TAU_EXTENSION_CONFIGS,
+    get_config,
+)
 from maiaStudies.metrics import evaluate_binary_scores
 from maiaStudies.models import resource_proxies
 
@@ -18,6 +23,24 @@ class CampaignTest(unittest.TestCase):
             self.assertEqual(row.lut_rank, 2)
             self.assertEqual(row.final_logic_width % 2, 0)
             self.assertGreater(resource_proxies(row)["logic_node_proxy"], 0)
+
+    def test_tau_extension_reuses_every_architecture_at_tau_one_and_three(self):
+        self.assertEqual(len(TAU_EXTENSION_CONFIGS), 20)
+        self.assertEqual(len(ALL_CONFIGS), 50)
+        self.assertEqual(
+            {row.tau for row in TAU_EXTENSION_CONFIGS},
+            {1.0, 3.0},
+        )
+        self.assertEqual(
+            get_config(0, "tau_extension").alias,
+            "dense_s01_tau1",
+        )
+        self.assertEqual(
+            get_config(19, "tau_extension").alias,
+            "conv_s05_tau3",
+        )
+        self.assertEqual(len({row.alias for row in ALL_CONFIGS}), 50)
+        self.assertEqual([row.task_index for row in ALL_CONFIGS], list(range(50)))
 
     def test_physics_metrics(self):
         labels = np.array([0, 0, 0, 1, 1, 1])

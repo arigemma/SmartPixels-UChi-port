@@ -16,7 +16,8 @@ set -euo pipefail
 : "${MAIA_CACHE_ROOT:?MAIA_CACHE_ROOT is required}"
 : "${MAIA_RESULT_ROOT:?MAIA_RESULT_ROOT is required}"
 
-ALIAS="$(python -m maiaStudies.campaign --task-index "$SLURM_ARRAY_TASK_ID")"
+CAMPAIGN="${MAIA_CAMPAIGN:-main}"
+ALIAS="$(python -m maiaStudies.campaign --campaign "$CAMPAIGN" --task-index "$SLURM_ARRAY_TASK_ID")"
 OUTPUT="$MAIA_RESULT_ROOT/$ALIAS"
 mkdir -p logs "$OUTPUT"
 
@@ -32,16 +33,24 @@ else
   BATCH_SIZE="${MAIA_CONV_BATCH_SIZE:-128}"
 fi
 
-exec python -m maiaStudies.train \
-  --task-index "$SLURM_ARRAY_TASK_ID" \
-  --cache-dir "$MAIA_CACHE_ROOT" \
-  --output "$OUTPUT" \
-  --device cuda \
-  --batch-size "$BATCH_SIZE" \
-  --num-workers "${MAIA_NUM_WORKERS:-4}" \
-  --learning-rate "${MAIA_LEARNING_RATE:-0.01}" \
-  --minimum-steps "${MAIA_MINIMUM_STEPS:-20000}" \
-  --minimum-training-hours "${MAIA_MINIMUM_TRAINING_HOURS:-5.0}" \
-  --eval-frequency "${MAIA_EVAL_FREQUENCY:-5000}" \
-  --validation-examples "${MAIA_VALIDATION_EXAMPLES:-100000}" \
+ARGS=(
+  --campaign "$CAMPAIGN"
+  --task-index "$SLURM_ARRAY_TASK_ID"
+  --cache-dir "$MAIA_CACHE_ROOT"
+  --output "$OUTPUT"
+  --device cuda
+  --batch-size "$BATCH_SIZE"
+  --num-workers "${MAIA_NUM_WORKERS:-4}"
+  --learning-rate "${MAIA_LEARNING_RATE:-0.01}"
+  --minimum-steps "${MAIA_MINIMUM_STEPS:-20000}"
+  --minimum-training-hours "${MAIA_MINIMUM_TRAINING_HOURS:-5.0}"
+  --eval-frequency "${MAIA_EVAL_FREQUENCY:-5000}"
+  --validation-examples "${MAIA_VALIDATION_EXAMPLES:-100000}"
   --seed 42
+)
+
+if [[ "${MAIA_TRACK_RELAXED_VALIDATION:-0}" == "1" ]]; then
+  ARGS+=(--track-relaxed-validation)
+fi
+
+exec python -m maiaStudies.train "${ARGS[@]}"

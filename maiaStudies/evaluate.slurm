@@ -15,7 +15,8 @@ set -euo pipefail
 : "${MAIA_CACHE_ROOT:?MAIA_CACHE_ROOT is required}"
 : "${MAIA_RESULT_ROOT:?MAIA_RESULT_ROOT is required}"
 
-ALIAS="$(python -m maiaStudies.campaign --task-index "$SLURM_ARRAY_TASK_ID")"
+CAMPAIGN="${MAIA_CAMPAIGN:-main}"
+ALIAS="$(python -m maiaStudies.campaign --campaign "$CAMPAIGN" --task-index "$SLURM_ARRAY_TASK_ID")"
 MODEL_DIR="$MAIA_RESULT_ROOT/$ALIAS"
 mkdir -p logs
 
@@ -32,6 +33,7 @@ else
 fi
 
 exec python -m maiaStudies.evaluate \
+  --campaign "$CAMPAIGN" \
   --task-index "$SLURM_ARRAY_TASK_ID" \
   --cache-dir "$MAIA_CACHE_ROOT" \
   --model-dir "$MODEL_DIR" \

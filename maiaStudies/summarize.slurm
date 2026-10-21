@@ -11,3 +11,11 @@ set -euo pipefail
 
 : "${MAIA_RESULT_ROOT:?MAIA_RESULT_ROOT is required}"
 bash maiaStudies/plot_summary.sh "$MAIA_RESULT_ROOT"
+
+if [[ "${MAIA_CAMPAIGN:-main}" == "all" ]]; then
+  python -m maiaStudies.training_dynamics \
+    --result-root "$MAIA_RESULT_ROOT" \
+    --output-dir "$MAIA_RESULT_ROOT/summary_plots" \
+    --formats png pdf \
+    --dpi "${MAIA_PLOT_DPI:-600}"
+fi

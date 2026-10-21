@@ -76,6 +76,7 @@ def _write_roc(path: Path, rows: list[dict]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--task-index", type=int, required=True)
+    parser.add_argument("--campaign", default="main")
     parser.add_argument("--cache-dir", type=Path, required=True)
     parser.add_argument("--model-dir", type=Path, required=True)
     parser.add_argument("--device", default="cuda")
@@ -88,7 +89,7 @@ def main() -> None:
     parser.add_argument("--subset-seed", type=int, default=314159)
     args = parser.parse_args()
 
-    config = get_config(args.task_index)
+    config = get_config(args.task_index, args.campaign)
     completion = args.model_dir / "training_complete.json"
     checkpoint_path = args.model_dir / "best_model.pth"
     if not completion.is_file() or not checkpoint_path.is_file():

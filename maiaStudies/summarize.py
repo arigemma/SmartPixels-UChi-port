@@ -21,15 +21,21 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
 
-from .campaign import CAMPAIGN_CONFIGS
+from .campaign import CAMPAIGNS, get_campaign_configs
 
 
 FAMILY_STYLE = {
     "dense": {"label": "Model 2 (dense)", "short": "M2", "color": "#0072B2"},
     "conv": {"label": "Model 3 (convolutional)", "short": "M3", "color": "#D55E00"},
 }
-TAU_MARKERS = {10.0: "o", 20.0: "s", 40.0: "^"}
-TAU_LINESTYLES = {10.0: "-", 20.0: "--", 40.0: ":"}
+TAU_MARKERS = {1.0: "D", 3.0: "P", 10.0: "o", 20.0: "s", 40.0: "^"}
+TAU_LINESTYLES = {
+    1.0: (0, (1, 1)),
+    3.0: (0, (3, 1, 1, 1)),
+    10.0: "-",
+    20.0: "--",
+    40.0: ":",
+}
 TARGETS = (90, 95, 99)
 SUBSET_LABEL = {"full_test": "Full test", "timing_cut_test": "Timing cut"}
 
@@ -204,7 +210,9 @@ def _save_figure(
     return written
 
 
-def _add_style_legends(axis: plt.Axes, *, location: str = "best") -> None:
+def _add_style_legends(
+    axis: plt.Axes, taus: list[float], *, location: str = "best"
+) -> None:
     family_handles = [
         Line2D(
             [0], [0], marker="o", linestyle="none", markersize=8,
@@ -218,7 +226,7 @@ def _add_style_legends(axis: plt.Axes, *, location: str = "best") -> None:
             [0], [0], marker=TAU_MARKERS[tau], color="#333333", linestyle="none",
             markersize=8, label=f"τ={int(tau)}",
         )
-        for tau in sorted(TAU_MARKERS)
+        for tau in sorted(taus)
     ]
     first = axis.legend(handles=family_handles, loc=location, title="Architecture")
     axis.add_artist(first)
@@ -260,9 +268,10 @@ def _family_tau_scatter(
         and row.get(x_key) is not None
         and row.get(y_key) is not None
     ]
+    observed_taus = sorted({float(row["tau"]) for row in selected})
     figure, axis = plt.subplots(figsize=(10.8, 7.0))
     for family, style in FAMILY_STYLE.items():
-        for tau in sorted(TAU_MARKERS):
+        for tau in observed_taus:
             points = sorted(
                 (
                     row
@@ -303,7 +312,7 @@ def _family_tau_scatter(
     axis.set_ylabel(y_label)
     axis.set_title(title)
     axis.grid(True, which="both", alpha=0.22)
-    _add_style_legends(axis, location="best")
+    _add_style_legends(axis, observed_taus, location="best")
     figure.tight_layout()
     return figure
 
@@ -361,7 +370,8 @@ def _comparison_plot(
     axis.set_ylabel(f"After timing cut: {label}")
     axis.set_title(title)
     axis.grid(True, which="both", alpha=0.22)
-    _add_style_legends(axis)
+    observed_taus = sorted({float(row["tau"]) for row, _, _ in pairs})
+    _add_style_legends(axis, observed_taus)
     figure.tight_layout()
     return figure
 
@@ -454,6 +464,7 @@ def _heatmap(rows: list[dict], metric: str, label: str, title: str) -> plt.Figur
 
 def _operating_points_plot(rows: list[dict]) -> plt.Figure:
     full = [row for row in rows if row["subset"] == "full_test"]
+    observed_taus = sorted({float(row["tau"]) for row in full})
     figure, axis = plt.subplots(figsize=(10.5, 7.0))
     for row in full:
         style = FAMILY_STYLE[row["family"]]
@@ -488,7 +499,7 @@ def _operating_points_plot(rows: list[dict]) -> plt.Figure:
     axis.set_yscale("log")
     axis.set_title("Validation-derived 90%, 95%, and 99% signal-efficiency operating points")
     axis.grid(True, which="both", alpha=0.22)
-    _add_style_legends(axis)
+    _add_style_legends(axis, observed_taus)
     figure.tight_layout()
     return figure
 
@@ -561,6 +572,7 @@ def _read_roc(path: Path) -> list[dict[str, float]]:
 
 def _all_roc_plot(result_root: Path, rows: list[dict], timing_cut: bool) -> plt.Figure:
     selected = [row for row in rows if row["subset"] == "full_test"]
+    observed_taus = sorted({float(row["tau"]) for row in selected})
     figure, axis = plt.subplots(figsize=(10.5, 7.2))
     filename = "roc_timing_cut.csv" if timing_cut else "roc_full.csv"
     for row in selected:
@@ -584,7 +596,7 @@ def _all_roc_plot(result_root: Path, rows: list[dict], timing_cut: bool) -> plt.
         "All model rejection curves — " + ("after timing cut" if timing_cut else "full test")
     )
     axis.grid(True, which="both", alpha=0.22)
-    _add_style_legends(axis)
+    _add_style_legends(axis, observed_taus)
     figure.tight_layout()
     return figure
 
@@ -651,9 +663,10 @@ def _dashboard(rows: list[dict]) -> plt.Figure:
         Line2D([0], [0], marker="o", linestyle="none", color=style["color"], label=style["label"])
         for style in FAMILY_STYLE.values()
     ]
+    observed_taus = sorted({float(row["tau"]) for row in rows})
     tau_handles = [
         Line2D([0], [0], marker=marker, linestyle="none", color="#333333", label=f"τ={int(tau)}")
-        for tau, marker in TAU_MARKERS.items()
+        for tau, marker in ((tau, TAU_MARKERS[tau]) for tau in observed_taus)
     ]
     figure.suptitle("MAIA LNN campaign overview", y=0.995)
     figure.legend(
@@ -696,12 +709,18 @@ def _best_rows(rows: list[dict]) -> list[dict]:
     return output
 
 
-def _write_report(result_root: Path, rows: list[dict], missing: list[str], products: list[str]) -> Path:
+def _write_report(
+    result_root: Path,
+    rows: list[dict],
+    missing: list[str],
+    products: list[str],
+    expected_models: int,
+) -> Path:
     full = [row for row in rows if row["subset"] == "full_test"]
     lines = [
         "# MAIA LNN campaign summary",
         "",
-        f"Models summarized: **{len(full)} / {len(CAMPAIGN_CONFIGS)}**.",
+        f"Models summarized: **{len(full)} / {expected_models}**.",
         "",
         "Dense Model 2 is blue; convolutional Model 3 is orange. Marker shape encodes tau.",
         "All fixed-efficiency score thresholds are derived on validation data and applied unchanged to test data.",
@@ -750,6 +769,7 @@ def _write_report(result_root: Path, rows: list[dict], missing: list[str], produ
 def generate_summary(
     result_root: Path,
     *,
+    campaign: str = "main",
     output_dir: Path | None = None,
     formats: tuple[str, ...] = ("png", "pdf"),
     dpi: int = 400,
@@ -759,10 +779,11 @@ def generate_summary(
     annotate: bool = True,
 ) -> dict:
     _configure_matplotlib(font_scale)
+    configs = get_campaign_configs(campaign)
     output_dir = output_dir or result_root / "summary_plots"
     rows: list[dict] = []
     missing: list[str] = []
-    for config in CAMPAIGN_CONFIGS:
+    for config in configs:
         path = result_root / config.alias / "evaluation_complete.json"
         if not path.is_file():
             missing.append(str(path))
@@ -773,7 +794,7 @@ def generate_summary(
         rows.append(_flatten(config, result, "timing_cut_test"))
     if missing and not allow_partial:
         raise FileNotFoundError(
-            f"Missing {len(missing)} of {len(CAMPAIGN_CONFIGS)} evaluations:\n"
+            f"Missing {len(missing)} of {len(configs)} evaluations:\n"
             + "\n".join(missing)
         )
     if not rows:
@@ -902,10 +923,13 @@ def generate_summary(
             _dashboard(rows), result_root, "maia_lnn_screening", formats, dpi
         )
     )
-    report_path = _write_report(result_root, rows, missing, products)
+    report_path = _write_report(
+        result_root, rows, missing, products, expected_models=len(configs)
+    )
     manifest = {
         "models_found": len(wide),
-        "models_expected": len(CAMPAIGN_CONFIGS),
+        "campaign": campaign,
+        "models_expected": len(configs),
         "summary_rows": len(rows),
         "missing_evaluations": missing,
         "output_directory": str(output_dir),
@@ -940,6 +964,7 @@ def generate_summary(
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--result-root", type=Path, required=True)
+    parser.add_argument("--campaign", choices=tuple(CAMPAIGNS), default="main")
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--formats", nargs="+", choices=("png", "pdf"), default=("png", "pdf"))
     parser.add_argument("--dpi", type=int, default=400)
@@ -950,6 +975,7 @@ def main() -> None:
     args = parser.parse_args()
     manifest = generate_summary(
         args.result_root,
+        campaign=args.campaign,
         output_dir=args.output_dir,
         formats=tuple(args.formats),
         dpi=args.dpi,

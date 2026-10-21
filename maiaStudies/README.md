@@ -122,3 +122,31 @@ The final package contains:
 The reported parameter count is the exact trainable PyTorch parameter count.
 The logic-node count remains an architectural proxy and must not be described
 as synthesized LUT+FF utilization.
+
+## Tau=1,3 and relaxed/discrete extension
+
+The original 30 plotted test results are all discrete circuit evaluations.
+Training uses TorchLogix's relaxed soft mixture of truth tables, but the old
+campaign retained only discrete validation metrics, so its relaxed trajectory
+cannot be reconstructed after the fact. To test whether the uniform ordering
+`tau=10 > tau=20 > tau=40` is caused by GroupSum optimization rather than
+model capacity, run the extension after all 30 original evaluations exist:
+
+```bash
+bash maiaStudies/submit_tau_extension.sh
+```
+
+This trains the same five dense and five convolutional architectures at
+`tau=1` and `tau=3` for the same five-hour/20,000-step minimum. At each
+validation checkpoint it evaluates the identical validation subset once in
+relaxed mode and once in discrete mode; checkpoint selection remains based on
+discrete balanced accuracy. It then evaluates the 20 new checkpoints and
+regenerates the summary over all 50 models. New diagnostics are:
+
+- one `training_history.tsv` per tau-extension model;
+- `relaxed_discrete_training_history.tsv` at the campaign root;
+- `summary_plots/19_relaxed_vs_discrete_training.{png,pdf}`.
+
+The extension jobs and dependencies are recorded separately in
+`submitted_tau_extension_jobs.txt`, so the original submission record is not
+overwritten.

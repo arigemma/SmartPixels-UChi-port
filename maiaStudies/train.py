@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import random
@@ -59,10 +60,17 @@ def _seed_everything(seed: int) -> None:
 
 @torch.no_grad()
 def validation_metrics(
-    model: torch.nn.Module, loader: DataLoader, device: torch.device
+    model: torch.nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+    *,
+    discrete: bool = True,
 ) -> dict[str, float]:
     was_training = model.training
-    model.eval()
+    if discrete:
+        model.eval()
+    else:
+        model.train()
     confusion = np.zeros((2, 2), dtype=np.int64)
     loss_sum = 0.0
     count = 0
@@ -83,8 +91,7 @@ def validation_metrics(
     recalls = confusion.diagonal() / np.maximum(confusion.sum(axis=1), 1)
     scores = np.concatenate(all_scores)
     truth = np.concatenate(all_labels)
-    if was_training:
-        model.train()
+    model.train(was_training)
     return {
         "cross_entropy": loss_sum / max(count, 1),
         "balanced_accuracy": float(recalls.mean()),
@@ -95,6 +102,33 @@ def validation_metrics(
         "score_mean": float(scores.mean()),
         "score_std": float(scores.std()),
     }
+
+
+def _append_validation_history(
+    path: Path,
+    step: int,
+    elapsed_hours: float,
+    discrete: dict[str, float],
+    relaxed: dict[str, float] | None,
+) -> None:
+    metric_names = tuple(discrete)
+    fieldnames = ["step", "elapsed_hours"]
+    fieldnames.extend(f"discrete_{name}" for name in metric_names)
+    fieldnames.extend(f"relaxed_{name}" for name in metric_names)
+    row = {"step": int(step), "elapsed_hours": float(elapsed_hours)}
+    row.update({f"discrete_{name}": discrete[name] for name in metric_names})
+    row.update(
+        {
+            f"relaxed_{name}": "" if relaxed is None else relaxed[name]
+            for name in metric_names
+        }
+    )
+    write_header = not path.is_file() or path.stat().st_size == 0
+    with path.open("a", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, delimiter="\t")
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
 
 
 def checkpoint_payload(
@@ -125,6 +159,7 @@ def checkpoint_payload(
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--task-index", type=int, required=True)
+    parser.add_argument("--campaign", default="main")
     parser.add_argument("--cache-dir", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--device", default="cuda")
@@ -137,9 +172,10 @@ def main() -> None:
     parser.add_argument("--eval-frequency", type=int, default=5_000)
     parser.add_argument("--validation-examples", type=int, default=100_000)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--track-relaxed-validation", action="store_true")
     args = parser.parse_args()
 
-    config = get_config(args.task_index)
+    config = get_config(args.task_index, args.campaign)
     config.validate()
     args.output.mkdir(parents=True, exist_ok=True)
     if (args.output / "training_complete.json").is_file():
@@ -225,11 +261,32 @@ def main() -> None:
 
             if step % args.eval_frequency == 0:
                 last_validation = validation_metrics(model, validation_loader, device)
+                relaxed_validation = (
+                    validation_metrics(
+                        model, validation_loader, device, discrete=False
+                    )
+                    if args.track_relaxed_validation
+                    else None
+                )
                 elapsed = (time.monotonic() - started) / 3600.0
                 print(
-                    f"[VALIDATION] step={step} elapsed_hours={elapsed:.3f} "
+                    f"[VALIDATION_DISCRETE] step={step} elapsed_hours={elapsed:.3f} "
                     f"{json.dumps(last_validation, sort_keys=True)}",
                     flush=True,
+                )
+                if relaxed_validation is not None:
+                    print(
+                        f"[VALIDATION_RELAXED] step={step} "
+                        f"elapsed_hours={elapsed:.3f} "
+                        f"{json.dumps(relaxed_validation, sort_keys=True)}",
+                        flush=True,
+                    )
+                _append_validation_history(
+                    args.output / "training_history.tsv",
+                    step,
+                    elapsed,
+                    last_validation,
+                    relaxed_validation,
                 )
                 payload = checkpoint_payload(
                     model, optimizer, config, thresholds, step, elapsed,
@@ -306,6 +363,8 @@ def main() -> None:
         "elapsed_training_hours": elapsed_hours,
         "minimum_steps": args.minimum_steps,
         "minimum_training_hours": args.minimum_training_hours,
+        "campaign": args.campaign,
+        "tracked_relaxed_validation": args.track_relaxed_validation,
         "batch_size": batch_size,
         "trainable_parameters": parameter_count,
         "best_validation_balanced_accuracy": best_balanced_accuracy,
