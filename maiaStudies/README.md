@@ -100,6 +100,28 @@ Canonical campaigns use `dense14_*` and `conv105_*` aliases. The summarizer
 checks the input-schema marker in every evaluation and refuses to combine or
 mislabel the two campaign definitions.
 
+### Training curves for the completed MAIA-native campaign
+
+The completed 37/276-input campaign predates per-model
+`training_history.tsv` files. Its full trajectories can instead be recovered
+from the Slurm stdout logs, which contain the periodic batch and validation
+records:
+
+```bash
+ROOT="$PWD/results/SLURM/2026_10_13_maia_signal_vs_bib_corrected_inputs_5h_20k"
+python -m maiaStudies.training_curves \
+  --result-root "$ROOT" \
+  --logs-dir "$PWD/logs" \
+  --campaign native_legacy \
+  --dpi 600
+```
+
+The training job ID is read from `submitted_jobs.txt`. The command requires
+the 30 corresponding `logs/maiaLnnTrain_<job>_<task>.out` files and refuses a
+partial plot by default. It produces combined validation curves, a 2x5
+architecture grid, smoothed batch curves, and the extracted TSV data under
+the campaign root and `summary_plots/`.
+
 Dense Model 2 is blue and convolutional Model 3 is orange in every figure.
 Marker shape and line style identify `tau=10`, `20`, and `40`. Exact model
 aliases are included as annotations and in the ranking figures. Set

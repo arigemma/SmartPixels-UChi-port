@@ -25,8 +25,7 @@ if [[ -s "$MODEL_DIR/evaluation_complete.json" ]]; then
   exit 0
 fi
 
-FAMILY="${ALIAS%%_*}"
-if [[ "$FAMILY" == dense ]]; then
+if [[ "$ALIAS" == dense* ]]; then
   BATCH_SIZE="${MAIA_DENSE_EVAL_BATCH_SIZE:-2048}"
 else
   BATCH_SIZE="${MAIA_CONV_EVAL_BATCH_SIZE:-256}"

@@ -26,8 +26,7 @@ if [[ -s "$OUTPUT/training_complete.json" ]]; then
   exit 0
 fi
 
-FAMILY="${ALIAS%%_*}"
-if [[ "$FAMILY" == dense ]]; then
+if [[ "$ALIAS" == dense* ]]; then
   BATCH_SIZE="${MAIA_DENSE_BATCH_SIZE:-1024}"
 else
   BATCH_SIZE="${MAIA_CONV_BATCH_SIZE:-128}"
