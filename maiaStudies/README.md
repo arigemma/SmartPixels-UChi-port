@@ -122,6 +122,32 @@ partial plot by default. It produces combined validation curves, a 2x5
 architecture grid, smoothed batch curves, and the extracted TSV data under
 the campaign root and `summary_plots/`.
 
+The historical logs contain relaxed training-batch metrics but only discrete
+validation metrics, so they cannot produce a like-for-like mode comparison.
+New full campaigns set `MAIA_TRACK_RELAXED_VALIDATION=1` and evaluate both
+modes on the identical validation sample at every checkpoint. Once such a
+campaign finishes, require the complete paired data and create one four-panel
+figure per family with:
+
+1. relaxed validation balanced accuracy versus training step;
+2. discrete validation balanced accuracy versus training step;
+3. relaxed validation cross entropy versus training step;
+4. discrete validation cross entropy versus training step.
+
+```bash
+python -m maiaStudies.training_curves \
+  --result-root "$ROOT" \
+  --campaign main \
+  --require-paired \
+  --dpi 600
+```
+
+The paired figures are
+`23_dense_relaxed_discrete_validation_curves.{png,pdf}` and
+`24_conv_relaxed_discrete_validation_curves.{png,pdf}`. The normal full
+submission now enables paired validation and makes both figures automatically
+after all 30 evaluations succeed.
+
 Dense Model 2 is blue and convolutional Model 3 is orange in every figure.
 Marker shape and line style identify `tau=10`, `20`, and `40`. Exact model
 aliases are included as annotations and in the ranking figures. Set

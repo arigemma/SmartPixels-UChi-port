@@ -313,6 +313,65 @@ def _batch_overview(configs, training_by_alias: dict[str, list[dict]], campaign:
     return figure
 
 
+def _paired_family_figure(
+    configs,
+    validation_by_alias: dict[str, list[dict]],
+    family: str,
+    campaign: str,
+) -> plt.Figure:
+    """Plot like-for-like relaxed/discrete validation metrics for one family."""
+    figure, axes = plt.subplots(2, 2, figsize=(14.5, 10.0), sharex=True)
+    panels = (
+        ("relaxed", "balanced_accuracy", "Relaxed validation balanced accuracy"),
+        ("discrete", "balanced_accuracy", "Discrete validation balanced accuracy"),
+        ("relaxed", "cross_entropy", "Relaxed validation cross entropy"),
+        ("discrete", "cross_entropy", "Discrete validation cross entropy"),
+    )
+    for axis, (mode, metric, label) in zip(axes.flat, panels):
+        for config in configs:
+            if config.family != family:
+                continue
+            history = [
+                row for row in validation_by_alias.get(config.alias, [])
+                if row["mode"] == mode and metric in row
+            ]
+            if not history:
+                continue
+            axis.plot(
+                [row["step"] for row in history],
+                [row[metric] for row in history],
+                color=SIZE_COLORS[config.size],
+                linestyle=TAU_LINESTYLES[float(config.tau)],
+                linewidth=1.35,
+                alpha=0.88,
+            )
+        axis.set_title(label)
+        axis.set_xlabel("Training step")
+        axis.set_ylabel(label)
+        axis.grid(True, alpha=0.22)
+    taus = sorted({float(config.tau) for config in configs if config.family == family})
+    _style_legends(figure, taus)
+    figure.suptitle(
+        f"{_family_label(family, campaign)} — paired relaxed/discrete validation",
+        y=1.015,
+    )
+    figure.tight_layout(rect=(0, 0, 1, 0.93))
+    return figure
+
+
+def _missing_paired_histories(configs, validation_by_alias: dict[str, list[dict]]):
+    missing = []
+    for config in configs:
+        modes = {
+            row["mode"]
+            for row in validation_by_alias.get(config.alias, [])
+            if "balanced_accuracy" in row and "cross_entropy" in row
+        }
+        if modes != {"relaxed", "discrete"}:
+            missing.append(config.alias)
+    return missing
+
+
 def generate_training_curves(
     result_root: Path,
     *,
@@ -323,6 +382,7 @@ def generate_training_curves(
     formats: tuple[str, ...] = ("png", "pdf"),
     dpi: int = 400,
     allow_partial: bool = False,
+    require_paired: bool = False,
 ) -> dict:
     configs = _configs(campaign)
     output_dir = output_dir or result_root / "summary_plots"
@@ -361,6 +421,15 @@ def generate_training_curves(
     if not validation_by_alias:
         raise FileNotFoundError(
             f"No training histories found in {result_root} or {logs_dir}"
+        )
+    missing_paired = _missing_paired_histories(configs, validation_by_alias)
+    if missing_paired and require_paired:
+        raise RuntimeError(
+            "Paired relaxed/discrete validation histories are unavailable for "
+            f"{len(missing_paired)} of {len(configs)} models: "
+            + ", ".join(missing_paired)
+            + ". These modes must be evaluated on the same validation sample "
+            "during training; relaxed batch loss is not a substitute."
         )
 
     validation_table = []
@@ -424,12 +493,30 @@ def generate_training_curves(
                 dpi,
             )
         )
+    if not missing_paired:
+        for family, stem in (
+            ("dense", "23_dense_relaxed_discrete_validation_curves"),
+            ("conv", "24_conv_relaxed_discrete_validation_curves"),
+        ):
+            products.extend(
+                _save(
+                    _paired_family_figure(
+                        configs, validation_by_alias, family, campaign
+                    ),
+                    output_dir,
+                    stem,
+                    formats,
+                    dpi,
+                )
+            )
     manifest = {
         "campaign": campaign,
         "models_found": len(validation_by_alias),
         "models_expected": len(configs),
         "training_job_id": training_job_id,
         "missing_models": missing,
+        "missing_paired_histories": missing_paired,
+        "paired_models_found": len(configs) - len(missing_paired),
         "sources": sources,
         "validation_table": str(validation_table_path),
         "batch_table": str(batch_table_path) if batch_table else None,
@@ -455,6 +542,7 @@ def main() -> None:
     parser.add_argument("--formats", nargs="+", choices=("png", "pdf"), default=("png", "pdf"))
     parser.add_argument("--dpi", type=int, default=400)
     parser.add_argument("--allow-partial", action="store_true")
+    parser.add_argument("--require-paired", action="store_true")
     args = parser.parse_args()
     result = generate_training_curves(
         args.result_root,
@@ -465,6 +553,7 @@ def main() -> None:
         formats=tuple(args.formats),
         dpi=args.dpi,
         allow_partial=args.allow_partial,
+        require_paired=args.require_paired,
     )
     print(
         f"[DONE] Training histories: "

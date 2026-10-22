@@ -54,7 +54,7 @@ PREPARE_JOB="$(sbatch --parsable --chdir="$PWD" \
 PREPARE_JOB="${PREPARE_JOB%%;*}"
 
 TRAIN_JOB="$(sbatch --parsable --dependency="afterok:$PREPARE_JOB" --chdir="$PWD" \
-  --export="ALL,MAIA_CACHE_ROOT=$MAIA_CACHE_ROOT,MAIA_RESULT_ROOT=$MAIA_RESULT_ROOT" \
+  --export="ALL,MAIA_TRACK_RELAXED_VALIDATION=1,MAIA_CACHE_ROOT=$MAIA_CACHE_ROOT,MAIA_RESULT_ROOT=$MAIA_RESULT_ROOT" \
   maiaStudies/train.slurm)"
 TRAIN_JOB="${TRAIN_JOB%%;*}"
 
@@ -64,7 +64,7 @@ EVAL_JOB="$(sbatch --parsable --dependency="afterok:$TRAIN_JOB" --chdir="$PWD" \
 EVAL_JOB="${EVAL_JOB%%;*}"
 
 SUMMARY_JOB="$(sbatch --parsable --dependency="afterok:$EVAL_JOB" --chdir="$PWD" \
-  --export="ALL,MAIA_RESULT_ROOT=$MAIA_RESULT_ROOT" \
+  --export="ALL,MAIA_CAMPAIGN=main,MAIA_REQUIRE_PAIRED_DYNAMICS=1,MAIA_RESULT_ROOT=$MAIA_RESULT_ROOT" \
   maiaStudies/summarize.slurm)"
 SUMMARY_JOB="${SUMMARY_JOB%%;*}"
 
@@ -83,6 +83,7 @@ EOF
 
 echo "Preparation job: $PREPARE_JOB (streaming projection/cache; safely skips if complete)"
 echo "Training array:  $TRAIN_JOB (30 tasks: 5 dense + 5 conv x 3 taus)"
+echo "Validation modes: paired relaxed + discrete at every checkpoint"
 echo "Evaluation:      $EVAL_JOB (full test and [-0.5,15] ns timing-cut test)"
 echo "Summary:         $SUMMARY_JOB"
 echo "Campaign root:   $MAIA_RESULT_ROOT"
@@ -93,5 +94,7 @@ echo "  $MAIA_RESULT_ROOT/model_comparison_wide.tsv"
 echo "  $MAIA_RESULT_ROOT/best_models.tsv"
 echo "  $MAIA_RESULT_ROOT/SUMMARY.md"
 echo "  $MAIA_RESULT_ROOT/summary_plots/ (18 figures, PNG and PDF)"
+echo "  $MAIA_RESULT_ROOT/summary_plots/23_dense_relaxed_discrete_validation_curves.png"
+echo "  $MAIA_RESULT_ROOT/summary_plots/24_conv_relaxed_discrete_validation_curves.png"
 echo "  $MAIA_RESULT_ROOT/maia_lnn_screening.png"
 echo "  $MAIA_RESULT_ROOT/maia_lnn_screening.pdf"

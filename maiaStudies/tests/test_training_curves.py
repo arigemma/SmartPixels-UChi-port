@@ -59,13 +59,19 @@ class TrainingCurvesTest(unittest.TestCase):
             for task in range(30):
                 (logs / f"maiaLnnTrain_12345_{task}.out").write_text(
                     "[TRAIN] epoch=0 step=100 loss=0.4 batch_accuracy=0.8\n"
-                    "[VALIDATION] step=100 elapsed_hours=0.1 "
+                    "[VALIDATION_DISCRETE] step=100 elapsed_hours=0.1 "
                     '{"balanced_accuracy": 0.8, "roc_auc": 0.9, '
                     '"cross_entropy": 0.3}\n'
+                    "[VALIDATION_RELAXED] step=100 elapsed_hours=0.1 "
+                    '{"balanced_accuracy": 0.81, "roc_auc": 0.91, '
+                    '"cross_entropy": 0.29}\n'
                     "[TRAIN] epoch=1 step=200 loss=0.3 batch_accuracy=0.85\n"
-                    "[VALIDATION] step=200 elapsed_hours=0.2 "
+                    "[VALIDATION_DISCRETE] step=200 elapsed_hours=0.2 "
                     '{"balanced_accuracy": 0.82, "roc_auc": 0.92, '
                     '"cross_entropy": 0.25}\n'
+                    "[VALIDATION_RELAXED] step=200 elapsed_hours=0.2 "
+                    '{"balanced_accuracy": 0.83, "roc_auc": 0.93, '
+                    '"cross_entropy": 0.24}\n'
                 )
             result = generate_training_curves(
                 root,
@@ -73,9 +79,11 @@ class TrainingCurvesTest(unittest.TestCase):
                 campaign="native_legacy",
                 formats=("png",),
                 dpi=30,
+                require_paired=True,
             )
             self.assertEqual(result["models_found"], 30)
-            self.assertEqual(len(result["plots"]), 3)
+            self.assertEqual(result["paired_models_found"], 30)
+            self.assertEqual(len(result["plots"]), 5)
             self.assertTrue(all(Path(path).is_file() for path in result["plots"]))
 
 
