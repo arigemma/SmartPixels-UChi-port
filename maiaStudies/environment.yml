@@ -1,0 +1,15 @@
+name: smart_pixels
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12        # torchlogix needs >=3.12 (nested f-strings); 3.11 fails
+  - pip
+  - numpy>=2           # recent pyarrow requires NumPy 2 (requirements.txt pin of 1.26.4 is stale)
+  - pandas
+  - pyarrow
+  - scikit-learn
+  - matplotlib
+  - pyyaml             # read by maia_run.py
+  - pip:
+      - torch==2.15.0
+      - torchlogix==0.2.2
