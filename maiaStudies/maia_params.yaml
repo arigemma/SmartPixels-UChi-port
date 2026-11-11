@@ -1,0 +1,56 @@
+# MAIA campaign parameters.
+# Every value is copied from the repo's prepare.slurm / train.slurm /
+# submit_pilot.sh (the original settings). Read by maia_run.py.
+# Paths are NOT here: they come from set_paths.sh (MAIA_DATA_ROOT, etc.).
+
+prepare:
+  timing_column: adjusted_hit_time
+  batch_size: 4096
+  thresholds: 100              # must match N_THRESHOLDS in campaign.py
+  threshold_sample_rows: 50000
+  seed: 42
+
+audit:
+  maximum_per_class: 20000
+  minimum_baseline_auc: 0.60
+
+train:
+  campaign: main               # 30 tasks: 0-14 dense14, 15-29 conv105 (s01..s05 x tau 10/20/40)
+  seed: 42
+  learning_rate: 0.01
+  weight_decay: 0.0
+  num_workers: 4
+  batch_size:                  # chosen by model family (alias prefix)
+    dense: 1024
+    conv: 128
+
+  # Run length. "full" is train.slurm's default, "pilot" is submit_pilot.sh,
+  # "smoke" is the 200-step CPU check run on 2026-11-10.
+  profiles:
+    full:
+      minimum_steps: 20000
+      minimum_training_hours: 5.0
+      eval_frequency: 5000
+      validation_examples: 100000
+    pilot:
+      minimum_steps: 5000
+      minimum_training_hours: 0.5
+      eval_frequency: 1000
+      validation_examples: 50000
+    smoke:
+      minimum_steps: 200
+      minimum_training_hours: 0
+      eval_frequency: 100
+      validation_examples: 5000
+
+# Tasks used by the authors' pilot: dense14_s03_tau20 and conv105_s03_tau20.
+pilot_tasks: [7, 22]
+
+# From evaluate.slurm (0 = use all examples).
+evaluate:
+  batch_size: {dense: 2048, conv: 256}
+  num_workers: 4
+  timing_min_ns: -0.5
+  timing_max_ns: 15.0
+  maximum_validation_examples: 0
+  maximum_test_examples: 0
