@@ -5,3 +5,7 @@ results/
 .runtime/
 __pycache__/
 .pytest_cache/
+
+# job logs (keep the folder itself)
+logs/*
+!logs/.gitkeep
