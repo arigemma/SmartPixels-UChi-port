@@ -1,0 +1,39 @@
+# Training for one MAIA task. Defaults to CPU: the AF HTCondor pool has no
+# GPU slots (checked 2026-11-10 with condor_status).
+#   condor_submit train.sub                           # task 7, pilot profile, CPU
+#   condor_submit train.sub task=22                   # conv105_s03_tau20
+#   condor_submit train.sub task=7 profile=smoke      # quick check
+#   condor_submit train.sub task=7 tag=lr01           # label logs: maia_train_7_pilot_lr01_<cluster>.*
+#   condor_submit train.sub task=7 results_tag=v2     # results in maia_results_v2/<alias>/
+#   condor_submit -i train.sub task=7 profile=smoke   # interactive debug shell
+# If a GPU route is found:  condor_submit train.sub gpus=1 device=cuda
+#
+# Defaults use the $(name:default) form, NOT "name = value" lines: a
+# "task = 7" line in this file overrides task=22 given on the command line.
+#   task         index in campaign.py (7 = dense14_s03_tau20, 22 = conv105_s03_tau20)
+#   tag          free label added to the log file names only
+#   results_tag  "none" = $MAIA_RESULT_ROOT as is; otherwise results go to
+#                ${MAIA_RESULT_ROOT}_<results_tag>/<alias>/ (directory names stay = alias)
+
+universe   = vanilla
+executable = /home/agarciac/projects/mcc_smartpix/SmartPixels/maiaStudies/train_condor.sh
+arguments  = $(task:7) $(profile:pilot) $(device:cpu) $(results_tag:none)
+
+initialdir = /home/agarciac/projects/mcc_smartpix/SmartPixels
+log        = logs/maia_train_$(task:7)_$(profile:pilot)_$(tag:run)_$(ClusterId).log
+output     = logs/maia_train_$(task:7)_$(profile:pilot)_$(tag:run)_$(ClusterId).out
+error      = logs/maia_train_$(task:7)_$(profile:pilot)_$(tag:run)_$(ClusterId).err
+
+request_gpus   = $(gpus:0)
+request_cpus   = 8
+request_memory = 16GB
+request_disk   = 20GB
+
+# pilot/smoke fit in the short queue (<=4h); remove this line for profile=full
++queue = "short"
+
+# NOTE: do not set should_transfer_files = NO. It adds a requirement that the
+# worker shares our FileSystemDomain, which no slot in this pool does.
+getenv = False
+
+queue
