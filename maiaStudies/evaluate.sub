@@ -1,0 +1,18 @@
+# Evaluate one trained MAIA model on the full test set (CPU by default).
+#   condor_submit evaluate.sub task=7
+#   condor_submit evaluate.sub task=22
+# Writes evaluation_complete.json into $MAIA_RESULT_ROOT/<alias>/.
+universe   = vanilla
+executable = /home/agarciac/projects/mcc_smartpix/SmartPixels/maiaStudies/evaluate_condor.sh
+arguments  = $(task:7) x $(device:cpu) $(results_tag:none)
+initialdir = /home/agarciac/projects/mcc_smartpix/SmartPixels
+log        = logs/maia_eval_$(task:7)_$(ClusterId).log
+output     = logs/maia_eval_$(task:7)_$(ClusterId).out
+error      = logs/maia_eval_$(task:7)_$(ClusterId).err
+request_gpus   = $(gpus:0)
+request_cpus   = 8
+request_memory = 48GB
+request_disk   = 20GB
++queue = "short"
+getenv = False
+queue
